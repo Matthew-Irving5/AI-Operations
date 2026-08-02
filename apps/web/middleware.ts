@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-export const runtime = 'experimental-edge';
-
 export function middleware(request: NextRequest) {
   const response = NextResponse.next();
   const nonce = crypto.randomUUID();
