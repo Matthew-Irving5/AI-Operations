@@ -1,0 +1,12 @@
+name: Database
+on: [pull_request, merge_group]
+jobs:
+  migrations-and-rls:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: supabase/setup-cli@v1
+        with: { version: latest }
+      - run: supabase start
+      - run: supabase db reset --local
+      - run: supabase test db

@@ -1,0 +1,17 @@
+{
+  "name": "@ai-operations/contracts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "4.1.5"
+  },
+  "devDependencies": {
+    "typescript": "5.8.3",
+    "vitest": "3.2.6"
+  }
+}
