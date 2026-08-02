@@ -1,0 +1,21 @@
+name: Security
+on: [pull_request, merge_group]
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  secret-and-dependency-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.18.2
+      - uses: actions/setup-node@v5
+        with: { node-version: 22.18.0 }
+      - run: corepack enable && pnpm install --frozen-lockfile && pnpm audit --audit-level=high

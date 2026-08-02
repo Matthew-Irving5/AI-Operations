@@ -1,0 +1,10 @@
+name: Edge functions
+on: [pull_request, merge_group]
+jobs:
+  deno:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: denoland/setup-deno@v2
+      - run: deno fmt --check supabase/functions
+      - run: deno lint --rules-exclude=no-import-prefix supabase/functions

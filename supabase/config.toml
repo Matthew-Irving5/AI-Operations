@@ -1,0 +1,8 @@
+project_id = "ai-operations-local"
+[functions.manager-list]
+verify_jwt = true
+[api]
+enabled = true
+port = 54321
+[db]
+port = 54322
