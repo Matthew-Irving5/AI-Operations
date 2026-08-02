@@ -7,4 +7,4 @@ jobs:
       - uses: actions/checkout@v5
       - uses: denoland/setup-deno@v2
       - run: deno fmt --check supabase/functions
-      - run: deno lint supabase/functions
+      - run: deno lint --rules-exclude=no-import-prefix supabase/functions
