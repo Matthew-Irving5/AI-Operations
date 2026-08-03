@@ -18,6 +18,8 @@
     "test:e2e": "playwright test",
     "security": "corepack pnpm audit --audit-level=high && gitleaks detect --no-banner",
     "verify": "corepack pnpm format:check && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test && corepack pnpm build",
+    "cloudflare:check": "corepack pnpm --dir apps/web run deploy -- --dry-run",
+    "verify:ci": "tsx infrastructure/scripts/verify-ci.ts",
     "preflight": "tsx infrastructure/scripts/pass-preflight.ts",
     "finish-pass": "tsx infrastructure/scripts/pass-finish.ts"
   },
