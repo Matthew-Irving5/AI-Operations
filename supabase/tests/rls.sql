@@ -17,10 +17,14 @@ select ok((select relrowsecurity from pg_class where relname='audit_events' and 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
   ('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000101', 'authenticated', 'authenticated', 'matthewirving99@gmail.com', crypt('synthetic-only', gen_salt('bf')), now(), '{}'::jsonb, '{}'::jsonb, now(), now()),
-  ('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000202', 'authenticated', 'authenticated', 'second-user@example.test', crypt('synthetic-only', gen_salt('bf')), now(), '{}'::jsonb, '{}'::jsonb, now(), now());
+  ('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000202', 'authenticated', 'authenticated', 'second-user@example.test', crypt('synthetic-only', gen_salt('bf')), now(), '{}'::jsonb, '{}'::jsonb, now(), now())
+on conflict (id) do nothing;
 
 insert into public.app_users(id, email, is_allowed)
-values ('00000000-0000-0000-0000-000000000101', 'matthewirving99@gmail.com', true);
+values ('00000000-0000-0000-0000-000000000101', 'matthewirving99@gmail.com', true)
+on conflict (id) do update set email = excluded.email, is_allowed = true;
+
+delete from public.mfa_reauthentication_events where user_id = '00000000-0000-0000-0000-000000000101';
 
 insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idempotency_key)
 select '00000000-0000-0000-0000-000000000101', id, 'test', 'synthetic-primary-run'

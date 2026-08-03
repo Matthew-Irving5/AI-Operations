@@ -1,6 +1,6 @@
 'use client';
 
-import * as echarts from 'echarts';
+import type { ECharts } from 'echarts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 type Point = Readonly<{ createdAt: string; actual: number; estimated: number }>;
@@ -22,33 +22,40 @@ export function CostChart({ points }: Readonly<{ points: Point[] }>) {
   }, [period, points]);
   useEffect(() => {
     if (!container.current) return;
-    const chart = echarts.init(container.current);
-    chart.setOption({
-      tooltip: { trigger: 'axis' },
-      legend: { data: ['Actual', 'Estimated'], textStyle: { color: '#eef5ff' } },
-      xAxis: {
-        type: 'category',
-        data: visible.map((point) =>
-          new Date(point.createdAt).toLocaleDateString('en-GB', { timeZone: 'Europe/London' }),
-        ),
-        axisLabel: { color: '#9fb0c8' },
-      },
-      yAxis: { type: 'value', axisLabel: { color: '#9fb0c8', formatter: '$ {value}' } },
-      series: [
-        { name: 'Actual', type: 'line', smooth: true, data: visible.map((point) => point.actual) },
-        {
-          name: 'Estimated',
-          type: 'line',
-          smooth: true,
-          data: visible.map((point) => point.estimated),
+    let chart: ECharts | undefined;
+    let disposed = false;
+    const element = container.current;
+    const resize = new ResizeObserver(() => chart?.resize());
+    resize.observe(element);
+    void import('echarts').then((echarts) => {
+      if (disposed) return;
+      chart = echarts.init(element);
+      chart.setOption({
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['Actual', 'Estimated'], textStyle: { color: '#eef5ff' } },
+        xAxis: {
+          type: 'category',
+          data: visible.map((point) =>
+            new Date(point.createdAt).toLocaleDateString('en-GB', { timeZone: 'Europe/London' }),
+          ),
+          axisLabel: { color: '#9fb0c8' },
         },
-      ],
+        yAxis: { type: 'value', axisLabel: { color: '#9fb0c8', formatter: '$ {value}' } },
+        series: [
+          { name: 'Actual', type: 'line', smooth: true, data: visible.map((point) => point.actual) },
+          {
+            name: 'Estimated',
+            type: 'line',
+            smooth: true,
+            data: visible.map((point) => point.estimated),
+          },
+        ],
+      });
     });
-    const resize = new ResizeObserver(() => chart.resize());
-    resize.observe(container.current);
     return () => {
+      disposed = true;
       resize.disconnect();
-      chart.dispose();
+      chart?.dispose();
     };
   }, [visible]);
   return (

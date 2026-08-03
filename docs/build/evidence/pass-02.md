@@ -7,7 +7,7 @@ Status: IN_PROGRESS.
 - Docker Desktop engine 28.3.2 started successfully.
 - `supabase db reset --local` rebuilt the empty local database and applied migration `202608030001_platform_engine.sql`.
 - `pnpm test:db` passed all 24 pgTAP/RLS assertions, including the synthetic queue-to-report vertical path, scheduler registration, cancellation, notification leasing, provider reconciliation, MFA-gated pricing updates, and the weekly Systems quality review.
-- `pnpm test`, production `pnpm build`, and `pnpm test:e2e` passed. Playwright covered Chromium and WebKit login/MFA flows.
+- `pnpm test`, production `pnpm build`, and `pnpm test:e2e` passed. Playwright covers Chromium and WebKit login/MFA flows plus authenticated Operations, spend, trace, approval, report-feedback, and iPhone platform surfaces against a local Supabase stack.
 - `pnpm audit --audit-level=high` reported no high or critical dependency findings; the remaining findings are one low and one moderate advisory.
 - Gitleaks 8.30.1 scanned 19 commits and reported no secrets.
 
@@ -22,6 +22,7 @@ Status: IN_PROGRESS.
 - Notification dispatch has an allowlisted-recipient boundary, a Gmail API implementation, and provider-mock deduplication test.
 - Queued notifications use lease ownership, bounded retry with jitter, and a dead-letter state, so concurrent dispatchers cannot resend a claimed message.
 - The protected dashboard uses RLS-backed, Zod-validated report, approval, trace, feedback, schedule, operations, and spend queries with empty/error states; reports include workflow-specific feedback submission.
+- E2E bootstraps a complete synthetic local Auth identity and generates a short-lived AAL2 session only from the runtime local JWT secret. No service-role key, local secret, or session is committed.
 - Background `response.completed` events settle a linked Systems response and trace the report completion after HMAC verification and provider-event deduplication.
 - Provider-reported usage can be reconciled against recorded call cost, with mismatches retained for investigation; price versions require fresh MFA.
 - The weekly Systems workflow aggregates negative feedback categories into a validated quality-review report section and records included feedback for the review cycle.
@@ -29,4 +30,4 @@ Status: IN_PROGRESS.
 
 ## Remaining pass work
 
-Remaining completion work is the rich Operations/Spend interaction layer (filters, control actions, and analytical charts), complete browser coverage of authenticated platform flows, complete Systems quality-review execution, and final PR delivery/merge.
+Remaining completion work is the final Pass 2 completion audit, PR delivery, and documented manual merge exception where GitHub Free cannot enable auto-merge for this private repository.
