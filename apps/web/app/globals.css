@@ -95,6 +95,16 @@ main {
 .approval-decision button + button {
   margin-left: 8px;
 }
+.periods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.chart {
+  min-height: 280px;
+  width: 100%;
+}
 .feedback button {
   margin-right: 8px;
 }
