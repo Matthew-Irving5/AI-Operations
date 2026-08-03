@@ -25,4 +25,6 @@ Executed on the Pass 07 branch against a clean local Supabase database:
 
 ## Release evidence pending
 
-Hosted GitHub Actions, staging deployment, production deployment, PR review/merge, and the requirement-by-requirement final traceability audit remain release gates. This evidence file must be updated with their run URLs/identifiers only after they are observed; no hosted or production assertion is inferred from local validation.
+Hosted PR checks for PR #16 passed on 2026-08-03: CI verify run `30854634790`, database/RLS run `30854633069`, Playwright run `30854632890`, Edge Functions run `30854634439`, security run `30854632894`, and Windows worker run `30854633554`. These prove the hosted branch checks, not yet staging/production deployment or final traceability completion.
+
+Staging deployment, production deployment, PR merge, and the requirement-by-requirement final traceability audit remain release gates. This file must be updated with their run URLs/identifiers only after they are observed; no hosted deployment assertion is inferred from local validation.
