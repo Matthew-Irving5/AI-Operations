@@ -9,3 +9,5 @@ Pricing is versioned in `model_pricing`, sourced from the official OpenAI model 
 Forecast snapshots record actual completed spend, expected completed spend, original recurring estimate, bounded variance factor, adjusted month-end forecast, and confidence. The variance factor is limited to 0.5–3.0.
 
 At runtime, jobs retry with exponential backoff plus jitter and move to dead letter after their configured maximum attempts. A hard-cap rejection never retries into a higher cap.
+
+Provider reconciliation never overwrites recorded call costs or historical price versions. It records the provider-reported period total alongside the deterministic calculated total and marks material differences for investigation. Adding or changing a price version requires a fresh TOTP event from the allowlisted user.
