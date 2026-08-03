@@ -6,7 +6,7 @@ export default defineConfig({
   use: { baseURL: 'http://127.0.0.1:3000', trace: 'retain-on-failure' },
   webServer: {
     command:
-      'corepack pnpm --filter @ai-operations/web build && corepack pnpm exec tsx infrastructure/scripts/prepare-playwright-server.ts && node apps/web/.next/standalone/apps/web/server.js',
+      'corepack pnpm --filter @ai-operations/web build && corepack pnpm exec tsx infrastructure/scripts/prepare-playwright-server.ts',
     url: 'http://127.0.0.1:3000/login',
     reuseExistingServer: !process.env.CI,
     env: {
