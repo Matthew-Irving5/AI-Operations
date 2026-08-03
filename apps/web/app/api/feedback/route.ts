@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createSupabaseServerClient } from '../../../lib/supabase-server';
+import { requireSameOrigin } from '../../../lib/request-security';
 
 const requestSchema = z.object({
   reportId: z.string().uuid(),
@@ -10,6 +11,8 @@ const requestSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const rejected = requireSameOrigin(request);
+  if (rejected) return rejected;
   const payload = requestSchema.safeParse(await request.json());
   if (!payload.success) return NextResponse.json({ code: 'invalid_feedback' }, { status: 400 });
   const client = await createSupabaseServerClient();
