@@ -1,0 +1,21 @@
+{
+  "version": "5",
+  "remote": {
+    "https://esm.sh/@supabase/supabase-js@2.57.0": "119dc185b1310fd98a9ee7cb6a660879a2562ea3730ebed9b80e85ecc8c7e3ee"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@playwright/test@1.61.1",
+        "npm:@types/node@22.15.3",
+        "npm:@vitest/coverage-v8@3.2.6",
+        "npm:prettier@3.6.2",
+        "npm:supabase@^2.111.0",
+        "npm:tsx@4.20.3",
+        "npm:turbo@2.5.6",
+        "npm:typescript@5.8.3",
+        "npm:vitest@3.2.6"
+      ]
+    }
+  }
+}

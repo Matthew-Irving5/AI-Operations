@@ -24,7 +24,8 @@ Deno.serve(async (request) => {
     deviceId?: string;
     pairingCode?: string;
   } | null;
-  if (!body?.deviceId || !/^[a-f0-9]{32}$/i.test(body.pairingCode ?? "")) {
+  const pairingCode = body?.pairingCode;
+  if (!body?.deviceId || !pairingCode || !/^[a-f0-9]{32}$/i.test(pairingCode)) {
     return json({ code: "invalid_pairing" }, 400);
   }
   const { data, error } = await service.from("worker_devices").update({
@@ -34,7 +35,7 @@ Deno.serve(async (request) => {
     pairing_expires_at: null,
   }).eq("id", body.deviceId).eq("state", "pending").eq(
     "pairing_hash",
-    await hash(body.pairingCode),
+    await hash(pairingCode),
   ).gt("pairing_expires_at", new Date().toISOString()).select("id")
     .maybeSingle();
   return error || !data

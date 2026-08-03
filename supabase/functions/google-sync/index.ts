@@ -72,9 +72,10 @@ Deno.serve(async (request) => {
     connection.error || !connection.data ||
     connection.data.status !== "connected"
   ) return json({ code: "connection_unavailable" }, 404);
+  const connectionData = connection.data;
   const credential = await service.from("connection_credentials").select(
     "encrypted_refresh_token",
-  ).eq("connection_id", connection.data.id).maybeSingle();
+  ).eq("connection_id", connectionData.id).maybeSingle();
   if (credential.error || !credential.data) {
     return json({ code: "credential_unavailable" }, 422);
   }
@@ -86,7 +87,7 @@ Deno.serve(async (request) => {
   } catch {
     await service.from("connections").update({
       status: "reauthentication_required",
-    }).eq("id", connection.data.id);
+    }).eq("id", connectionData.id);
     return json({ code: "token_refresh_failed" }, 401);
   }
   const headers = { authorization: `Bearer ${token}` };
@@ -151,8 +152,8 @@ Deno.serve(async (request) => {
     const rows = (payload.items ?? []).filter((item) =>
       item.id && item.start?.dateTime && item.end?.dateTime
     ).map((item) => ({
-      user_id: connection.data.user_id,
-      connection_id: connection.data.id,
+      user_id: connectionData.user_id,
+      connection_id: connectionData.id,
       source: "google",
       calendar_external_id: calendar.id,
       external_id: item.id,
@@ -176,8 +177,8 @@ Deno.serve(async (request) => {
   const driveRows = (drive.files ?? []).filter((file) =>
     file.id && file.name && file.mimeType
   ).map((file) => ({
-    user_id: connection.data.user_id,
-    connection_id: connection.data.id,
+    user_id: connectionData.user_id,
+    connection_id: connectionData.id,
     drive_file_id: file.id,
     name: file.name!,
     mime_type: file.mimeType!,
@@ -210,8 +211,8 @@ Deno.serve(async (request) => {
       continue;
     }
     const stored = await service.from("google_messages").upsert({
-      user_id: connection.data.user_id,
-      connection_id: connection.data.id,
+      user_id: connectionData.user_id,
+      connection_id: connectionData.id,
       gmail_message_id: item.id,
       thread_id: item.threadId,
       label_ids: item.labelIds ?? [],
@@ -232,21 +233,21 @@ Deno.serve(async (request) => {
     messages += 1;
   }
   await service.from("integration_cursors").upsert({
-    user_id: connection.data.user_id,
-    connection_id: connection.data.id,
+    user_id: connectionData.user_id,
+    connection_id: connectionData.id,
     resource_type: "drive",
     resource_id: "selected",
     cursor: new Date().toISOString(),
   }, { onConflict: "connection_id,resource_type,resource_id" });
   await service.from("integration_cursors").upsert({
-    user_id: connection.data.user_id,
-    connection_id: connection.data.id,
+    user_id: connectionData.user_id,
+    connection_id: connectionData.id,
     resource_type: "gmail",
     resource_id: "INBOX",
     cursor: new Date().toISOString(),
   }, { onConflict: "connection_id,resource_type,resource_id" });
   await service.from("data_freshness").upsert({
-    user_id: connection.data.user_id,
+    user_id: connectionData.user_id,
     source: "google",
     last_source_at: new Date().toISOString(),
     last_success_at: new Date().toISOString(),

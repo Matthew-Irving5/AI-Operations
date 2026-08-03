@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
+import { consumeRateLimit } from "../_shared/rate-limit.ts";
 const url = Deno.env.get("SUPABASE_URL") ?? "";
 const service = createClient(
   url,
@@ -35,6 +36,9 @@ Deno.serve(async (request) => {
     identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com" ||
     assurance?.currentLevel !== "aal2"
   ) return json({ code: "fresh_mfa_required" }, 403);
+  if (!await consumeRateLimit(identity.user.id, "digital_scan_create", 10)) {
+    return json({ code: "rate_limited" }, 429);
+  }
   if (
     !body?.deviceId || !Array.isArray(body.roots) || !body.roots.length ||
     body.roots.some((root) =>

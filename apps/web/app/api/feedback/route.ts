@@ -16,7 +16,11 @@ export async function POST(request: Request) {
   const payload = requestSchema.safeParse(await request.json());
   if (!payload.success) return NextResponse.json({ code: 'invalid_feedback' }, { status: 400 });
   const client = await createSupabaseServerClient();
-  const { data: session } = await client.auth.getSession();
+  const [{ data: user }, { data: session }] = await Promise.all([
+    client.auth.getUser(),
+    client.auth.getSession(),
+  ]);
+  if (!user.user) return NextResponse.json({ code: 'unauthorised' }, { status: 401 });
   if (!session.session?.access_token)
     return NextResponse.json({ code: 'unauthorised' }, { status: 401 });
   const url = new URL(

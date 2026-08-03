@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
 const userId = '00000000-0000-0000-0000-000000000101';
@@ -53,6 +54,9 @@ test.beforeEach(async ({ context }) => {
 test('authenticated Operations, spend, trace, approval, and feedback surfaces render platform evidence', async ({
   page,
 }) => {
+  await page.goto('/overview');
+  await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
+  await expect(page.getByText('Synthetic platform health')).toBeVisible();
   await page.goto('/operations');
   await expect(page.getByRole('heading', { name: 'Operations Centre' })).toBeVisible();
   await expect(page.getByText('Synthetic platform health')).toHaveCount(0);
@@ -119,9 +123,11 @@ test('Career, Travel, and Procurement surfaces expose bounded empty states at de
   await page.goto('/travel');
   await expect(page.getByRole('heading', { name: 'Travel Planning' })).toBeVisible();
   await expect(page.getByText('No plan has been launched.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Queue research' })).toBeVisible();
   await page.goto('/procurement');
   await expect(page.getByRole('heading', { name: 'Consumer & Procurement' })).toBeVisible();
   await expect(page.getByText('No research request has been launched.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Queue research' })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(
     page.evaluate(() => document.documentElement.scrollWidth),
@@ -133,4 +139,38 @@ test('Digital Estate shows its safe paired-worker empty state', async ({ page })
   await expect(page.getByRole('heading', { name: 'Digital Estate' })).toBeVisible();
   await expect(page.getByText('No worker is paired.')).toBeVisible();
   await expect(page.getByText('No scan has been requested.')).toBeVisible();
+});
+
+test('Systems, device, and onboarding surfaces are reachable and preserve production gates', async ({
+  page,
+}) => {
+  await page.goto('/systems-automation');
+  await expect(page.getByRole('heading', { name: 'Systems & Automation' })).toBeVisible();
+  await expect(page.getByText('Approval-gated')).toBeVisible();
+  await page.goto('/devices');
+  await expect(page.getByRole('heading', { name: 'Devices' })).toBeVisible();
+  await expect(page.getByText('No registered device. Register a Windows worker')).toBeVisible();
+  await page.goto('/settings');
+  await expect(
+    page.getByRole('heading', { name: 'Settings & production onboarding' }),
+  ).toBeVisible();
+  await expect(page.getByText('0/17 required setup steps recorded')).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Record final production acceptance' }),
+  ).toBeDisabled();
+});
+
+test('authenticated control surfaces have no critical accessibility violations', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  for (const path of ['/overview', '/settings']) {
+    await page.goto(path);
+    const results = await new AxeBuilder({ page }).analyze();
+    expect(
+      results.violations.filter((violation) =>
+        ['critical', 'serious'].includes(violation.impact ?? ''),
+      ),
+    ).toEqual([]);
+  }
 });

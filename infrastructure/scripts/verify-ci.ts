@@ -90,6 +90,8 @@ const playwrightInstallArgs = ['exec', 'playwright', 'install'];
 if (process.platform === 'linux') playwrightInstallArgs.push('--with-deps');
 playwrightInstallArgs.push('chromium', 'webkit');
 runInherited(pnpm(playwrightInstallArgs));
-runInherited(pnpm(['test:e2e'], e2eEnvironment));
+// Keep the CI-equivalent runner explicit here. On Windows, forwarding a custom
+// environment through a second package-manager shell can drop E2E_JWT_SECRET.
+runInherited(pnpm(['exec', 'playwright', 'test'], e2eEnvironment));
 
 console.log('\nLocal CI-equivalent validation passed.');

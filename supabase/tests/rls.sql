@@ -1,5 +1,5 @@
 begin;
-select plan(44);
+select plan(55);
 
 select ok(
   not exists (
@@ -95,8 +95,19 @@ select ok(exists(select 1 from pg_constraint where conname = 'digital_scans_stat
 select ok(exists(select 1 from pg_constraint where conname = 'worker_devices_state_check'), 'Worker device state is constrained');
 select ok((select relrowsecurity from pg_class where relname='worker_heartbeats' and relnamespace = 'public'::regnamespace), 'Worker heartbeat history has RLS enabled');
 select ok((select relrowsecurity from pg_class where relname='storage_forecasts' and relnamespace = 'public'::regnamespace), 'Storage forecasts have RLS enabled');
+select ok((select relrowsecurity from pg_class where relname='onboarding_checklist_items' and relnamespace = 'public'::regnamespace), 'Onboarding checklist has RLS enabled');
+select ok((select relrowsecurity from pg_class where relname='production_acceptances' and relnamespace = 'public'::regnamespace), 'Production acceptance has RLS enabled');
+select ok(exists(select 1 from pg_proc where proname = 'production_onboarding_complete'), 'Production onboarding completion guard exists');
+select ok(not has_table_privilege('authenticated', 'public.workflow_schedules', 'UPDATE'), 'Direct schedule enablement is not available to browser roles');
+select is(public.production_onboarding_complete('00000000-0000-0000-0000-000000000101'), false, 'Schedules remain gated until the preliminary onboarding steps are recorded');
+select ok((select relrowsecurity from pg_class where relname='edge_request_windows' and relnamespace = 'public'::regnamespace), 'Edge rate windows have RLS enabled');
+select is(public.consume_edge_request_quota('00000000-0000-0000-0000-000000000101', 'test_quota', 1), true, 'First rate-limited request is accepted');
+select is(public.consume_edge_request_quota('00000000-0000-0000-0000-000000000101', 'test_quota', 1), false, 'Rate limit rejects a request after its quota is exhausted');
 select ok(exists(select 1 from public.workflow_definitions where code = 'travel-on-demand-plan' and active), 'Travel on-demand workflow is active');
 select ok(exists(select 1 from public.workflow_definitions where code = 'procurement-on-demand-research' and active), 'Procurement on-demand workflow is active');
+select ok(exists(select 1 from pg_proc where proname = 'create_on_demand_run_request'), 'Bounded on-demand request function exists');
+select throws_ok($$select public.create_on_demand_run_request('00000000-0000-0000-0000-000000000101', (select id from public.workflow_definitions where code='travel-on-demand-plan'), 'procurement', 1, 'gpt-5.6-terra', 1, 'on-demand-mismatch', '{"purpose":"test"}'::jsonb)$$, 'manager_workflow_mismatch', 'On-demand manager and workflow must match');
+select lives_ok($$select public.create_on_demand_run_request('00000000-0000-0000-0000-000000000101', (select id from public.workflow_definitions where code='travel-on-demand-plan'), 'travel', 1, 'gpt-5.6-terra', 1, 'on-demand-travel-request', '{"purpose":"Test trip","constraints":"No booking"}'::jsonb)$$, 'Bounded Travel request is queued with its brief');
 insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idempotency_key)
 select '00000000-0000-0000-0000-000000000101', id, 'manual', 'synthetic-career-run' from public.workflow_definitions where code = 'career-daily-evidence-sync';
 select lives_ok($$select public.complete_career_travel_procurement_run(id) from public.workflow_runs where idempotency_key = 'synthetic-career-run'$$, 'Career completion creates a provenance-constrained report');

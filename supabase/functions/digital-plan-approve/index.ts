@@ -26,7 +26,9 @@ const canonical = (value: unknown) =>
   new TextEncoder().encode(JSON.stringify(canonicalise(value)));
 const sha256 = async (value: Uint8Array) =>
   Array.from(
-    new Uint8Array(await crypto.subtle.digest("SHA-256", value)),
+    new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new Uint8Array(value).buffer),
+    ),
     (byte) => byte.toString(16).padStart(2, "0"),
   ).join("");
 Deno.serve(async (request) => {

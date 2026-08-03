@@ -8,7 +8,9 @@ export default defineConfig({
     command:
       'corepack pnpm --filter @ai-operations/web build && corepack pnpm exec tsx infrastructure/scripts/prepare-playwright-server.ts',
     url: 'http://127.0.0.1:3000/login',
-    reuseExistingServer: !process.env.CI,
+    // Authentication fixtures must be served with the Supabase values resolved
+    // for this run; reusing a developer server can retain stale credentials.
+    reuseExistingServer: false,
     env: {
       NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'http://127.0.0.1:54321',
       NEXT_PUBLIC_SUPABASE_ANON_KEY:

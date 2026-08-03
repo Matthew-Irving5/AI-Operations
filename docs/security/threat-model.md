@@ -1,3 +1,5 @@
 # Threat model
 
-Primary threats are credential leakage, unauthorised access, IDOR/RLS bypass, session downgrade, CSRF, malicious imported content, webhook replay, and local-worker compromise. Pass 1 mitigates these with server-only secrets, CSP, an allowlisted identity, AAL2 routing, RLS default denial, Zod validation, redacted audit records, and private R2 bindings.
+Primary threats are credential leakage, unauthorised access, IDOR/RLS bypass, session downgrade, CSRF, malicious imported content, webhook replay, local-worker compromise, unsafe releases, and automated spending. Mitigations are server-only secrets, CSP/HSTS, an allowlisted identity, AAL2 routing, fresh-MFA gates for sensitive actions, RLS default denial, Zod validation, redacted audit records, private R2 bindings, signed/idempotent webhooks, constrained worker manifests, deterministic hard-cap reservations, and staging-before-production deployment with a smoke check.
+
+The residual-risk response is deliberately conservative: source permissions are least privilege, no generated recipient can receive email, actions need explicit approval, local deletion is not immediate, and deployment or restore failures keep schedules disabled until independently verified. Alerts and diagnostics must contain redacted identifiers rather than raw secret, health, finance, or file payloads.

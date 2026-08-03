@@ -145,6 +145,10 @@ const workerDeviceSchema = z.object({
   state: z.string(),
   last_heartbeat_at: z.string().nullable(),
 });
+const onboardingItemSchema = z.object({
+  code: z.string(),
+  completed_at: z.string().nullable(),
+});
 
 export type PageData<T> = Readonly<{ data: T; error: string | null }>;
 
@@ -506,5 +510,26 @@ export async function digitalEstateData(): Promise<
     devices: devices.error
       ? { data: [], error: 'Worker devices could not be loaded.' }
       : parsedRows(devices.data, z.array(workerDeviceSchema)),
+  };
+}
+
+export async function onboardingData(): Promise<
+  Readonly<{
+    items: PageData<z.infer<typeof onboardingItemSchema>[]>;
+    accepted: PageData<boolean>;
+  }>
+> {
+  const client = await createSupabaseServerClient();
+  const [items, acceptance] = await Promise.all([
+    client.from('onboarding_checklist_items').select('code,completed_at').order('code'),
+    client.from('production_acceptances').select('accepted_at').maybeSingle(),
+  ]);
+  return {
+    items: items.error
+      ? { data: [], error: 'Onboarding state could not be loaded.' }
+      : parsedRows(items.data, z.array(onboardingItemSchema)),
+    accepted: acceptance.error
+      ? { data: false, error: 'Production acceptance state could not be loaded.' }
+      : { data: acceptance.data !== null, error: null },
   };
 }
