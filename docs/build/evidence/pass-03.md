@@ -1,6 +1,6 @@
 # Pass 03 evidence
 
-Status: IN_PROGRESS.
+Status: MERGED in PR #9 on 2026-08-03.
 
 ## Delivery hardening baseline
 
@@ -32,5 +32,11 @@ Status: IN_PROGRESS.
   passed.
 - Targeted manager-core and integrations tests: passed.
 
-The full CI-equivalent command, browser matrix, staging validation, and PR checks remain mandatory
-before this evidence is marked ready for review.
+The full CI-equivalent command and browser matrix passed locally and again in GitHub Actions. Staging
+configuration was validated through the Ubuntu OpenNext dry run in CI.
+
+## Merge verification
+
+- PR #9 was squash-merged as `e1e4d4a4e4bfb26aba70e300e0c680ebd5d67687`.
+- GitHub CI, Database, Edge functions, E2E, Security, and Windows worker checks all completed
+  successfully after merge.
