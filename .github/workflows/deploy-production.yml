@@ -50,7 +50,19 @@ jobs:
         run: |
           for function in supabase/functions/*; do
             [[ "$(basename "$function")" == _* ]] && continue
-            npx supabase functions deploy "$(basename "$function")" --project-ref "$PROJECT_REF"
+            deployed=false
+            for attempt in 1 2 3; do
+              if npx supabase functions deploy "$(basename "$function")" --project-ref "$PROJECT_REF" --use-api; then
+                deployed=true
+                break
+              fi
+              echo "Function $(basename "$function") deployment attempt $attempt failed; retrying if attempts remain."
+              sleep $((attempt * 10))
+            done
+            if [[ "$deployed" != true ]]; then
+              echo "Function $(basename "$function") failed after three bounded attempts."
+              exit 1
+            fi
           done
       - name: Safe production smoke test
         run: |
