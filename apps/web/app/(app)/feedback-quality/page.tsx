@@ -1,1 +1,12 @@
-export default function FeedbackPage() { return <><h1>Feedback &amp; Quality</h1><p className="notice">Feedback is versioned evidence for quality review; it cannot directly change a production prompt.</p><p className="card">No feedback has been submitted.</p></>; }
+export default function FeedbackPage() {
+  return (
+    <>
+      <h1>Feedback &amp; Quality</h1>
+      <p className="notice">
+        Feedback is versioned evidence for quality review; it cannot directly change a production
+        prompt.
+      </p>
+      <p className="card">No feedback has been submitted.</p>
+    </>
+  );
+}

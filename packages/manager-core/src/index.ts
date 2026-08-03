@@ -19,7 +19,11 @@ export type WorkflowDefinition = Readonly<{
 export type RunContext = Readonly<{ runId: string; correlationId: string; timezone: string }>;
 export type ValidationResult = Readonly<{ valid: boolean; reasons: readonly string[] }>;
 export type ManagerOutput = Readonly<{ summary: string; evidenceIds: readonly string[] }>;
-export type ActionProposal = Readonly<{ type: string; title: string; risk: 'low' | 'medium' | 'high' | 'critical' }>;
+export type ActionProposal = Readonly<{
+  type: string;
+  title: string;
+  risk: 'low' | 'medium' | 'high' | 'critical';
+}>;
 export type Report = Readonly<{ title: string; markdown: string }>;
 export type NotificationRequest = Readonly<{ subject: string; body: string; dedupeKey: string }>;
 
@@ -42,20 +46,65 @@ export interface OperationsManager {
 }
 
 export const systemsWorkflows: readonly WorkflowDefinition[] = [
-  { code: 'systems-daily-cost-capacity', version: 1, model: 'gpt-5.6-luna', priority: 1, notificationPolicy: 'exception', allowedActionTypes: [] },
-  { code: 'systems-weekly-quality-platform', version: 1, model: 'gpt-5.6-terra', priority: 2, notificationPolicy: 'report', allowedActionTypes: ['review_prompt_promotion'] },
-  { code: 'systems-monthly-cost-report', version: 1, model: 'gpt-5.6-terra', priority: 1, notificationPolicy: 'report', allowedActionTypes: ['review_budget_recommendation'] },
+  {
+    code: 'systems-daily-cost-capacity',
+    version: 1,
+    model: 'gpt-5.6-luna',
+    priority: 1,
+    notificationPolicy: 'exception',
+    allowedActionTypes: [],
+  },
+  {
+    code: 'systems-weekly-quality-platform',
+    version: 1,
+    model: 'gpt-5.6-terra',
+    priority: 2,
+    notificationPolicy: 'report',
+    allowedActionTypes: ['review_prompt_promotion'],
+  },
+  {
+    code: 'systems-monthly-cost-report',
+    version: 1,
+    model: 'gpt-5.6-terra',
+    priority: 1,
+    notificationPolicy: 'report',
+    allowedActionTypes: ['review_budget_recommendation'],
+  },
 ];
 
 export class SyntheticSystemsManager implements OperationsManager {
   code: ManagerCode = 'systems';
-  getWorkflowDefinitions() { return systemsWorkflows; }
-  async collect() { return { valid: true, reasons: [] }; }
-  async validateInputs() { return { valid: true, reasons: [] }; }
-  async buildContext() { return { deterministic: true }; }
-  async execute() { return { summary: 'Synthetic platform health is within policy.', evidenceIds: ['synthetic-platform-health'] }; }
-  async validateOutput(output: ManagerOutput) { return { valid: output.evidenceIds.length > 0, reasons: output.evidenceIds.length ? [] : ['missing_evidence'] }; }
-  async proposeActions() { return []; }
-  async renderReport(output: ManagerOutput) { return { title: 'Systems health', markdown: output.summary }; }
-  async determineNotifications() { return []; }
+  getWorkflowDefinitions() {
+    return systemsWorkflows;
+  }
+  async collect() {
+    return { valid: true, reasons: [] };
+  }
+  async validateInputs() {
+    return { valid: true, reasons: [] };
+  }
+  async buildContext() {
+    return { deterministic: true };
+  }
+  async execute() {
+    return {
+      summary: 'Synthetic platform health is within policy.',
+      evidenceIds: ['synthetic-platform-health'],
+    };
+  }
+  async validateOutput(output: ManagerOutput) {
+    return {
+      valid: output.evidenceIds.length > 0,
+      reasons: output.evidenceIds.length ? [] : ['missing_evidence'],
+    };
+  }
+  async proposeActions() {
+    return [];
+  }
+  async renderReport(output: ManagerOutput) {
+    return { title: 'Systems health', markdown: output.summary };
+  }
+  async determineNotifications() {
+    return [];
+  }
 }
