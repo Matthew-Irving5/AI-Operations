@@ -16,7 +16,8 @@ export function CostChart({ points }: Readonly<{ points: Point[] }>) {
   const container = useRef<HTMLDivElement>(null);
   const visible = useMemo(() => {
     const days = periods.find((item) => item[0] === period)?.[2] ?? 31;
-    const threshold = Date.now() - days * 86_400_000;
+    const latest = Math.max(...points.map((point) => new Date(point.createdAt).getTime()));
+    const threshold = latest - days * 86_400_000;
     return points.filter((point) => new Date(point.createdAt).getTime() >= threshold);
   }, [period, points]);
   useEffect(() => {

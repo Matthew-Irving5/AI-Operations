@@ -42,13 +42,11 @@ export default async function SpendForecastingPage() {
       </section>
       <h2>Cost history</h2>
       <CostChart
-        points={[...calls.data]
-          .reverse()
-          .map((call) => ({
-            createdAt: call.created_at,
-            actual: call.actual_cost,
-            estimated: call.estimated_cost,
-          }))}
+        points={[...calls.data].reverse().map((call) => ({
+          createdAt: call.created_at,
+          actual: call.actual_cost,
+          estimated: call.estimated_cost,
+        }))}
       />
       {calls.data.length === 0 ? (
         <p className="card">No completed AI calls yet.</p>
