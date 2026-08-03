@@ -1,6 +1,6 @@
 # Pass 04 evidence
 
-Status: IN_PROGRESS.
+Status: MERGED in PR #11 on 2026-08-03.
 
 ## Baseline
 
@@ -20,3 +20,8 @@ Status: IN_PROGRESS.
   health/finance golden evaluation fixtures, and Health/Finance UI states.
 - Targeted verification passed: database reset and 33 pgTAP/RLS tests, manager-core and integration
   unit tests, Deno format/lint, web typecheck/build, and 14 Chromium/WebKit Playwright tests.
+
+## Merge verification
+
+- PR #11 was squash-merged as `20a72a8be7d63c76d3f6c31b15d0ae10b8bdd924`.
+- GitHub CI, Database, Edge functions, E2E, Security, and Windows worker checks completed successfully.
