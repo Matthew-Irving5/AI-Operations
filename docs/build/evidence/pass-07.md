@@ -23,8 +23,10 @@ Executed on the Pass 07 branch against a clean local Supabase database:
 - `corepack pnpm security` — passed its high-severity dependency gate and Gitleaks scan. The package manager reports one low and one moderate dependency advisory, below the configured high threshold; these must remain visible in routine dependency maintenance.
 - `corepack pnpm test:e2e` — passed: 22 Chromium/WebKit tests, including authenticated control surfaces, iPhone-width checks, and axe critical/serious accessibility scans.
 
-## Release evidence pending
+## Hosted release evidence
 
-Hosted PR checks for PR #16 passed on 2026-08-03: CI verify run `30854634790`, database/RLS run `30854633069`, Playwright run `30854632890`, Edge Functions run `30854634439`, security run `30854632894`, and Windows worker run `30854633554`. These prove the hosted branch checks, not yet staging/production deployment or final traceability completion.
+Hosted PR checks for PR #16 passed on 2026-08-03. Follow-up PR #17 (`6acabf3`) corrected deployment iteration over `_shared` modules; its CI, database/RLS, Playwright, Edge, security, and Windows checks all passed before merge.
 
-Staging deployment, production deployment, PR merge, and the requirement-by-requirement final traceability audit remain release gates. This file must be updated with their run URLs/identifiers only after they are observed; no hosted deployment assertion is inferred from local validation.
+- Staging deployment run `30856616441` passed on `main` after the fix: Worker, migrations, all Edge Functions, and `/login` smoke test succeeded. Independent HTTPS verification returned `200` from both staging and production login endpoints.
+- Production run `30856819135` deployed the Worker, then stopped at migrations because the production environment has no `PRODUCTION_SUPABASE_ACCESS_TOKEN`, `PRODUCTION_SUPABASE_PROJECT_REF`, or `PRODUCTION_SUPABASE_DB_PASSWORD` secrets. Edge Function deployment and production acceptance therefore remain blocked by missing provider credentials; no production schema or functions were claimed as deployed.
+- The production workflow now validates those three secrets before deploying the Worker, preventing a partial deployment on the next approved run.
