@@ -18,6 +18,9 @@ verify_jwt = true
 verify_jwt = true
 [functions.approval-decide]
 verify_jwt = true
+
+[functions.workflow-cancel]
+verify_jwt = true
 [api]
 enabled = true
 port = 54321

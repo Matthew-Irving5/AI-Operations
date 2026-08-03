@@ -231,3 +231,16 @@ insert into public.feedback_categories(workflow_code, section_code, label) value
   ('systems-monthly-cost-report', null, 'forecast'),
   ('systems-monthly-cost-report', null, 'usability')
 on conflict (workflow_code, section_code, label) do nothing;
+
+create or replace function public.cancel_queued_run(p_user_id uuid, p_run_id uuid)
+returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  update public.workflow_runs set status = 'cancelled', cancelled_at = now(), completed_at = now()
+    where id = p_run_id and user_id = p_user_id and status = 'queued';
+  if not found then return false; end if;
+  update public.job_queue set status = 'cancelled', completed_at = now(), lease_owner = null, lease_expires_at = null
+    where run_id = p_run_id and status = 'queued';
+  insert into public.trace_events(user_id, correlation_id, event_type, redacted_payload)
+    select user_id, correlation_id, 'run_cancelled', jsonb_build_object('run_id', p_run_id) from public.workflow_runs where id = p_run_id;
+  return true;
+end; $$;

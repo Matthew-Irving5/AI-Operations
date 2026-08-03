@@ -1,5 +1,5 @@
 begin;
-select plan(18);
+select plan(19);
 
 select ok(
   not exists (
@@ -59,6 +59,10 @@ select lives_ok($$select public.complete_synthetic_systems_run(id) from public.w
 select is((select count(*) from public.reports where run_id = (select id from public.workflow_runs where idempotency_key = 'synthetic-primary-run')), 1::bigint, 'a synthetic run has exactly one report');
 select is((select status::text from public.complete_job_queue((select id from public.job_queue where deduplication_key = 'synthetic-primary-job'), 'pg-tap-worker', true)), 'succeeded', 'completing a lease succeeds the job');
 select lives_ok($$select public.calculate_spend_forecast('00000000-0000-0000-0000-000000000101')$$, 'a deterministic forecast snapshot can be calculated');
+insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idempotency_key)
+select '00000000-0000-0000-0000-000000000101', id, 'manual', 'synthetic-cancellable-run'
+from public.workflow_definitions where code = 'systems-daily-cost-capacity';
+select ok(public.cancel_queued_run('00000000-0000-0000-0000-000000000101', (select id from public.workflow_runs where idempotency_key = 'synthetic-cancellable-run')), 'an eligible queued run can be cancelled transactionally');
 
 select * from finish();
 rollback;
