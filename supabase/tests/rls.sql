@@ -1,5 +1,5 @@
 begin;
-select plan(22);
+select plan(24);
 
 select ok(
   not exists (
@@ -66,6 +66,10 @@ select ok(public.cancel_queued_run('00000000-0000-0000-0000-000000000101', (sele
 select ok(exists(select 1 from pg_proc where proname = 'claim_notification_delivery'), 'notification delivery uses a lease claim function');
 select lives_ok($$select public.record_provider_usage_reconciliation('00000000-0000-0000-0000-000000000101', now() - interval '1 day', now(), 0, 'synthetic-provider-usage')$$, 'provider usage reconciliation records a deterministic comparison');
 select throws_ok($$select public.add_model_pricing('00000000-0000-0000-0000-000000000101', (select id from public.ai_model_catalog limit 1), now(), 1, 1, 1, 'https://example.test/pricing')$$, 'fresh_mfa_required', 'pricing changes require fresh MFA');
+insert into public.feedback(user_id, report_id, positive, categories, comment) values ('00000000-0000-0000-0000-000000000101', (select id from public.reports where run_id = (select id from public.workflow_runs where idempotency_key = 'synthetic-primary-run')), false, array['evidence'], 'synthetic quality feedback');
+insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idempotency_key) select '00000000-0000-0000-0000-000000000101', id, 'schedule', 'synthetic-weekly-quality-run' from public.workflow_definitions where code = 'systems-weekly-quality-platform';
+select lives_ok($$select public.complete_synthetic_systems_run(id) from public.workflow_runs where idempotency_key = 'synthetic-weekly-quality-run'$$, 'weekly Systems quality review creates a report');
+select is((select status from public.feedback order by created_at desc limit 1), 'included_in_quality_review', 'weekly quality review marks included feedback');
 
 select * from finish();
 rollback;

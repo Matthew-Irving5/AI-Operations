@@ -157,16 +157,25 @@ end; $$;
 
 create or replace function public.complete_synthetic_systems_run(p_run_id uuid)
 returns uuid language plpgsql security definer set search_path = public as $$
-declare run_row record; created_report uuid; notification_key text;
+declare run_row record; created_report uuid; notification_key text; quality_metrics jsonb := '{}'::jsonb; report_summary text := 'Synthetic platform health is within policy.';
 begin
   select r.id, r.user_id, r.correlation_id, d.code into run_row from public.workflow_runs r join public.workflow_definitions d on d.id = r.workflow_definition_id where r.id = p_run_id for update;
   if not found or run_row.code not like 'systems-%' then raise exception 'unsupported_synthetic_run'; end if;
+  if run_row.code = 'systems-weekly-quality-platform' then
+    select coalesce(jsonb_object_agg(category, total), '{}'::jsonb) into quality_metrics from (
+      select category, count(*)::integer as total from public.feedback f cross join lateral unnest(f.categories) as category
+      where f.user_id = run_row.user_id and not f.positive and f.created_at >= now() - interval '7 days'
+      group by category
+    ) counts;
+    report_summary := case when quality_metrics = '{}'::jsonb then 'No negative feedback was recorded in the weekly quality window.' else 'Weekly quality review identified feedback categories requiring investigation.' end;
+    update public.feedback set status = 'included_in_quality_review' where user_id = run_row.user_id and not positive and status = 'unreviewed' and created_at >= now() - interval '7 days';
+  end if;
   insert into public.reports(user_id, run_id, report_type, title, summary, markdown, structured_metrics, status)
-    values (run_row.user_id, p_run_id, run_row.code, 'Systems platform report', 'Synthetic platform health is within policy.', '## Systems platform report\n\nSynthetic platform health is within policy.', jsonb_build_object('workflow', run_row.code, 'deterministic', true), 'validated')
+    values (run_row.user_id, p_run_id, run_row.code, 'Systems platform report', report_summary, '## Systems platform report\n\n' || report_summary, jsonb_build_object('workflow', run_row.code, 'deterministic', true, 'quality_feedback_categories', quality_metrics), 'validated')
     on conflict do nothing returning id into created_report;
   if created_report is null then select id into created_report from public.reports where run_id = p_run_id; return created_report; end if;
   insert into public.report_sections(report_id, code, title, display_order, content, structured_data, evidence_references)
-    values (created_report, 'platform-health', 'Platform health', 0, 'Synthetic platform health is within policy.', jsonb_build_object('deterministic', true), jsonb_build_array('synthetic-platform-health'));
+    values (created_report, case when run_row.code = 'systems-weekly-quality-platform' then 'quality-review' else 'platform-health' end, case when run_row.code = 'systems-weekly-quality-platform' then 'Quality review' else 'Platform health' end, 0, report_summary, jsonb_build_object('deterministic', true, 'quality_feedback_categories', quality_metrics), jsonb_build_array('synthetic-platform-health'));
   if run_row.code <> 'systems-daily-cost-capacity' then
     notification_key := 'report:' || created_report;
     insert into public.notifications(user_id, type, recipient, subject, status, dedupe_key, correlation_id)
