@@ -1,5 +1,5 @@
 begin;
-select plan(8);
+select plan(17);
 
 select ok(
   not exists (
@@ -24,7 +24,7 @@ values ('00000000-0000-0000-0000-000000000101', 'matthewirving99@gmail.com', tru
 
 insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idempotency_key)
 select '00000000-0000-0000-0000-000000000101', id, 'test', 'synthetic-primary-run'
-from public.workflow_definitions limit 1;
+from public.workflow_definitions where code = 'systems-daily-cost-capacity';
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000202', true);
@@ -45,6 +45,19 @@ select lives_ok(
   $$select count(*) from public.actions where user_id = '00000000-0000-0000-0000-000000000101'$$,
   'RLS query for a protected table does not expose an error channel'
 );
+
+reset role;
+select ok(exists(select 1 from pg_proc where proname = 'claim_job_queue'), 'queue claim function exists');
+select ok(exists(select 1 from pg_proc where proname = 'dispatch_due_schedules'), 'scheduler dispatch function exists');
+select ok(exists(select 1 from pg_constraint where conname = 'cost_reservations_amounts_check'), 'reservation consumption cannot exceed the amount reserved');
+select is((select count(*) from public.workflow_definitions where code like 'systems-%' and active), 3::bigint, 'all Systems workflows are seeded and active while schedules remain separate');
+insert into public.job_queue(user_id, run_id, job_type, deduplication_key)
+select user_id, id, 'workflow_execute', 'synthetic-primary-job' from public.workflow_runs where idempotency_key = 'synthetic-primary-run';
+select is((select count(*) from public.claim_job_queue('pg-tap-worker', 1)), 1::bigint, 'a queued workflow job receives one lease');
+select lives_ok($$select public.complete_synthetic_systems_run(id) from public.workflow_runs where idempotency_key = 'synthetic-primary-run'$$, 'the synthetic manager creates a report');
+select is((select count(*) from public.reports where run_id = (select id from public.workflow_runs where idempotency_key = 'synthetic-primary-run')), 1::bigint, 'a synthetic run has exactly one report');
+select is((select status::text from public.complete_job_queue((select id from public.job_queue where deduplication_key = 'synthetic-primary-job'), 'pg-tap-worker', true)), 'succeeded', 'completing a lease succeeds the job');
+select lives_ok($$select public.calculate_spend_forecast('00000000-0000-0000-0000-000000000101')$$, 'a deterministic forecast snapshot can be calculated');
 
 select * from finish();
 rollback;

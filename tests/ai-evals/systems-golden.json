@@ -1,0 +1,9 @@
+[
+  {
+    "id": "systems-hard-cap",
+    "requiredFacts": ["hard cap"],
+    "prohibitedClaims": ["raise the hard cap automatically"],
+    "requiredEvidenceIds": ["synthetic-platform-health"],
+    "maximumCostUsd": 0.02
+  }
+]
