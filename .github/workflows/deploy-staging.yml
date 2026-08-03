@@ -2,6 +2,12 @@ name: Deploy staging
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: staging-deployment
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -29,3 +35,17 @@ jobs:
         run: |
           npx supabase link --project-ref "$PROJECT_REF" --password "$DB_PASSWORD"
           npx supabase db push --linked --password "$DB_PASSWORD" --yes
+      - name: Smoke test staging Worker
+        run: |
+          for attempt in {1..18}; do
+            status="$(curl --silent --show-error --location --max-time 20 \
+              --output /dev/null --write-out '%{http_code}' \
+              https://ai-operations-staging.ai-operations.workers.dev/login || true)"
+            if [ "$status" = "200" ]; then
+              exit 0
+            fi
+            echo "Attempt $attempt returned HTTP ${status:-no-response}; waiting for deployment propagation."
+            sleep 5
+          done
+          echo "Staging Worker did not return HTTP 200 within 90 seconds."
+          exit 1

@@ -3,8 +3,9 @@
   "name": "ai-operations-staging",
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-08-02",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "ai-operations-staging" }],
   "r2_buckets": [{ "binding": "ARCHIVE_BUCKET", "bucket_name": "ai-operations-staging" }],
   "observability": { "enabled": true },
 }
