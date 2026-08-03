@@ -1,12 +1,24 @@
-const metrics = [
-  ['Actual to date', '$0.00'],
-  ['Expected to date', '$0.00'],
-  ['Original month-end', '$0.00'],
-  ['Adjusted forecast', '$0.00'],
-  ['Recurring hard cap remaining', '$10.00'],
-  ['Reserved but unspent', '$0.00'],
-];
-export default function SpendForecastingPage() {
+import { spendData } from '../../../lib/platform-data';
+
+const money = (value: number) => `$${value.toFixed(2)}`;
+
+export default async function SpendForecastingPage() {
+  const { forecast, calls } = await spendData();
+  const metrics = forecast.data
+    ? [
+        ['Actual to date', money(forecast.data.actual_spend)],
+        ['Expected to date', money(forecast.data.expected_completed)],
+        ['Original month-end', money(forecast.data.original_month_end)],
+        ['Adjusted forecast', money(forecast.data.adjusted_month_end)],
+        ['Forecast confidence', forecast.data.confidence],
+      ]
+    : [
+        ['Actual to date', '$0.00'],
+        ['Expected to date', '$0.00'],
+        ['Original month-end', '$0.00'],
+        ['Adjusted forecast', '$0.00'],
+        ['Forecast confidence', 'Low'],
+      ];
   return (
     <>
       <h1>AI Spend &amp; Forecasting</h1>
@@ -14,6 +26,11 @@ export default function SpendForecastingPage() {
         Actual, expected, and forecast figures are computed from immutable call and reservation
         records.
       </p>
+      {(forecast.error ?? calls.error) ? (
+        <p className="notice" role="alert">
+          {forecast.error ?? calls.error}
+        </p>
+      ) : null}
       <section className="grid">
         {metrics.map(([label, value]) => (
           <article className="card" key={label}>
@@ -23,7 +40,24 @@ export default function SpendForecastingPage() {
         ))}
       </section>
       <h2>Cost history</h2>
-      <p className="card">No completed AI calls yet.</p>
+      {calls.data.length === 0 ? (
+        <p className="card">No completed AI calls yet.</p>
+      ) : (
+        <section className="stack" aria-label="AI call cost history">
+          {calls.data.map((call) => (
+            <article className="card" key={call.id}>
+              <div className="label">
+                {call.status} ·{' '}
+                {new Date(call.created_at).toLocaleString('en-GB', { timeZone: 'Europe/London' })}
+              </div>
+              <h3>{call.model_id}</h3>
+              <p>
+                Actual {money(call.actual_cost)} · estimated {money(call.estimated_cost)}
+              </p>
+            </article>
+          ))}
+        </section>
+      )}
     </>
   );
 }

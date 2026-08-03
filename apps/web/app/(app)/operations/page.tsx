@@ -1,12 +1,14 @@
-const metrics = [
-  ['Running now', '0'],
-  ['Queued', '0'],
-  ['Next 24 hours', '0'],
-  ['Failed (7 days)', '0'],
-  ['Approvals waiting', '0'],
-  ['Stale sources', '0'],
-];
-export default function OperationsPage() {
+import { operationsData } from '../../../lib/platform-data';
+
+export default async function OperationsPage() {
+  const { data, error } = await operationsData();
+  const metrics = [
+    ['Running now', data.running],
+    ['Queued', data.queued],
+    ['Failed', data.failed],
+    ['Approvals waiting', data.approvals],
+    ['Stale sources', data.stale],
+  ];
   return (
     <>
       <h1>Operations Centre</h1>
@@ -18,8 +20,17 @@ export default function OperationsPage() {
           </article>
         ))}
       </section>
+      {error ? (
+        <p className="notice" role="alert">
+          {error}
+        </p>
+      ) : null}
       <h2>Queue</h2>
-      <p className="card">No queued work. Schedules remain disabled until onboarding acceptance.</p>
+      <p className="card">
+        {data.queued === 0
+          ? 'No queued work. Schedules remain disabled until onboarding acceptance.'
+          : `${data.queued} queued job${data.queued === 1 ? '' : 's'} awaiting a worker lease.`}
+      </p>
     </>
   );
 }
