@@ -1,4 +1,5 @@
 import { approvalsData } from '../../../lib/platform-data';
+import { ApprovalDecisionForm } from './decision-form';
 
 export default async function ApprovalsPage() {
   const { data: approvals, error } = await approvalsData();
@@ -31,6 +32,9 @@ export default async function ApprovalsPage() {
                 Risk: {approval.actions?.risk_class ?? 'unknown'} · Required assurance:{' '}
                 {approval.required_aal}
               </p>
+              {approval.decision === 'pending' ? (
+                <ApprovalDecisionForm approvalId={approval.id} />
+              ) : null}
             </article>
           ))}
         </section>

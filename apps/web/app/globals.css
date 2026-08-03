@@ -87,6 +87,14 @@ main {
   gap: 8px;
   margin-top: 12px;
 }
+.approval-decision {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.approval-decision button + button {
+  margin-left: 8px;
+}
 .feedback button {
   margin-right: 8px;
 }
