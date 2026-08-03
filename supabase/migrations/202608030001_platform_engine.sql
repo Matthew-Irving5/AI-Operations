@@ -279,3 +279,46 @@ begin
   end if;
   return completed;
 end; $$;
+
+create table public.provider_usage_reconciliations (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.app_users(id),
+  provider text not null check (provider in ('openai')),
+  period_start timestamptz not null,
+  period_end timestamptz not null check (period_end > period_start),
+  provider_reported_cost numeric(12,6) not null check (provider_reported_cost >= 0),
+  calculated_cost numeric(12,6) not null check (calculated_cost >= 0),
+  variance_amount numeric(12,6) generated always as (provider_reported_cost - calculated_cost) stored,
+  status text not null check (status in ('matched','investigate')),
+  source_reference text,
+  reconciled_at timestamptz not null default now(),
+  unique(user_id, provider, period_start, period_end)
+);
+alter table public.provider_usage_reconciliations enable row level security;
+create policy own_provider_usage_reconciliations on public.provider_usage_reconciliations for select using (user_id = auth.uid() and public.is_allowed_aal2());
+grant select on public.provider_usage_reconciliations to authenticated;
+
+create or replace function public.record_provider_usage_reconciliation(p_user_id uuid, p_period_start timestamptz, p_period_end timestamptz, p_reported_cost numeric, p_source_reference text default null)
+returns public.provider_usage_reconciliations language plpgsql security definer set search_path = public as $$
+declare calculated numeric; result public.provider_usage_reconciliations;
+begin
+  select coalesce(sum(actual_cost), 0) into calculated from public.ai_calls where user_id = p_user_id and created_at >= p_period_start and created_at < p_period_end and status = 'succeeded';
+  insert into public.provider_usage_reconciliations(user_id, provider, period_start, period_end, provider_reported_cost, calculated_cost, status, source_reference)
+    values (p_user_id, 'openai', p_period_start, p_period_end, p_reported_cost, calculated, case when abs(p_reported_cost - calculated) <= 0.01 then 'matched' else 'investigate' end, p_source_reference)
+  on conflict (user_id, provider, period_start, period_end) do update set provider_reported_cost = excluded.provider_reported_cost, calculated_cost = excluded.calculated_cost, status = excluded.status, source_reference = excluded.source_reference, reconciled_at = now()
+  returning * into result;
+  return result;
+end; $$;
+
+create or replace function public.add_model_pricing(p_user_id uuid, p_model_id uuid, p_effective_from timestamptz, p_input numeric, p_cached_input numeric, p_output numeric, p_source_url text)
+returns public.model_pricing language plpgsql security definer set search_path = public as $$
+declare result public.model_pricing;
+begin
+  if not exists(select 1 from public.mfa_reauthentication_events where user_id = p_user_id and verified_at >= now() - interval '5 minutes') then raise exception 'fresh_mfa_required'; end if;
+  if p_input < 0 or p_cached_input < 0 or p_output < 0 or p_source_url !~ '^https://' then raise exception 'invalid_pricing_input'; end if;
+  insert into public.model_pricing(model_id, effective_from, input_per_million, cached_input_per_million, output_per_million, source_url, verified_at)
+    values (p_model_id, p_effective_from, p_input, p_cached_input, p_output, p_source_url, now())
+  on conflict (model_id, effective_from) do update set input_per_million = excluded.input_per_million, cached_input_per_million = excluded.cached_input_per_million, output_per_million = excluded.output_per_million, source_url = excluded.source_url, verified_at = now()
+  returning * into result;
+  return result;
+end; $$;
