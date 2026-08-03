@@ -47,9 +47,13 @@ Deno.serve(async (request) => {
   if (
     !(await verifySignature(payload, request.headers.get("webhook-signature")))
   ) return json({ code: "invalid_signature" }, 401);
-  let body: { id?: string; type?: string };
+  let body: { id?: string; type?: string; data?: { id?: string } };
   try {
-    body = JSON.parse(payload) as { id?: string; type?: string };
+    body = JSON.parse(payload) as {
+      id?: string;
+      type?: string;
+      data?: { id?: string };
+    };
   } catch {
     return json({ code: "invalid_event" }, 400);
   }
@@ -62,5 +66,41 @@ Deno.serve(async (request) => {
   }).select("id").maybeSingle();
   if (event.error?.code === "23505") return json({ duplicate: true });
   if (event.error) return json({ code: "event_store_failed" }, 500);
+  if (body.type === "response.completed" && body.data?.id) {
+    const call = await service.from("ai_calls").select("run_id,user_id").eq(
+      "response_id",
+      body.data.id,
+    ).maybeSingle();
+    if (call.error) return json({ code: "response_lookup_failed" }, 500);
+    if (call.data?.run_id) {
+      const updated = await service.from("ai_calls").update({
+        status: "succeeded",
+      }).eq(
+        "response_id",
+        body.data.id,
+      );
+      if (updated.error) return json({ code: "response_update_failed" }, 500);
+      const completed = await service.rpc("complete_synthetic_systems_run", {
+        p_run_id: call.data.run_id,
+      });
+      if (completed.error) {
+        return json({ code: "background_completion_failed" }, 500);
+      }
+      const run = await service.from("workflow_runs").select("correlation_id")
+        .eq(
+          "id",
+          call.data.run_id,
+        ).maybeSingle();
+      await service.from("trace_events").insert({
+        user_id: call.data.user_id,
+        correlation_id: run.data?.correlation_id ?? crypto.randomUUID(),
+        event_type: "background_response_completed",
+        redacted_payload: {
+          response_id: body.data.id,
+          report_id: completed.data,
+        },
+      });
+    }
+  }
   return json({ accepted: true });
 });
