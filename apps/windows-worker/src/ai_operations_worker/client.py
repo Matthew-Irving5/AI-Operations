@@ -46,7 +46,7 @@ class ControlPlaneClient:
             data=json.dumps(body).encode(), method="POST",
             headers={"content-type": "application/json", "x-worker-secret": self.config.worker_secret},
         )
-        with urlopen(request, timeout=30) as response:  # noqa: S310 - endpoint is HTTPS-validated configuration
+        with urlopen(request, timeout=30) as response:
             return json.loads(response.read())
 
     def heartbeat(self) -> dict[str, Any]:
@@ -62,7 +62,7 @@ class ControlPlaneClient:
             roots = scan.get("approved_roots")
             scan_id = scan.get("id")
             if not isinstance(roots, list) or not isinstance(scan_id, str):
-                raise ValueError("scan_task_invalid")
+                raise TypeError("scan_task_invalid")
             inventory = [
                 {"pathToken": item.path_token, "filename": item.filename, "sizeBytes": item.size_bytes, "sha256": item.sha256}
                 for item in collect(tuple(Path(root) for root in roots if isinstance(root, str)))
@@ -75,7 +75,7 @@ class ControlPlaneClient:
             signature = manifest.get("signature_b64")
             manifest_id = manifest.get("id")
             if not isinstance(payload, dict) or not isinstance(signature, str) or not isinstance(manifest_id, str):
-                raise ValueError("manifest_task_invalid")
+                raise TypeError("manifest_task_invalid")
             try:
                 action = verify_manifest(
                     payload,
