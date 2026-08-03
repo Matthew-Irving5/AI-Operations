@@ -8,17 +8,29 @@ it('uses Responses structured output format and rejects invalid output', async (
     return new Response(
       JSON.stringify({
         id: 'resp_synthetic',
-        output_text: JSON.stringify({
-          summary: 'ok',
-          findings: [],
-          recommendations: [],
-          actions: [],
-          alerts: [],
-          evidence: [],
-          uncertainties: [],
-          report_sections: [],
-        }),
+        object: 'response',
+        output: [
+          {
+            type: 'message',
+            content: [
+              {
+                type: 'output_text',
+                text: JSON.stringify({
+                  summary: 'ok',
+                  findings: [],
+                  recommendations: [],
+                  actions: [],
+                  alerts: [],
+                  evidence: [],
+                  uncertainties: [],
+                  report_sections: [],
+                }),
+              },
+            ],
+          },
+        ],
       }),
+      { headers: { 'content-type': 'application/json' } },
     );
   });
   await expect(

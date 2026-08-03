@@ -1,3 +1,4 @@
+import OpenAI from 'openai';
 import { z } from 'zod';
 
 const aiOutputSchema = z.object({
@@ -37,34 +38,29 @@ export function createResponsesClient(
   fetcher: typeof fetch = fetch,
 ): ResponsesClient {
   if (!apiKey) throw new Error('openai_api_key_missing');
+  const client = new OpenAI({ apiKey, fetch: fetcher });
   return {
     async create(request) {
-      const response = await fetcher('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model: request.model,
-          instructions: request.instructions,
-          input: request.input,
-          background: request.background,
-          store: false,
-          tools: request.webSearchEnabled ? [{ type: 'web_search' }] : [],
-          text: {
-            format: {
-              type: 'json_schema',
-              name: request.schemaName,
-              strict: true,
-              schema: request.schema,
-            },
+      const response = await client.responses.create({
+        model: request.model,
+        instructions: request.instructions,
+        input: request.input,
+        background: request.background,
+        store: false,
+        tools: request.webSearchEnabled ? [{ type: 'web_search' }] : [],
+        text: {
+          format: {
+            type: 'json_schema',
+            name: request.schemaName,
+            strict: true,
+            schema: request.schema,
           },
-        }),
+        },
       });
-      if (!response.ok) throw new Error(`openai_response_${response.status}`);
-      const body = (await response.json()) as { id?: string; output_text?: string };
-      if (!body.id || !body.output_text) throw new Error('openai_response_incomplete');
-      const parsed = aiOutputSchema.safeParse(JSON.parse(body.output_text));
+      if (!response.id || !response.output_text) throw new Error('openai_response_incomplete');
+      const parsed = aiOutputSchema.safeParse(JSON.parse(response.output_text));
       if (!parsed.success) throw new Error('openai_structured_output_invalid');
-      return { id: body.id, output: parsed.data };
+      return { id: response.id, output: parsed.data };
     },
   };
 }

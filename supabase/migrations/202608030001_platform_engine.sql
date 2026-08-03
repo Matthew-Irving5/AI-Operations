@@ -210,3 +210,12 @@ on conflict (code) do nothing;
 insert into public.workflow_definitions(manager_id, code, version, trigger_type, input_schema, output_schema, active)
 select id, 'systems-monthly-cost-report', 1, 'schedule_or_manual', '{"type":"object","additionalProperties":false}'::jsonb, '{"type":"object","additionalProperties":false}'::jsonb, true from public.managers where code = 'systems'
 on conflict (code) do nothing;
+
+-- The dispatcher itself retains the advisory lock; this durable cron trigger is therefore safe
+-- when an operator also invokes the authenticated Edge Function for recovery.
+create extension if not exists pg_cron;
+select cron.schedule(
+  'ai-operations-scheduler-dispatch-5m',
+  '*/5 * * * *',
+  $$select public.dispatch_due_schedules();$$
+);

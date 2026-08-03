@@ -1,5 +1,5 @@
 begin;
-select plan(17);
+select plan(18);
 
 select ok(
   not exists (
@@ -49,6 +49,7 @@ select lives_ok(
 reset role;
 select ok(exists(select 1 from pg_proc where proname = 'claim_job_queue'), 'queue claim function exists');
 select ok(exists(select 1 from pg_proc where proname = 'dispatch_due_schedules'), 'scheduler dispatch function exists');
+select ok(exists(select 1 from cron.job where jobname = 'ai-operations-scheduler-dispatch-5m' and schedule = '*/5 * * * *'), 'scheduler dispatch is registered every five minutes');
 select ok(exists(select 1 from pg_constraint where conname = 'cost_reservations_amounts_check'), 'reservation consumption cannot exceed the amount reserved');
 select is((select count(*) from public.workflow_definitions where code like 'systems-%' and active), 3::bigint, 'all Systems workflows are seeded and active while schedules remain separate');
 insert into public.job_queue(user_id, run_id, job_type, deduplication_key)
