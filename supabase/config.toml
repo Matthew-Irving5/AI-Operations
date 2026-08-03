@@ -39,6 +39,12 @@ verify_jwt = false
 
 [functions.google-sync]
 verify_jwt = false
+
+[functions.health-ingest]
+verify_jwt = false
+
+[functions.finance-import]
+verify_jwt = true
 [api]
 enabled = true
 port = 54321

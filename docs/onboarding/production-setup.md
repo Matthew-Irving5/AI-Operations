@@ -8,3 +8,9 @@ For Pass 3, configure `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
 Google. Google access is read-only for Gmail, Calendar, and Drive; no Gmail message is marked read,
 archived, or deleted. The server refreshes encrypted credentials, records reauthentication failures,
 and keeps Drive as a selected source rather than the archive of record.
+
+For Pass 4, configure separate private Health and Finance archive gateways plus their matching
+secrets: `HEALTH_ARCHIVE_GATEWAY_URL`, `HEALTH_ARCHIVE_GATEWAY_SECRET`, `HEALTH_INGEST_SECRET`,
+`FINANCE_ARCHIVE_GATEWAY_URL`, and `FINANCE_ARCHIVE_GATEWAY_SECRET`. Each gateway must verify the
+content SHA-256 and return an R2 key and byte count. Do not enable either import until the gateway,
+private bucket policy, and synthetic staging validation are complete.

@@ -100,3 +100,12 @@ test('Personal Operations and connection empty states remain available to an AAL
   await expect(page.getByRole('heading', { name: 'Data Sources' })).toBeVisible();
   await expect(page.getByText('No Google account is connected.')).toBeVisible();
 });
+
+test('Health and Finance AAL2 surfaces make safe empty states explicit', async ({ page }) => {
+  await page.goto('/health');
+  await expect(page.getByRole('heading', { name: 'Health & Performance' })).toBeVisible();
+  await expect(page.getByText('No Health export has been processed.')).toBeVisible();
+  await page.goto('/finance');
+  await expect(page.getByRole('heading', { name: 'Finance Operations' })).toBeVisible();
+  await expect(page.getByText('No close has been prepared.')).toBeVisible();
+});

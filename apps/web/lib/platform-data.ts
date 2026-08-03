@@ -98,6 +98,20 @@ const connectionSchema = z.object({
   scopes: z.array(z.string()),
   created_at: z.string(),
 });
+const healthSummarySchema = z.object({
+  summary_date: z.string(),
+  metrics: z.record(z.string(), z.unknown()),
+  data_confidence: z.string(),
+  completeness: z.coerce.number(),
+});
+const financeCloseSchema = z.object({
+  id: z.string().uuid(),
+  period_start: z.string(),
+  period_end: z.string(),
+  close_kind: z.string(),
+  readiness: z.string(),
+  reconciled: z.boolean(),
+});
 
 export type PageData<T> = Readonly<{ data: T; error: string | null }>;
 
@@ -321,4 +335,54 @@ export async function connectionsData(): Promise<PageData<z.infer<typeof connect
   return error
     ? { data: [], error: 'Connections could not be loaded.' }
     : parsedRows(data, z.array(connectionSchema));
+}
+
+export async function healthData(): Promise<
+  Readonly<{
+    summaries: PageData<z.infer<typeof healthSummarySchema>[]>;
+    importCount: PageData<number>;
+  }>
+> {
+  const client = await createSupabaseServerClient();
+  const [summaries, imports] = await Promise.all([
+    client
+      .from('health_daily_summaries')
+      .select('summary_date,metrics,data_confidence,completeness')
+      .order('summary_date', { ascending: false })
+      .limit(30),
+    client.from('health_imports').select('*', { count: 'exact', head: true }),
+  ]);
+  return {
+    summaries: summaries.error
+      ? { data: [], error: 'Health summaries could not be loaded.' }
+      : parsedRows(summaries.data, z.array(healthSummarySchema)),
+    importCount: imports.error
+      ? { data: 0, error: 'Health source status could not be loaded.' }
+      : { data: imports.count ?? 0, error: null },
+  };
+}
+
+export async function financeData(): Promise<
+  Readonly<{
+    closes: PageData<z.infer<typeof financeCloseSchema>[]>;
+    transactionCount: PageData<number>;
+  }>
+> {
+  const client = await createSupabaseServerClient();
+  const [closes, transactions] = await Promise.all([
+    client
+      .from('finance_close_periods')
+      .select('id,period_start,period_end,close_kind,readiness,reconciled')
+      .order('period_end', { ascending: false })
+      .limit(24),
+    client.from('finance_transactions').select('*', { count: 'exact', head: true }),
+  ]);
+  return {
+    closes: closes.error
+      ? { data: [], error: 'Finance close state could not be loaded.' }
+      : parsedRows(closes.data, z.array(financeCloseSchema)),
+    transactionCount: transactions.error
+      ? { data: 0, error: 'Finance transaction status could not be loaded.' }
+      : { data: transactions.count ?? 0, error: null },
+  };
 }

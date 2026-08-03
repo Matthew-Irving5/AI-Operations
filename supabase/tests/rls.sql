@@ -1,5 +1,5 @@
 begin;
-select plan(29);
+select plan(33);
 
 select ok(
   not exists (
@@ -82,6 +82,12 @@ from public.workflow_definitions where code = 'personal-midday-exception';
 select lives_ok($$select public.complete_personal_run(id) from public.workflow_runs where idempotency_key = 'synthetic-personal-midday-run'$$, 'a midpoint Personal run completes without an integration error');
 select is((select count(*) from public.notifications where dedupe_key like 'personal-report:%'), 0::bigint, 'an empty midpoint exception scan queues no email');
 select is((select material_change from public.personal_plans where report_id = (select id from public.reports where run_id = (select id from public.workflow_runs where idempotency_key = 'synthetic-personal-midday-run'))), false, 'midpoint no-change plan is recorded as non-material');
+select ok(exists(select 1 from public.workflow_definitions where code = 'health-daily-processing' and active), 'Health daily workflow is active');
+select ok(exists(select 1 from public.workflow_definitions where code = 'finance-monthly-close' and active), 'Finance monthly workflow is active');
+select ok(exists(select 1 from pg_proc where proname = 'complete_health_finance_run'), 'Health and Finance deterministic completion function exists');
+insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idempotency_key)
+select '00000000-0000-0000-0000-000000000101', id, 'schedule', 'synthetic-health-daily-run' from public.workflow_definitions where code = 'health-daily-processing';
+select lives_ok($$select public.complete_health_finance_run(id) from public.workflow_runs where idempotency_key = 'synthetic-health-daily-run'$$, 'Health daily run completes safely with incomplete data');
 
 select * from finish();
 rollback;
