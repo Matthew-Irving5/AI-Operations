@@ -14,11 +14,12 @@ Status: IN_PROGRESS.
 ## Implemented platform contracts
 
 - Scheduler dispatch uses a transaction advisory lock, `FOR UPDATE SKIP LOCKED`, idempotent workflow runs, queue insertion, and trace creation.
+- `pg_cron` registers the dispatcher every five minutes; the migration and pgTAP suite verify that durable trigger.
 - The job queue supports leases, expiry reclaim, bounded attempts, jittered retry, dead-letter handling, and database-level deduplication keys.
 - Recurring budget reservations enforce the configured hard cap inside a database transaction.
-- Responses API requests use strict `text.format` JSON Schema output with `store: false`, and malformed output is rejected by Zod.
+- The official OpenAI TypeScript SDK sends Responses API requests with strict `text.format` JSON Schema output and `store: false`; malformed output is rejected by Zod.
 - Webhook ingestion uses HMAC-SHA-256 signature verification, constant-time comparison, and provider event deduplication.
-- Notification dispatch has an allowlisted-recipient boundary and deduplication test.
+- Notification dispatch has an allowlisted-recipient boundary, a Gmail API implementation, and provider-mock deduplication test.
 - A synthetic Systems run is exercised in pgTAP from queue lease through validated report creation and successful job completion.
 
 ## Remaining pass work
