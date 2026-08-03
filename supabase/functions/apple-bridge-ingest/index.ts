@@ -83,9 +83,10 @@ Deno.serve(async (request) => {
   if (device.error || !device.data || device.data.revoked_at) {
     return json({ code: "unauthorised" }, 401);
   }
+  const deviceData = device.data;
   const payloadHash = await digest(JSON.stringify(body));
   const receipt = await service.from("apple_bridge_receipts").insert({
-    device_id: device.data.id,
+    device_id: deviceData.id,
     idempotency_key: body.idempotencyKey,
     payload_hash: payloadHash,
   });
@@ -93,7 +94,7 @@ Deno.serve(async (request) => {
     const previous = await service.from("apple_bridge_receipts").select(
       "payload_hash",
     )
-      .eq("device_id", device.data.id).eq(
+      .eq("device_id", deviceData.id).eq(
         "idempotency_key",
         body.idempotencyKey,
       ).maybeSingle();
@@ -103,10 +104,10 @@ Deno.serve(async (request) => {
     return json({ imported: false, replay: true });
   }
   if (receipt.error) return json({ code: "receipt_failed" }, 500);
-  const enabled = new Set(device.data.enabled_lists);
+  const enabled = new Set(deviceData.enabled_lists);
   const reminders = body.reminders.filter((item) => enabled.has(item.list));
   const reminderRows = reminders.map((item) => ({
-    user_id: device.data.user_id,
+    user_id: deviceData.user_id,
     source: "apple",
     list_name: item.list,
     external_id: item.externalId,
@@ -120,7 +121,7 @@ Deno.serve(async (request) => {
     payload_hash: payloadHash,
   }));
   const eventRows = body.events.map((item) => ({
-    user_id: device.data.user_id,
+    user_id: deviceData.user_id,
     source: "apple",
     calendar_external_id: item.calendar,
     external_id: item.externalId,
@@ -153,7 +154,7 @@ Deno.serve(async (request) => {
   }
   await service.from("apple_bridge_devices").update({
     last_seen_at: new Date().toISOString(),
-  }).eq("id", device.data.id);
+  }).eq("id", deviceData.id);
   return json({
     imported: true,
     reminders: reminderRows.length,

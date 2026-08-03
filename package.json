@@ -15,7 +15,7 @@
     "typecheck": "corepack pnpm -r --if-present run typecheck",
     "test": "corepack pnpm -r --if-present run test",
     "test:db": "supabase test db",
-    "test:e2e": "playwright test",
+    "test:e2e": "tsx infrastructure/scripts/run-e2e.ts",
     "security": "corepack pnpm audit --audit-level=high && gitleaks detect --no-banner",
     "verify": "corepack pnpm format:check && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test && corepack pnpm build",
     "cloudflare:check": "corepack pnpm --dir apps/web run deploy -- --dry-run",
@@ -24,6 +24,7 @@
     "finish-pass": "tsx infrastructure/scripts/pass-finish.ts"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
     "@playwright/test": "1.61.1",
     "@types/node": "22.15.3",
     "@vitest/coverage-v8": "3.2.6",

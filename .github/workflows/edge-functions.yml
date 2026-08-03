@@ -8,3 +8,4 @@ jobs:
       - uses: denoland/setup-deno@v2
       - run: deno fmt --check supabase/functions
       - run: deno lint --rules-exclude=no-import-prefix supabase/functions
+      - run: deno check supabase/functions/*/index.ts

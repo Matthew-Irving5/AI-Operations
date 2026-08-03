@@ -1,8 +1,16 @@
 name: Deploy production
 on:
+  workflow_run:
+    workflows: [Deploy staging]
+    types: [completed]
   workflow_dispatch:
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
 jobs:
   deploy:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -18,3 +26,29 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm run deploy -- --config wrangler.production.jsonc
+      - name: Apply production migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: ${{ secrets.PRODUCTION_SUPABASE_PROJECT_REF }}
+          DB_PASSWORD: ${{ secrets.PRODUCTION_SUPABASE_DB_PASSWORD }}
+        run: |
+          npx supabase link --project-ref "$PROJECT_REF" --password "$DB_PASSWORD"
+          npx supabase db push --linked --password "$DB_PASSWORD" --yes
+      - name: Deploy production Edge Functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: ${{ secrets.PRODUCTION_SUPABASE_PROJECT_REF }}
+        run: |
+          for function in supabase/functions/*; do
+            npx supabase functions deploy "$(basename "$function")" --project-ref "$PROJECT_REF"
+          done
+      - name: Safe production smoke test
+        run: |
+          for attempt in {1..18}; do
+            status="$(curl --silent --show-error --location --max-time 20 --output /dev/null --write-out '%{http_code}' https://ai-operations-production.ai-operations.workers.dev/login || true)"
+            if [ "$status" = "200" ]; then exit 0; fi
+            echo "Attempt $attempt returned HTTP ${status:-no-response}; waiting for deployment propagation."
+            sleep 5
+          done
+          echo "Production Worker did not return HTTP 200 within 90 seconds."
+          exit 1

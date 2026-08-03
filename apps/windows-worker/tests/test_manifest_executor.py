@@ -104,4 +104,7 @@ def test_parquet_zstd_archive_round_trip(tmp_path: Path) -> None:
     archive = tmp_path / "inventory.parquet"
     manifest = write_parquet(records, archive)
     assert len(manifest.sha256) == 64
-    assert restore_parquet(archive) == records
+    assert restore_parquet(archive, manifest) == records
+    archive.write_bytes(archive.read_bytes() + b"tamper")
+    with pytest.raises(ValueError, match="archive_sha256_mismatch"):
+        restore_parquet(archive, manifest)

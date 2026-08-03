@@ -73,6 +73,15 @@ verify_jwt = true
 [functions.digital-scan-create]
 verify_jwt = true
 
+[functions.onboarding-update]
+verify_jwt = true
+
+[functions.onboarding-accept]
+verify_jwt = true
+
+[functions.schedule-update]
+verify_jwt = true
+
 [api]
 enabled = true
 port = 54321

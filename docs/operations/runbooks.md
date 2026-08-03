@@ -17,3 +17,11 @@ Approval decisions require current AAL2 and a TOTP verification recorded within 
 ## Webhook incident
 
 Reject unsigned or malformed webhooks. OpenAI webhook delivery is HMAC-SHA-256 verified before event persistence, and provider event IDs are deduplicated. Investigate the audit/trace trail before replaying a provider event.
+
+## Release or smoke-check failure
+
+Do not enable schedules or retry a failed production deployment by changing data manually. Confirm the successful staging deployment, inspect the failing GitHub Actions step and redacted deployment logs, then correct the cause in a forward-only branch. Re-run the full local CI-equivalent suite, merge only after required checks pass, and confirm the production `/login` smoke check. Record the deployment identifier, migration state, function versions, and smoke result in release evidence.
+
+## Backup or restore failure
+
+Stop archive compaction and preserve the original encrypted backup object. Compare the manifest SHA-256, object size, record count, and representative read-back in an isolated staging project. Rotate any suspect encryption material through the provider secret store and repeat the staging drill with synthetic data. A production restore requires an incident record, fresh MFA, and a separate approved procedure; it is never initiated from the dashboard.

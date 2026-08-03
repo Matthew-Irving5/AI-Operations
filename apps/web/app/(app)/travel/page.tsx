@@ -1,4 +1,5 @@
 import { onDemandData } from '../../../lib/platform-data';
+import { OnDemandLaunchForm } from '../on-demand-launch-form';
 
 export default async function TravelPage() {
   const { runs, watches } = await onDemandData('travel');
@@ -33,6 +34,7 @@ export default async function TravelPage() {
           research limit.
         </p>
       )}
+      <OnDemandLaunchForm manager="travel" />
       <h2>Price, disruption, readiness and weather watches</h2>
       {watches.data.length ? (
         <section className="stack">

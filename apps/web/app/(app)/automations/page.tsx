@@ -1,4 +1,5 @@
 import { schedulesData } from '../../../lib/platform-data';
+import { ScheduleToggle } from './schedule-toggle';
 
 export default async function AutomationsPage() {
   const { data: schedules, error } = await schedulesData();
@@ -31,6 +32,7 @@ export default async function AutomationsPage() {
                     })
                   : 'not scheduled'}
               </p>
+              <ScheduleToggle scheduleId={schedule.id} enabled={schedule.enabled} />
             </article>
           ))}
         </section>

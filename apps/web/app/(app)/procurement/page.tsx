@@ -1,4 +1,5 @@
 import { onDemandData } from '../../../lib/platform-data';
+import { OnDemandLaunchForm } from '../on-demand-launch-form';
 
 export default async function ProcurementPage() {
   const { runs } = await onDemandData('procurement');
@@ -33,6 +34,7 @@ export default async function ProcurementPage() {
           requirements, budget, required date, and market.
         </p>
       )}
+      <OnDemandLaunchForm manager="procurement" />
       <p className="card">
         The result distinguishes best overall, best value, and any justified premium option.
         Purchases and receipts can be retained to track return windows and warranties.

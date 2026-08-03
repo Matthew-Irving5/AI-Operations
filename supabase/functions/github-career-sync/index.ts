@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 
 const allowedOwner = "Matthew-Irving5";
-const deniedOwner = "BrightSG";
+const deniedOwner: string = "BrightSG";
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
