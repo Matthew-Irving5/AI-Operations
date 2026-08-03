@@ -17,10 +17,10 @@ class StateStore:
     def __init__(self, database_path: Path) -> None:
         self._connection = sqlite3.connect(database_path)
         self._connection.execute(
-            "create table if not exists worker_state (key text primary key, value text not null)"
+            "create table if not exists worker_state (key text primary key, value text not null)",
         )
         self._connection.execute(
-            "create table if not exists completed_manifests (manifest_id text primary key, completed_at text not null)"
+            "create table if not exists completed_manifests (manifest_id text primary key, completed_at text not null)",
         )
         self._connection.commit()
 

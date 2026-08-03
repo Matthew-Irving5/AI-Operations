@@ -1,5 +1,6 @@
 """Read-only allowlisted inventory with mandatory sensitive/excluded path filtering."""
 from __future__ import annotations
+
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path

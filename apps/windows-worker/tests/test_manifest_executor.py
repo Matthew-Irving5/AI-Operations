@@ -7,13 +7,13 @@ from pathlib import Path
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from ai_operations_worker.executor import execute
-from ai_operations_worker.manifest import verify_manifest
-from ai_operations_worker.state import StateStore
-from ai_operations_worker.inventory import collect
-from ai_operations_worker.identity import public_key_b64
-from ai_operations_worker.results import sign_scan_result
 from ai_operations_worker.archive import restore_parquet, write_parquet
+from ai_operations_worker.executor import execute
+from ai_operations_worker.identity import public_key_b64
+from ai_operations_worker.inventory import collect
+from ai_operations_worker.manifest import verify_manifest
+from ai_operations_worker.results import sign_scan_result
+from ai_operations_worker.state import StateStore
 
 
 def signed_payload(source: Path, destination: Path, key: Ed25519PrivateKey) -> tuple[dict[str, object], str, str]:
@@ -73,7 +73,7 @@ def test_executor_blocks_a_reparse_point_source(tmp_path: Path, monkeypatch: pyt
     payload, signature, public = signed_payload(target, destination, key)
     payload["source"] = str(source)
     signature = base64.b64encode(
-        key.sign(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())
+        key.sign(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()),
     ).decode()
     manifest = verify_manifest(payload, signature, public, "device-1", datetime.now(UTC))
     original_is_symlink = Path.is_symlink

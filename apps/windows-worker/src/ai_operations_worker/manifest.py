@@ -37,7 +37,7 @@ class ActionManifest:
     precondition: FilePrecondition
 
     @classmethod
-    def from_payload(cls, payload: dict[str, object]) -> "ActionManifest":
+    def from_payload(cls, payload: dict[str, object]) -> ActionManifest:
         try:
             return cls(
                 manifest_id=str(payload["manifest_id"]),
@@ -53,12 +53,12 @@ class ActionManifest:
 
 
 def verify_manifest(
-    payload: dict[str, object], signature_b64: str, public_key_b64: str, device_id: str, now: datetime
+    payload: dict[str, object], signature_b64: str, public_key_b64: str, device_id: str, now: datetime,
 ) -> ActionManifest:
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     try:
         Ed25519PublicKey.from_public_bytes(base64.b64decode(public_key_b64)).verify(
-            base64.b64decode(signature_b64), canonical
+            base64.b64decode(signature_b64), canonical,
         )
     except (ValueError, InvalidSignature) as error:
         raise ValueError("manifest_signature_invalid") from error

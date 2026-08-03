@@ -1,9 +1,12 @@
 """Windows DPAPI-protected Ed25519 identity; private material never leaves this device."""
 from __future__ import annotations
+
 import base64
 from pathlib import Path
+
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 
 def create_or_load_private_key(path: Path) -> Ed25519PrivateKey:
     if path.exists():

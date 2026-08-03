@@ -1,11 +1,14 @@
 """Verified Parquet/Zstandard archive artifacts and synthetic restore drills."""
 from __future__ import annotations
+
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
 import pyarrow as pa
 import pyarrow.parquet as pq
+
 
 @dataclass(frozen=True)
 class ArchiveManifest:

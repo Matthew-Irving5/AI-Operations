@@ -1,8 +1,9 @@
+from pathlib import Path
+
 import pytest
 
-from ai_operations_worker.config import WorkerEndpoint
 from ai_operations_worker.client import WorkerConfiguration
-from pathlib import Path
+from ai_operations_worker.config import WorkerEndpoint
 
 
 def test_worker_requires_an_outbound_https_control_plane() -> None:

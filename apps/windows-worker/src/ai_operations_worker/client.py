@@ -1,13 +1,15 @@
 """Outbound-only polling worker. It never binds a local port or accepts remote commands."""
 from __future__ import annotations
+
 import json
 import os
 import time
-from datetime import UTC, datetime
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.request import Request, urlopen
+
 from .config import WorkerEndpoint
 from .executor import execute
 from .identity import create_or_load_private_key
@@ -15,6 +17,7 @@ from .inventory import collect
 from .manifest import verify_manifest
 from .results import sign_scan_result
 from .state import StateStore
+
 
 @dataclass(frozen=True)
 class WorkerConfiguration:
