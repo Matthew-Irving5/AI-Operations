@@ -35,6 +35,14 @@ jobs:
         run: |
           npx supabase link --project-ref "$PROJECT_REF" --password "$DB_PASSWORD"
           npx supabase db push --linked --password "$DB_PASSWORD" --yes
+      - name: Deploy Supabase Edge Functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.STAGING_SUPABASE_ACCESS_TOKEN }}
+          PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+        run: |
+          for function in supabase/functions/*; do
+            npx supabase functions deploy "$(basename "$function")" --project-ref "$PROJECT_REF"
+          done
       - name: Smoke test staging Worker
         run: |
           for attempt in {1..18}; do

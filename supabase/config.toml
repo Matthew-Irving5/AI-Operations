@@ -48,6 +48,31 @@ verify_jwt = true
 
 [functions.github-career-sync]
 verify_jwt = true
+
+[functions.worker-poll]
+verify_jwt = false
+
+[functions.worker-heartbeat]
+verify_jwt = false
+
+[functions.worker-submit-result]
+verify_jwt = false
+
+[functions.worker-submit-action-result]
+verify_jwt = false
+
+[functions.worker-pair]
+verify_jwt = false
+
+[functions.digital-plan-approve]
+verify_jwt = true
+
+[functions.device-register]
+verify_jwt = true
+
+[functions.digital-scan-create]
+verify_jwt = true
+
 [api]
 enabled = true
 port = 54321
