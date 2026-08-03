@@ -9,6 +9,9 @@ verify_jwt = false
 verify_jwt = false
 [functions.openai-webhook]
 verify_jwt = false
+
+[functions.notification-dispatch]
+verify_jwt = false
 [functions.workflow-launch]
 verify_jwt = true
 [functions.feedback-submit]
