@@ -1,6 +1,20 @@
 project_id = "ai-operations-local"
 [functions.manager-list]
 verify_jwt = true
+[functions.scheduler-dispatch]
+verify_jwt = false
+[functions.job-worker]
+verify_jwt = false
+[functions.job-complete]
+verify_jwt = false
+[functions.openai-webhook]
+verify_jwt = false
+[functions.workflow-launch]
+verify_jwt = true
+[functions.feedback-submit]
+verify_jwt = true
+[functions.approval-decide]
+verify_jwt = true
 [api]
 enabled = true
 port = 54321
