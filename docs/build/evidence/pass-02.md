@@ -1,6 +1,6 @@
 # Pass 02 evidence
 
-Status: IN_PROGRESS.
+Status: READY_FOR_REVIEW.
 
 ## Verified locally
 
