@@ -40,6 +40,7 @@ jobs:
           PROJECT_REF: ${{ secrets.PRODUCTION_SUPABASE_PROJECT_REF }}
         run: |
           for function in supabase/functions/*; do
+            [[ "$(basename "$function")" == _* ]] && continue
             npx supabase functions deploy "$(basename "$function")" --project-ref "$PROJECT_REF"
           done
       - name: Safe production smoke test
