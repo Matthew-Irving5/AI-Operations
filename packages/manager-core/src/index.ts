@@ -167,6 +167,68 @@ export const personalWorkflows: readonly WorkflowDefinition[] = [
   },
 ];
 
+export type HealthObservation = Readonly<{
+  metric: string;
+  observedAt: string;
+  value: number;
+  unit: string;
+}>;
+export type HealthDailySummary = Readonly<{
+  date: string;
+  weightKg: number | null;
+  steps: number;
+  sleepHours: number | null;
+  runningDistanceKm: number;
+  confidence: 'low' | 'medium' | 'high';
+}>;
+
+export function summariseHealthDay(
+  date: string,
+  observations: readonly HealthObservation[],
+): HealthDailySummary {
+  const day = observations.filter((item) => item.observedAt.startsWith(date));
+  const values = (metric: string) =>
+    day.filter((item) => item.metric === metric).map((item) => item.value);
+  const weight = values('weight_kg');
+  const sleep = values('sleep_hours');
+  const steps = values('steps').reduce((total, value) => total + value, 0);
+  const distance = values('running_distance_km').reduce((total, value) => total + value, 0);
+  const present = [weight.length > 0, steps > 0, sleep.length > 0, distance > 0].filter(
+    Boolean,
+  ).length;
+  return {
+    date,
+    weightKg: weight.length ? (weight[weight.length - 1] ?? null) : null,
+    steps,
+    sleepHours: sleep.length ? sleep.reduce((total, value) => total + value, 0) : null,
+    runningDistanceKm: distance,
+    confidence: present >= 3 ? 'high' : present >= 2 ? 'medium' : 'low',
+  };
+}
+
+export type FinanceTransaction = Readonly<{ date: string; amountMinor: number; currency: string }>;
+export type Reconciliation = Readonly<{
+  balanced: boolean;
+  expectedClosingMinor: number;
+  reasons: readonly string[];
+}>;
+
+export function reconcileStatement(
+  openingMinor: number,
+  closingMinor: number,
+  currency: string,
+  transactions: readonly FinanceTransaction[],
+): Reconciliation {
+  const reasons: string[] = [];
+  if (!/^[A-Z]{3}$/.test(currency)) reasons.push('invalid_statement_currency');
+  if (transactions.some((transaction) => transaction.currency !== currency))
+    reasons.push('currency_mismatch');
+  const expectedClosingMinor =
+    openingMinor + transactions.reduce((total, transaction) => total + transaction.amountMinor, 0);
+  if (expectedClosingMinor !== closingMinor) reasons.push('balance_mismatch');
+  return { balanced: reasons.length === 0, expectedClosingMinor, reasons };
+}
+
 export class SyntheticSystemsManager implements OperationsManager {
   code: ManagerCode = 'systems';
   getWorkflowDefinitions() {

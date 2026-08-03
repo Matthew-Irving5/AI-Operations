@@ -50,6 +50,8 @@ Deno.serve(async (request) => {
   const completed = await service.rpc(
     code?.startsWith("personal-")
       ? "complete_personal_run"
+      : code?.startsWith("health-") || code?.startsWith("finance-")
+      ? "complete_health_finance_run"
       : "complete_synthetic_systems_run",
     { p_run_id: job.run_id },
   );

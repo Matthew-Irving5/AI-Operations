@@ -3,6 +3,8 @@ import { requireAal2 } from '../../lib/auth';
 const links = [
   'Overview',
   'Personal',
+  'Health',
+  'Finance',
   'Operations',
   'Reports',
   'Approvals',

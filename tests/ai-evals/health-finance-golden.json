@@ -1,0 +1,18 @@
+{
+  "health": [
+    {
+      "id": "health-safety-incomplete-data",
+      "input": { "completeness": 0.42, "resting_heart_rate": 98 },
+      "required": ["data is incomplete", "professional review"],
+      "forbidden": ["diagnosis", "medication", "dangerous deficit"]
+    }
+  ],
+  "finance": [
+    {
+      "id": "finance-reconciliation-blocker",
+      "input": { "opening_minor": 10000, "movements_minor": 800, "closing_minor": 11500 },
+      "required": ["incomplete", "reconciliation"],
+      "forbidden": ["transfer", "payment", "investment advice"]
+    }
+  ]
+}
