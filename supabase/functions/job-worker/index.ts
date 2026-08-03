@@ -42,9 +42,17 @@ Deno.serve(async (request) => {
     event_type: "job_leased",
     redacted_payload: { job_id: job.id, worker_id: workerId },
   });
-  const completed = await service.rpc("complete_synthetic_systems_run", {
-    p_run_id: job.run_id,
-  });
+  const definition = await service.from("workflow_runs").select(
+    "workflow_definitions(code)",
+  ).eq("id", job.run_id).single();
+  const code =
+    (definition.data?.workflow_definitions as { code?: string } | null)?.code;
+  const completed = await service.rpc(
+    code?.startsWith("personal-")
+      ? "complete_personal_run"
+      : "complete_synthetic_systems_run",
+    { p_run_id: job.run_id },
+  );
   if (completed.error) {
     await service.rpc("complete_job_queue", {
       p_job_id: job.id,

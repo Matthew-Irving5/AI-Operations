@@ -21,6 +21,24 @@ verify_jwt = true
 
 [functions.workflow-cancel]
 verify_jwt = true
+
+[functions.apple-bridge-ingest]
+verify_jwt = false
+
+[functions.apple-bridge-actions]
+verify_jwt = false
+
+[functions.apple-bridge-device]
+verify_jwt = true
+
+[functions.google-oauth-start]
+verify_jwt = true
+
+[functions.google-oauth-callback]
+verify_jwt = false
+
+[functions.google-sync]
+verify_jwt = false
 [api]
 enabled = true
 port = 54321

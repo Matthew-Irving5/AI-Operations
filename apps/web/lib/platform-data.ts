@@ -69,6 +69,35 @@ const queueJobSchema = z.object({
     })
     .nullable(),
 });
+const personalEventSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  starts_at: z.string(),
+  ends_at: z.string(),
+  source: z.string(),
+});
+const reminderSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  due_at: z.string().nullable(),
+  completed_at: z.string().nullable(),
+  priority: z.number(),
+  list_name: z.string(),
+});
+const routineSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  cadence: z.string(),
+  active: z.boolean(),
+});
+const connectionSchema = z.object({
+  id: z.string().uuid(),
+  provider: z.string(),
+  account_label: z.string(),
+  status: z.string(),
+  scopes: z.array(z.string()),
+  created_at: z.string(),
+});
 
 export type PageData<T> = Readonly<{ data: T; error: string | null }>;
 
@@ -238,4 +267,58 @@ export async function queueJobsData(): Promise<PageData<z.infer<typeof queueJobS
   return error
     ? { data: [], error: 'Queue items could not be loaded.' }
     : parsedRows(data, z.array(queueJobSchema));
+}
+
+export async function personalOperationsData(): Promise<
+  Readonly<{
+    events: PageData<z.infer<typeof personalEventSchema>[]>;
+    reminders: PageData<z.infer<typeof reminderSchema>[]>;
+    routines: PageData<z.infer<typeof routineSchema>[]>;
+  }>
+> {
+  const client = await createSupabaseServerClient();
+  const horizon = new Date(Date.now() + 7 * 24 * 60 * 60_000).toISOString();
+  const [events, reminders, routines] = await Promise.all([
+    client
+      .from('calendar_events')
+      .select('id,title,starts_at,ends_at,source')
+      .gte('ends_at', new Date().toISOString())
+      .lte('starts_at', horizon)
+      .order('starts_at')
+      .limit(100),
+    client
+      .from('reminders')
+      .select('id,title,due_at,completed_at,priority,list_name')
+      .is('completed_at', null)
+      .order('due_at')
+      .limit(100),
+    client
+      .from('routines')
+      .select('id,title,cadence,active')
+      .eq('active', true)
+      .order('title')
+      .limit(100),
+  ]);
+  return {
+    events: events.error
+      ? { data: [], error: 'Calendar events could not be loaded.' }
+      : parsedRows(events.data, z.array(personalEventSchema)),
+    reminders: reminders.error
+      ? { data: [], error: 'Reminders could not be loaded.' }
+      : parsedRows(reminders.data, z.array(reminderSchema)),
+    routines: routines.error
+      ? { data: [], error: 'Routines could not be loaded.' }
+      : parsedRows(routines.data, z.array(routineSchema)),
+  };
+}
+
+export async function connectionsData(): Promise<PageData<z.infer<typeof connectionSchema>[]>> {
+  const client = await createSupabaseServerClient();
+  const { data, error } = await client
+    .from('connections')
+    .select('id,provider,account_label,status,scopes,created_at')
+    .order('created_at', { ascending: false });
+  return error
+    ? { data: [], error: 'Connections could not be loaded.' }
+    : parsedRows(data, z.array(connectionSchema));
 }

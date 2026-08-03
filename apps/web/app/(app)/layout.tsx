@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { requireAal2 } from '../../lib/auth';
 const links = [
   'Overview',
+  'Personal',
   'Operations',
   'Reports',
   'Approvals',
