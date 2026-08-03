@@ -52,6 +52,9 @@ Deno.serve(async (request) => {
       ? "complete_personal_run"
       : code?.startsWith("health-") || code?.startsWith("finance-")
       ? "complete_health_finance_run"
+      : code?.startsWith("career-") || code?.startsWith("travel-") ||
+          code?.startsWith("procurement-")
+      ? "complete_career_travel_procurement_run"
       : "complete_synthetic_systems_run",
     { p_run_id: job.run_id },
   );

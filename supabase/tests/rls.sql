@@ -1,5 +1,5 @@
 begin;
-select plan(33);
+select plan(38);
 
 select ok(
   not exists (
@@ -88,6 +88,13 @@ select ok(exists(select 1 from pg_proc where proname = 'complete_health_finance_
 insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idempotency_key)
 select '00000000-0000-0000-0000-000000000101', id, 'schedule', 'synthetic-health-daily-run' from public.workflow_definitions where code = 'health-daily-processing';
 select lives_ok($$select public.complete_health_finance_run(id) from public.workflow_runs where idempotency_key = 'synthetic-health-daily-run'$$, 'Health daily run completes safely with incomplete data');
+select ok(exists(select 1 from public.workflow_definitions where code = 'career-daily-evidence-sync' and active), 'Career daily evidence workflow is active');
+select ok(exists(select 1 from public.workflow_definitions where code = 'travel-on-demand-plan' and active), 'Travel on-demand workflow is active');
+select ok(exists(select 1 from public.workflow_definitions where code = 'procurement-on-demand-research' and active), 'Procurement on-demand workflow is active');
+insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idempotency_key)
+select '00000000-0000-0000-0000-000000000101', id, 'manual', 'synthetic-career-run' from public.workflow_definitions where code = 'career-daily-evidence-sync';
+select lives_ok($$select public.complete_career_travel_procurement_run(id) from public.workflow_runs where idempotency_key = 'synthetic-career-run'$$, 'Career completion creates a provenance-constrained report');
+select throws_ok($$insert into public.career_github_evidence(user_id, repository_external_id, repository_name, owner_login, evidence_kind, source_url, retrieved_at) values ('00000000-0000-0000-0000-000000000101', 1, 'denied', 'BrightSG', 'repository', 'https://github.com/Matthew-Irving5/denied', now())$$, 'new row for relation "career_github_evidence" violates check constraint "career_github_evidence_owner_login_check"', 'BrightSG can never be stored as Career GitHub evidence');
 
 select * from finish();
 rollback;
