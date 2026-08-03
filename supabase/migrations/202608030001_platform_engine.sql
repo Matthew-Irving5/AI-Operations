@@ -219,3 +219,15 @@ select cron.schedule(
   '*/5 * * * *',
   $$select public.dispatch_due_schedules();$$
 );
+
+insert into public.feedback_categories(workflow_code, section_code, label) values
+  ('systems-daily-cost-capacity', null, 'accuracy'),
+  ('systems-daily-cost-capacity', null, 'usefulness'),
+  ('systems-daily-cost-capacity', null, 'cost'),
+  ('systems-weekly-quality-platform', null, 'factual claim'),
+  ('systems-weekly-quality-platform', null, 'evidence'),
+  ('systems-weekly-quality-platform', null, 'recommendation'),
+  ('systems-monthly-cost-report', null, 'numerical error'),
+  ('systems-monthly-cost-report', null, 'forecast'),
+  ('systems-monthly-cost-report', null, 'usability')
+on conflict (workflow_code, section_code, label) do nothing;

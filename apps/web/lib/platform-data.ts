@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from './supabase-server';
 const reportSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
+  report_type: z.string(),
   summary: z.string(),
   status: z.string(),
   created_at: z.string(),
@@ -67,12 +68,28 @@ export async function reportsData(): Promise<PageData<z.infer<typeof reportSchem
   const client = await createSupabaseServerClient();
   const { data, error } = await client
     .from('reports')
-    .select('id,title,summary,status,created_at')
+    .select('id,title,report_type,summary,status,created_at')
     .order('created_at', { ascending: false })
     .limit(50);
   return error
     ? { data: [], error: 'Reports could not be loaded.' }
     : parsedRows(data, z.array(reportSchema));
+}
+
+export async function feedbackCategoriesData(): Promise<
+  PageData<Readonly<{ workflow_code: string; label: string }>[]>
+> {
+  const client = await createSupabaseServerClient();
+  const { data, error } = await client
+    .from('feedback_categories')
+    .select('workflow_code,label')
+    .eq('active', true)
+    .order('workflow_code')
+    .order('label');
+  const schema = z.array(z.object({ workflow_code: z.string(), label: z.string() }));
+  return error
+    ? { data: [], error: 'Feedback categories could not be loaded.' }
+    : parsedRows(data, schema);
 }
 
 export async function approvalsData(): Promise<PageData<z.infer<typeof approvalSchema>[]>> {

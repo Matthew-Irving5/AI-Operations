@@ -24,6 +24,11 @@ button,
 input {
   font: inherit;
 }
+textarea {
+  font: inherit;
+  width: 100%;
+  min-height: 80px;
+}
 .shell {
   min-height: 100vh;
   display: grid;
@@ -76,6 +81,19 @@ main {
 .stack {
   display: grid;
   gap: 12px;
+}
+.feedback {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.feedback button {
+  margin-right: 8px;
+}
+.feedback label,
+.feedback fieldset {
+  display: grid;
+  gap: 6px;
 }
 code {
   overflow-wrap: anywhere;

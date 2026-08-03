@@ -1,7 +1,11 @@
-import { reportsData } from '../../../lib/platform-data';
+import { feedbackCategoriesData, reportsData } from '../../../lib/platform-data';
+import { FeedbackForm } from './feedback-form';
 
 export default async function ReportsPage() {
-  const { data: reports, error } = await reportsData();
+  const [{ data: reports, error }, { data: categories }] = await Promise.all([
+    reportsData(),
+    feedbackCategoriesData(),
+  ]);
   return (
     <>
       <h1>Reports</h1>
@@ -25,6 +29,12 @@ export default async function ReportsPage() {
               </div>
               <h2>{report.title}</h2>
               <p>{report.summary}</p>
+              <FeedbackForm
+                reportId={report.id}
+                categories={categories
+                  .filter((category) => category.workflow_code === report.report_type)
+                  .map((category) => category.label)}
+              />
             </article>
           ))}
         </section>
