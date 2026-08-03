@@ -112,6 +112,26 @@ const financeCloseSchema = z.object({
   readiness: z.string(),
   reconciled: z.boolean(),
 });
+const careerEvidenceSchema = z.object({
+  repository_name: z.string(),
+  evidence_kind: z.string(),
+  retrieved_at: z.string(),
+});
+const researchRunSchema = z.object({
+  id: z.string().uuid(),
+  manager_code: z.string(),
+  status: z.string(),
+  hard_cap_minor: z.number(),
+  search_limit: z.number(),
+  searches_used: z.number(),
+  created_at: z.string(),
+});
+const watchSchema = z.object({
+  id: z.string().uuid(),
+  watch_kind: z.string(),
+  expiry_at: z.string(),
+  active: z.boolean(),
+});
 
 export type PageData<T> = Readonly<{ data: T; error: string | null }>;
 
@@ -384,5 +404,65 @@ export async function financeData(): Promise<
     transactionCount: transactions.error
       ? { data: 0, error: 'Finance transaction status could not be loaded.' }
       : { data: transactions.count ?? 0, error: null },
+  };
+}
+
+export async function careerData(): Promise<
+  Readonly<{
+    evidence: PageData<z.infer<typeof careerEvidenceSchema>[]>;
+    sourceCount: PageData<number>;
+  }>
+> {
+  const client = await createSupabaseServerClient();
+  const [evidence, sources] = await Promise.all([
+    client
+      .from('career_github_evidence')
+      .select('repository_name,evidence_kind,retrieved_at')
+      .order('retrieved_at', { ascending: false })
+      .limit(50),
+    client
+      .from('research_sources')
+      .select('*', { count: 'exact', head: true })
+      .eq('domain_area', 'career'),
+  ]);
+  return {
+    evidence: evidence.error
+      ? { data: [], error: 'Career evidence could not be loaded.' }
+      : parsedRows(evidence.data, z.array(careerEvidenceSchema)),
+    sourceCount: sources.error
+      ? { data: 0, error: 'Career sources could not be loaded.' }
+      : { data: sources.count ?? 0, error: null },
+  };
+}
+
+export async function onDemandData(manager: 'travel' | 'procurement'): Promise<
+  Readonly<{
+    runs: PageData<z.infer<typeof researchRunSchema>[]>;
+    watches: PageData<z.infer<typeof watchSchema>[]>;
+  }>
+> {
+  const client = await createSupabaseServerClient();
+  const [runs, watches] = await Promise.all([
+    client
+      .from('on_demand_research_runs')
+      .select('id,manager_code,status,hard_cap_minor,search_limit,searches_used,created_at')
+      .eq('manager_code', manager)
+      .order('created_at', { ascending: false })
+      .limit(25),
+    manager === 'travel'
+      ? client
+          .from('travel_watches')
+          .select('id,watch_kind,expiry_at,active')
+          .order('expiry_at')
+          .limit(25)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  return {
+    runs: runs.error
+      ? { data: [], error: 'On-demand research runs could not be loaded.' }
+      : parsedRows(runs.data, z.array(researchRunSchema)),
+    watches: watches.error
+      ? { data: [], error: 'Watch status could not be loaded.' }
+      : parsedRows(watches.data, z.array(watchSchema)),
   };
 }

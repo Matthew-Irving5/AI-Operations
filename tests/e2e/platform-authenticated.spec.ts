@@ -109,3 +109,21 @@ test('Health and Finance AAL2 surfaces make safe empty states explicit', async (
   await expect(page.getByRole('heading', { name: 'Finance Operations' })).toBeVisible();
   await expect(page.getByText('No close has been prepared.')).toBeVisible();
 });
+
+test('Career, Travel, and Procurement surfaces expose bounded empty states at desktop and mobile widths', async ({
+  page,
+}) => {
+  await page.goto('/career');
+  await expect(page.getByRole('heading', { name: 'Career Operations' })).toBeVisible();
+  await expect(page.getByText('No personal repository evidence is retained yet.')).toBeVisible();
+  await page.goto('/travel');
+  await expect(page.getByRole('heading', { name: 'Travel Planning' })).toBeVisible();
+  await expect(page.getByText('No plan has been launched.')).toBeVisible();
+  await page.goto('/procurement');
+  await expect(page.getByRole('heading', { name: 'Consumer & Procurement' })).toBeVisible();
+  await expect(page.getByText('No research request has been launched.')).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(
+    page.evaluate(() => document.documentElement.scrollWidth),
+  ).resolves.toBeLessThanOrEqual(390);
+});

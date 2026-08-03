@@ -229,6 +229,54 @@ export function reconcileStatement(
   return { balanced: reasons.length === 0, expectedClosingMinor, reasons };
 }
 
+export type BoundedResearchRequest = Readonly<{
+  hardCapMinor: number;
+  requestedSpendMinor: number;
+  searchLimit: number;
+  requestedSearches: number;
+  model: 'gpt-5.6-luna' | 'gpt-5.6-terra' | 'gpt-5.6-sol';
+}>;
+
+export function validateBoundedResearch(request: BoundedResearchRequest): ValidationResult {
+  const reasons: string[] = [];
+  if (!Number.isSafeInteger(request.hardCapMinor) || request.hardCapMinor <= 0)
+    reasons.push('invalid_hard_cap');
+  if (request.requestedSpendMinor > request.hardCapMinor) reasons.push('hard_cap_exceeded');
+  if (!Number.isInteger(request.searchLimit) || request.searchLimit < 1)
+    reasons.push('invalid_search_limit');
+  if (request.requestedSearches > request.searchLimit) reasons.push('search_limit_exceeded');
+  if (request.model === 'gpt-5.6-sol') reasons.push('model_ceiling_exceeded');
+  return { valid: reasons.length === 0, reasons };
+}
+
+export type ResearchSource = Readonly<{
+  url: string;
+  retrievedAt: string;
+  publishedAt: string | null;
+}>;
+export function validateCurrentResearchSource(
+  source: ResearchSource,
+  now: string,
+  maxAgeDays = 365,
+): ValidationResult {
+  const reasons: string[] = [];
+  if (!/^https:\/\//.test(source.url)) reasons.push('citation_url_invalid');
+  const retrieved = Date.parse(source.retrievedAt);
+  if (Number.isNaN(retrieved)) reasons.push('source_retrieval_invalid');
+  if (!Number.isNaN(retrieved) && Date.parse(now) - retrieved > maxAgeDays * 86_400_000)
+    reasons.push('source_out_of_date');
+  return { valid: reasons.length === 0, reasons };
+}
+
+export function isWatchNotificationMaterial(
+  previousFingerprint: string | null,
+  currentFingerprint: string,
+  expiresAt: string,
+  now: string,
+): boolean {
+  return Date.parse(expiresAt) > Date.parse(now) && previousFingerprint !== currentFingerprint;
+}
+
 export class SyntheticSystemsManager implements OperationsManager {
   code: ManagerCode = 'systems';
   getWorkflowDefinitions() {

@@ -1,9 +1,12 @@
 import { expect, it } from 'vitest';
 import {
+  isWatchNotificationMaterial,
   planPersonalDay,
   reconcileStatement,
   requireIdempotencyKey,
   summariseHealthDay,
+  validateBoundedResearch,
+  validateCurrentResearchSource,
 } from './index';
 it('requires a non-trivial idempotency key', () =>
   expect(() => requireIdempotencyKey('short')).toThrow('invalid_idempotency_key'));
@@ -86,4 +89,41 @@ it('flags a deliberately unbalanced finance statement and currency mismatch', ()
     expectedClosingMinor: 10_800,
     reasons: ['currency_mismatch', 'balance_mismatch'],
   });
+});
+
+it('enforces individual on-demand hard caps, search ceilings, and model ceilings', () => {
+  expect(
+    validateBoundedResearch({
+      hardCapMinor: 100,
+      requestedSpendMinor: 101,
+      searchLimit: 3,
+      requestedSearches: 4,
+      model: 'gpt-5.6-sol',
+    }),
+  ).toEqual({
+    valid: false,
+    reasons: ['hard_cap_exceeded', 'search_limit_exceeded', 'model_ceiling_exceeded'],
+  });
+});
+
+it('requires current cited sources and deduplicates expired watches', () => {
+  expect(
+    validateCurrentResearchSource(
+      {
+        url: 'https://example.test/source',
+        retrievedAt: '2024-01-01T00:00:00Z',
+        publishedAt: null,
+      },
+      '2026-08-03T00:00:00Z',
+    ).reasons,
+  ).toContain('source_out_of_date');
+  expect(
+    isWatchNotificationMaterial('same', 'same', '2026-08-04T00:00:00Z', '2026-08-03T00:00:00Z'),
+  ).toBe(false);
+  expect(
+    isWatchNotificationMaterial('old', 'new', '2026-08-04T00:00:00Z', '2026-08-03T00:00:00Z'),
+  ).toBe(true);
+  expect(
+    isWatchNotificationMaterial('old', 'new', '2026-08-02T00:00:00Z', '2026-08-03T00:00:00Z'),
+  ).toBe(false);
 });
