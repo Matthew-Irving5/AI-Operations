@@ -32,20 +32,24 @@ Deno.serve(async (request) => {
   }
   const accessToken = Deno.env.get("GMAIL_ACCESS_TOKEN");
   if (!accessToken) return json({ code: "gmail_not_configured" }, 503);
-  const { data: notifications, error } = await service.from("notifications")
-    .select("id,recipient,subject,body_reference,correlation_id")
-    .eq("status", "queued")
-    .order("created_at")
-    .limit(20);
+  const workerId = request.headers.get("x-notification-worker-id")?.slice(
+    0,
+    100,
+  ) ?? "notification-dispatch";
+  const { data: notifications, error } = await service.rpc(
+    "claim_notification_delivery",
+    { p_worker_id: workerId, p_limit: 20 },
+  );
   if (error) return json({ code: "notification_lookup_failed" }, 500);
   let sent = 0;
   let failed = 0;
   for (const notification of notifications ?? []) {
     if (notification.recipient.toLowerCase() !== recipient) {
-      await service.from("notifications").update({ status: "failed" }).eq(
-        "id",
-        notification.id,
-      );
+      await service.rpc("complete_notification_delivery", {
+        p_notification_id: notification.id,
+        p_worker_id: workerId,
+        p_error: "notification_recipient_forbidden",
+      });
       failed += 1;
       continue;
     }
@@ -73,15 +77,20 @@ Deno.serve(async (request) => {
     );
     const result = await response.json() as { id?: string };
     if (!response.ok || !result.id) {
+      await service.rpc("complete_notification_delivery", {
+        p_notification_id: notification.id,
+        p_worker_id: workerId,
+        p_error: `gmail_send_${response.status}`,
+      });
       failed += 1;
       continue;
     }
-    const updated = await service.from("notifications").update({
-      status: "sent",
-      sent_at: new Date().toISOString(),
-      gmail_message_id: result.id,
-    }).eq("id", notification.id).eq("status", "queued");
-    if (updated.error) failed += 1;
+    const completed = await service.rpc("complete_notification_delivery", {
+      p_notification_id: notification.id,
+      p_worker_id: workerId,
+      p_gmail_message_id: result.id,
+    });
+    if (completed.error) failed += 1;
     else sent += 1;
   }
   return json({ sent, failed });

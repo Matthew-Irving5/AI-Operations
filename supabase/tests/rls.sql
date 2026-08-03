@@ -1,5 +1,5 @@
 begin;
-select plan(19);
+select plan(20);
 
 select ok(
   not exists (
@@ -63,6 +63,7 @@ insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idemp
 select '00000000-0000-0000-0000-000000000101', id, 'manual', 'synthetic-cancellable-run'
 from public.workflow_definitions where code = 'systems-daily-cost-capacity';
 select ok(public.cancel_queued_run('00000000-0000-0000-0000-000000000101', (select id from public.workflow_runs where idempotency_key = 'synthetic-cancellable-run')), 'an eligible queued run can be cancelled transactionally');
+select ok(exists(select 1 from pg_proc where proname = 'claim_notification_delivery'), 'notification delivery uses a lease claim function');
 
 select * from finish();
 rollback;

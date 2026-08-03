@@ -244,3 +244,38 @@ begin
     select user_id, correlation_id, 'run_cancelled', jsonb_build_object('run_id', p_run_id) from public.workflow_runs where id = p_run_id;
   return true;
 end; $$;
+
+alter table public.notifications add column attempt_count integer not null default 0 check (attempt_count >= 0);
+alter table public.notifications add column available_at timestamptz not null default now();
+alter table public.notifications add column lease_owner text;
+alter table public.notifications add column lease_expires_at timestamptz;
+alter table public.notifications add column last_error text;
+create index notifications_delivery_claim_idx on public.notifications(status, available_at) where status = 'queued';
+
+create or replace function public.claim_notification_delivery(p_worker_id text, p_limit integer default 10)
+returns setof public.notifications language plpgsql security definer set search_path = public as $$
+begin
+  return query with claimed as (
+    select id from public.notifications
+      where (status = 'queued' and available_at <= now()) or (status = 'sending' and lease_expires_at < now())
+      order by available_at, created_at for update skip locked limit greatest(1, least(p_limit, 20))
+  ) update public.notifications n set status = 'sending', lease_owner = p_worker_id,
+      lease_expires_at = now() + interval '5 minutes', attempt_count = n.attempt_count + 1
+    from claimed where n.id = claimed.id returning n.*;
+end; $$;
+
+create or replace function public.complete_notification_delivery(p_notification_id uuid, p_worker_id text, p_gmail_message_id text default null, p_error text default null)
+returns public.notifications language plpgsql security definer set search_path = public as $$
+declare completed public.notifications;
+begin
+  select * into completed from public.notifications where id = p_notification_id and status = 'sending' and lease_owner = p_worker_id for update;
+  if not found then raise exception 'notification_lease_not_owned'; end if;
+  if p_gmail_message_id is not null then
+    update public.notifications set status = 'sent', sent_at = now(), gmail_message_id = p_gmail_message_id, lease_owner = null, lease_expires_at = null, last_error = null where id = p_notification_id returning * into completed;
+  elsif completed.attempt_count >= 3 then
+    update public.notifications set status = 'dead_letter', lease_owner = null, lease_expires_at = null, last_error = left(coalesce(p_error, 'delivery_failed'), 500) where id = p_notification_id returning * into completed;
+  else
+    update public.notifications set status = 'queued', available_at = now() + make_interval(secs => least(3600, 2 ^ completed.attempt_count) + floor(random() * 30)::int), lease_owner = null, lease_expires_at = null, last_error = left(coalesce(p_error, 'delivery_failed'), 500) where id = p_notification_id returning * into completed;
+  end if;
+  return completed;
+end; $$;
