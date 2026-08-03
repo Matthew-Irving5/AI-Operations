@@ -26,3 +26,29 @@ export const actionRequestSchema = z.object({
   reason: z.string().max(1000),
 });
 export type ManagerCode = z.infer<typeof managerCodeSchema>;
+
+export const budgetCategorySchema = z.enum(['recurring', 'on_demand']);
+export const aiOutputSchema = z.object({
+  summary: z.string().min(1),
+  findings: z.array(z.object({ claim: z.string(), evidenceIds: z.array(z.string()).min(1) })),
+  recommendations: z.array(z.string()),
+  actions: z.array(
+    z.object({
+      type: z.string(),
+      title: z.string(),
+      risk: z.enum(['low', 'medium', 'high', 'critical']),
+    }),
+  ),
+  alerts: z.array(z.string()),
+  evidence: z.array(z.object({ id: z.string(), source: z.string() })),
+  uncertainties: z.array(z.string()),
+  report_sections: z.array(z.object({ code: z.string(), title: z.string(), content: z.string() })),
+});
+export type AiOutput = z.infer<typeof aiOutputSchema>;
+export const notificationRequestSchema = z.object({
+  type: z.string().min(1),
+  subject: z.string().min(1).max(200),
+  body: z.string().min(1),
+  dedupeKey: z.string().min(8).max(200),
+  correlationId: z.string().uuid(),
+});

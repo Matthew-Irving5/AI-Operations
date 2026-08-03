@@ -20,7 +20,13 @@ export async function POST(request: Request) {
     challengeId: challenge.id,
     code: parsed.data.code,
   });
-  return error
-    ? NextResponse.json({ code: 'verification_failed' }, { status: 401 })
+  if (error) return NextResponse.json({ code: 'verification_failed' }, { status: 401 });
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return NextResponse.json({ code: 'unauthorised' }, { status: 401 });
+  const { error: eventError } = await supabase
+    .from('mfa_reauthentication_events')
+    .insert({ user_id: userData.user.id, method: 'totp' });
+  return eventError
+    ? NextResponse.json({ code: 'reauthentication_record_failed' }, { status: 500 })
     : NextResponse.json({ aal: 'aal2' });
 }
