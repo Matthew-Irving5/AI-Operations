@@ -1,5 +1,5 @@
 begin;
-select plan(24);
+select plan(29);
 
 select ok(
   not exists (
@@ -74,6 +74,14 @@ insert into public.feedback(user_id, report_id, positive, categories, comment) v
 insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idempotency_key) select '00000000-0000-0000-0000-000000000101', id, 'schedule', 'synthetic-weekly-quality-run' from public.workflow_definitions where code = 'systems-weekly-quality-platform';
 select lives_ok($$select public.complete_synthetic_systems_run(id) from public.workflow_runs where idempotency_key = 'synthetic-weekly-quality-run'$$, 'weekly Systems quality review creates a report');
 select is((select status from public.feedback order by created_at desc limit 1), 'included_in_quality_review', 'weekly quality review marks included feedback');
+select ok(exists(select 1 from public.workflow_definitions where code = 'personal-morning-plan' and active), 'Personal morning workflow is active');
+select ok(exists(select 1 from pg_proc where proname = 'complete_personal_run'), 'deterministic Personal completion function exists');
+insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idempotency_key)
+select '00000000-0000-0000-0000-000000000101', id, 'schedule', 'synthetic-personal-midday-run'
+from public.workflow_definitions where code = 'personal-midday-exception';
+select lives_ok($$select public.complete_personal_run(id) from public.workflow_runs where idempotency_key = 'synthetic-personal-midday-run'$$, 'a midpoint Personal run completes without an integration error');
+select is((select count(*) from public.notifications where dedupe_key like 'personal-report:%'), 0::bigint, 'an empty midpoint exception scan queues no email');
+select is((select material_change from public.personal_plans where report_id = (select id from public.reports where run_id = (select id from public.workflow_runs where idempotency_key = 'synthetic-personal-midday-run'))), false, 'midpoint no-change plan is recorded as non-material');
 
 select * from finish();
 rollback;

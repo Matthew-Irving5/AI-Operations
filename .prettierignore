@@ -6,3 +6,4 @@ apps/windows-worker/.pytest_cache/
 **/.pytest_cache/**
 AI_OPERATIONS_BUILD_SPEC.md
 CODEX_PASS_PROMPTS.md
+apps/web/next-env.d.ts

@@ -89,3 +89,14 @@ test('authenticated platform navigation remains usable at iPhone width', async (
     page.evaluate(() => document.documentElement.scrollWidth),
   ).resolves.toBeLessThanOrEqual(390);
 });
+
+test('Personal Operations and connection empty states remain available to an AAL2 user', async ({
+  page,
+}) => {
+  await page.goto('/personal');
+  await expect(page.getByRole('heading', { name: 'Personal Operations' })).toBeVisible();
+  await expect(page.getByText('No open reminders have been imported.')).toBeVisible();
+  await page.goto('/data-sources');
+  await expect(page.getByRole('heading', { name: 'Data Sources' })).toBeVisible();
+  await expect(page.getByText('No Google account is connected.')).toBeVisible();
+});
