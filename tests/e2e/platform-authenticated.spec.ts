@@ -127,3 +127,10 @@ test('Career, Travel, and Procurement surfaces expose bounded empty states at de
     page.evaluate(() => document.documentElement.scrollWidth),
   ).resolves.toBeLessThanOrEqual(390);
 });
+
+test('Digital Estate shows its safe paired-worker empty state', async ({ page }) => {
+  await page.goto('/digital-estate');
+  await expect(page.getByRole('heading', { name: 'Digital Estate' })).toBeVisible();
+  await expect(page.getByText('No worker is paired.')).toBeVisible();
+  await expect(page.getByText('No scan has been requested.')).toBeVisible();
+});

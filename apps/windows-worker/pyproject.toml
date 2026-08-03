@@ -3,6 +3,14 @@ name = "ai-operations-windows-worker"
 version = "0.1.0"
 description = "Outbound-only local worker foundation for AI Operations"
 requires-python = ">=3.12"
+dependencies = [
+  "cryptography>=46.0.0",
+  "pyarrow>=20.0.0",
+  "pywin32>=311; platform_system == 'Windows'",
+]
+
+[project.scripts]
+ai-operations-worker = "ai_operations_worker.client:main"
 
 [tool.ruff]
 line-length = 100

@@ -8,6 +8,7 @@ const links = [
   'Career',
   'Travel',
   'Procurement',
+  'Digital Estate',
   'Operations',
   'Reports',
   'Approvals',

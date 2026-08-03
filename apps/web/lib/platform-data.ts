@@ -132,6 +132,19 @@ const watchSchema = z.object({
   expiry_at: z.string(),
   active: z.boolean(),
 });
+const digitalScanSchema = z.object({
+  id: z.string().uuid(),
+  scan_kind: z.string(),
+  status: z.string(),
+  progress: z.number(),
+  created_at: z.string(),
+});
+const workerDeviceSchema = z.object({
+  id: z.string().uuid(),
+  label: z.string(),
+  state: z.string(),
+  last_heartbeat_at: z.string().nullable(),
+});
 
 export type PageData<T> = Readonly<{ data: T; error: string | null }>;
 
@@ -464,5 +477,34 @@ export async function onDemandData(manager: 'travel' | 'procurement'): Promise<
     watches: watches.error
       ? { data: [], error: 'Watch status could not be loaded.' }
       : parsedRows(watches.data, z.array(watchSchema)),
+  };
+}
+
+export async function digitalEstateData(): Promise<
+  Readonly<{
+    scans: PageData<z.infer<typeof digitalScanSchema>[]>;
+    devices: PageData<z.infer<typeof workerDeviceSchema>[]>;
+  }>
+> {
+  const client = await createSupabaseServerClient();
+  const [scans, devices] = await Promise.all([
+    client
+      .from('digital_scans')
+      .select('id,scan_kind,status,progress,created_at')
+      .order('created_at', { ascending: false })
+      .limit(25),
+    client
+      .from('worker_devices')
+      .select('id,label,state,last_heartbeat_at')
+      .order('created_at', { ascending: false })
+      .limit(25),
+  ]);
+  return {
+    scans: scans.error
+      ? { data: [], error: 'Digital scans could not be loaded.' }
+      : parsedRows(scans.data, z.array(digitalScanSchema)),
+    devices: devices.error
+      ? { data: [], error: 'Worker devices could not be loaded.' }
+      : parsedRows(devices.data, z.array(workerDeviceSchema)),
   };
 }

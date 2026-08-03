@@ -1,5 +1,5 @@
 begin;
-select plan(38);
+select plan(44);
 
 select ok(
   not exists (
@@ -89,6 +89,12 @@ insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idemp
 select '00000000-0000-0000-0000-000000000101', id, 'schedule', 'synthetic-health-daily-run' from public.workflow_definitions where code = 'health-daily-processing';
 select lives_ok($$select public.complete_health_finance_run(id) from public.workflow_runs where idempotency_key = 'synthetic-health-daily-run'$$, 'Health daily run completes safely with incomplete data');
 select ok(exists(select 1 from public.workflow_definitions where code = 'career-daily-evidence-sync' and active), 'Career daily evidence workflow is active');
+select ok(exists(select 1 from public.workflow_definitions where code = 'digital-estate-lightweight' and active), 'Digital Estate lightweight workflow is active');
+select ok(exists(select 1 from public.workflow_definitions where code = 'digital-estate-deep-scan' and active), 'Digital Estate deep workflow is active');
+select ok(exists(select 1 from pg_constraint where conname = 'digital_scans_status_check'), 'Digital scan status is constrained');
+select ok(exists(select 1 from pg_constraint where conname = 'worker_devices_state_check'), 'Worker device state is constrained');
+select ok((select relrowsecurity from pg_class where relname='worker_heartbeats' and relnamespace = 'public'::regnamespace), 'Worker heartbeat history has RLS enabled');
+select ok((select relrowsecurity from pg_class where relname='storage_forecasts' and relnamespace = 'public'::regnamespace), 'Storage forecasts have RLS enabled');
 select ok(exists(select 1 from public.workflow_definitions where code = 'travel-on-demand-plan' and active), 'Travel on-demand workflow is active');
 select ok(exists(select 1 from public.workflow_definitions where code = 'procurement-on-demand-research' and active), 'Procurement on-demand workflow is active');
 insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idempotency_key)
