@@ -54,6 +54,21 @@ const callSchema = z.object({
   status: z.string(),
   created_at: z.string(),
 });
+const queueJobSchema = z.object({
+  id: z.string().uuid(),
+  run_id: z.string().uuid(),
+  job_type: z.string(),
+  priority: z.number(),
+  attempt_count: z.number(),
+  status: z.string(),
+  available_at: z.string(),
+  workflow_runs: z
+    .object({
+      trigger: z.string(),
+      workflow_definitions: z.object({ code: z.string() }).nullable(),
+    })
+    .nullable(),
+});
 
 export type PageData<T> = Readonly<{ data: T; error: string | null }>;
 
@@ -208,4 +223,19 @@ export async function operationsData(): Promise<
     },
     error: null,
   };
+}
+
+export async function queueJobsData(): Promise<PageData<z.infer<typeof queueJobSchema>[]>> {
+  const client = await createSupabaseServerClient();
+  const { data, error } = await client
+    .from('job_queue')
+    .select(
+      'id,run_id,job_type,priority,attempt_count,status,available_at,workflow_runs(trigger,workflow_definitions(code))',
+    )
+    .in('status', ['queued', 'leased', 'dead_letter'])
+    .order('available_at')
+    .limit(50);
+  return error
+    ? { data: [], error: 'Queue items could not be loaded.' }
+    : parsedRows(data, z.array(queueJobSchema));
 }

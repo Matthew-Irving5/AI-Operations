@@ -1,7 +1,11 @@
-import { operationsData } from '../../../lib/platform-data';
+import { operationsData, queueJobsData } from '../../../lib/platform-data';
+import { CancelRun } from './cancel-run';
 
 export default async function OperationsPage() {
-  const { data, error } = await operationsData();
+  const [{ data, error }, { data: jobs, error: jobsError }] = await Promise.all([
+    operationsData(),
+    queueJobsData(),
+  ]);
   const metrics = [
     ['Running now', data.running],
     ['Queued', data.queued],
@@ -20,17 +24,36 @@ export default async function OperationsPage() {
           </article>
         ))}
       </section>
-      {error ? (
+      {(error ?? jobsError) ? (
         <p className="notice" role="alert">
-          {error}
+          {error ?? jobsError}
         </p>
       ) : null}
       <h2>Queue</h2>
-      <p className="card">
-        {data.queued === 0
-          ? 'No queued work. Schedules remain disabled until onboarding acceptance.'
-          : `${data.queued} queued job${data.queued === 1 ? '' : 's'} awaiting a worker lease.`}
-      </p>
+      {jobs.length === 0 ? (
+        <p className="card">
+          No queued work. Schedules remain disabled until onboarding acceptance.
+        </p>
+      ) : (
+        <section className="stack" aria-label="Queue">
+          <p>
+            {data.queued} queued job{data.queued === 1 ? '' : 's'} awaiting a worker lease.
+          </p>
+          {jobs.map((job) => (
+            <article className="card" key={job.id}>
+              <div className="label">
+                {job.status} · priority {job.priority} · attempt {job.attempt_count}
+              </div>
+              <h3>{job.workflow_runs?.workflow_definitions?.code ?? job.job_type}</h3>
+              <p>
+                {job.workflow_runs?.trigger ?? 'unknown trigger'} · available{' '}
+                {new Date(job.available_at).toLocaleString('en-GB', { timeZone: 'Europe/London' })}
+              </p>
+              {job.status === 'queued' ? <CancelRun runId={job.run_id} /> : null}
+            </article>
+          ))}
+        </section>
+      )}
     </>
   );
 }
