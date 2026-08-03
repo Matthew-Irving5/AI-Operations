@@ -22,10 +22,15 @@ function statusValue(status: string, name: string): string {
   return match[1];
 }
 
-// E2E is self-contained: a previous DB test may stop local services, and an
-// authenticated browser suite must never proceed against an unavailable Auth API.
-run(['exec', 'supabase', 'start']);
-const status = run(['exec', 'supabase', 'status', '-o', 'env']);
+// E2E is self-contained: reuse a healthy stack (CI starts it in its workflow),
+// and only start local services when the status command says they are absent.
+let status: string;
+try {
+  status = run(['exec', 'supabase', 'status', '-o', 'env']);
+} catch {
+  run(['exec', 'supabase', 'start']);
+  status = run(['exec', 'supabase', 'status', '-o', 'env']);
+}
 const env = {
   ...process.env,
   NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321',
