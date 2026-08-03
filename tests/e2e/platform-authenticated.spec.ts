@@ -85,5 +85,7 @@ test('authenticated platform navigation remains usable at iPhone width', async (
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/operations');
   await expect(page.getByRole('heading', { name: 'Operations Centre' })).toBeVisible();
-  await expect(page.evaluate(() => document.documentElement.scrollWidth)).resolves.toBeLessThanOrEqual(390);
+  await expect(
+    page.evaluate(() => document.documentElement.scrollWidth),
+  ).resolves.toBeLessThanOrEqual(390);
 });

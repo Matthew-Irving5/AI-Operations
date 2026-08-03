@@ -42,7 +42,12 @@ export function CostChart({ points }: Readonly<{ points: Point[] }>) {
         },
         yAxis: { type: 'value', axisLabel: { color: '#9fb0c8', formatter: '$ {value}' } },
         series: [
-          { name: 'Actual', type: 'line', smooth: true, data: visible.map((point) => point.actual) },
+          {
+            name: 'Actual',
+            type: 'line',
+            smooth: true,
+            data: visible.map((point) => point.actual),
+          },
           {
             name: 'Estimated',
             type: 'line',
