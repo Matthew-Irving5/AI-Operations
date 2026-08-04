@@ -23,5 +23,6 @@ operator acceptance record.
 - Repository ownership and Pass 7: verified `Matthew-Irving5/AI-Operations`; PR #20 is merged at `c10f382` with its required checks successful.
 - Baseline: `corepack pnpm verify` passed before Pass 8 changes.
 - Deterministic execution: `202608040001_deterministic_workflow_completion.sql` adds one idempotent, audited, trace-producing completion contract for all managers while AI is disabled. `job-worker` now uses this contract rather than selecting a manager-specific synthetic SQL helper.
+- Webhook hardening: OpenAI completion events now leave calls in `completed_pending_reconciliation`; a webhook alone cannot manufacture a report before response validation, usage reconciliation, reservation settlement, and trace persistence.
 - Static validation after the change: Prettier check, Deno format/lint/check for every Edge Function, and the pnpm workspace unit suite passed.
 - Outstanding local validation: Docker Desktop's Linux engine is unavailable, preventing `supabase db reset --local`, pgTAP/RLS tests, and the local Playwright suite. No provider call has been made.

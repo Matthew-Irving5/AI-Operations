@@ -74,18 +74,15 @@ Deno.serve(async (request) => {
     if (call.error) return json({ code: "response_lookup_failed" }, 500);
     if (call.data?.run_id) {
       const updated = await service.from("ai_calls").update({
-        status: "succeeded",
+        // A completion notification has no validated response body or usage.
+        // Keep the call pending until the server-side reconciliation path has
+        // retrieved, schema-validated, costed, and traced that response.
+        status: "completed_pending_reconciliation",
       }).eq(
         "response_id",
         body.data.id,
       );
       if (updated.error) return json({ code: "response_update_failed" }, 500);
-      const completed = await service.rpc("complete_synthetic_systems_run", {
-        p_run_id: call.data.run_id,
-      });
-      if (completed.error) {
-        return json({ code: "background_completion_failed" }, 500);
-      }
       const run = await service.from("workflow_runs").select("correlation_id")
         .eq(
           "id",
@@ -97,7 +94,7 @@ Deno.serve(async (request) => {
         event_type: "background_response_completed",
         redacted_payload: {
           response_id: body.data.id,
-          report_id: completed.data,
+          reconciliation_required: true,
         },
       });
     }
