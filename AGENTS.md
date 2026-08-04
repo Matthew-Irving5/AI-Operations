@@ -195,3 +195,52 @@ A feature is complete only when it has:
 - observability;
 - no placeholder or TODO.
 
+## Pass 8 completion and controlled live-agent rollout
+
+Pass 8 is the completion pass after the seven historical passes. Use the exact
+`pass-08-completion` branch and prompt in `CODEX_PASS_PROMPTS.md`.
+
+- Load root `.env` values through the process environment only. Never print, log,
+  commit, or copy secret values into documentation, tests, screenshots, or PRs.
+- Preserve the locked production identity `matthewirving99@gmail.com`. The
+  `Matthew-Irving5` value is the approved GitHub owner/display label, not a
+  replacement application login.
+- Complete deterministic contracts, manager workflows, persistence, budgets,
+  audit, traces, feedback, integrations, UI, recovery, and synthetic tests
+  before making any live OpenAI call.
+- Synthetic and provider-mock calls must use the same reservation, usage,
+  tracing, validation, report, action, and feedback paths as live calls.
+- The first live-agent test is one bounded deterministic call with no web search,
+  no autonomous action, and the lowest-cost permitted model. Keep the initial
+  aggregate below the configured provider/application ceiling (the Pass 8
+  default is $2) and stop on any cost, trace, validation, or budget discrepancy.
+- Expand live agents manager by manager only after evaluation, evidence, safety,
+  and cost gates pass. Model output may never change hard caps, recipients,
+  permissions, or approval requirements.
+
+## External blockers and blocked-goal handoff
+
+Ordinary implementation, test, deployment, and integration failures remain the
+agent's responsibility and must be fixed. An external blocker is limited to a
+missing or invalid credential, denied provider permission, unavailable provider
+resource, required MFA/device/account consent, or another action that only the
+operator can perform.
+
+- Do not guess around an external blocker or weaken a security/control boundary.
+- After the same blocker is observed for three consecutive goal turns, mark the
+  active goal `blocked` instead of leaving it active.
+- The blocked handoff must state the exact blocker, evidence and checks run,
+  completed work, the precise operator action, exact verification steps, and the
+  command or prompt that resumes the work.
+- Never echo secret values. Do not repeatedly report that work is still blocked
+  without changing goal status.
+
+## Operator-owned production setup
+
+Codex may validate configuration and provide guided steps, but the operator must
+perform real-account actions: Supabase user/password creation, Microsoft
+Authenticator TOTP enrollment, Google OAuth consent, the Gmail delivery test,
+Apple Shortcut and Health Export authorization, Windows worker installation and
+pairing, personal/finance configuration, backup/restore acceptance, schedule
+review, and final production acceptance. These actions must be recorded in the
+guided onboarding checklist before spend or email schedules are enabled.

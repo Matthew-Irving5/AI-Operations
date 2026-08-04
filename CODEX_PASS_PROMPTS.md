@@ -78,6 +78,83 @@ Pass 1 is finished only when every required feature and test above is complete, 
 
 ---
 
+## Pass 8 — Completion, deterministic production engine, observability, and controlled agent activation
+
+**Branch:** `pass-08-completion`
+**PR title:** `Pass 08: complete deterministic platform and controlled agent activation`
+
+### Goal Mode prompt
+
+```text
+/goal
+
+Complete Pass 8 of AI Operations exactly as defined in AI_OPERATIONS_BUILD_SPEC.md.
+
+Persistent objective:
+Finish the complete production system. Real OpenAI agents are the final integration stage, after deterministic workflows, contracts, tracing, audit, budgets, UI, integrations, recovery, tests, and CI are complete. Do not spend provider credits before the instrumentation gate passes.
+
+Preflight:
+- verify Pass 7 is merged and main is green;
+- sync main and run the baseline suite;
+- create pass-08-completion;
+- read the full build spec, AGENTS.md, pass ledger, latest ADRs, current traceability matrix, tests, and workflows;
+- load environment variables through the process environment only; never print or commit secret values;
+- preserve the locked production identity `matthewirving99@gmail.com`; `Matthew-Irving5` is the GitHub owner/display label, not a replacement login identity.
+
+Required implementation:
+1. Audit every `Partial` traceability row and classify each requirement as complete, partial, missing, insecure, untested, or operator-owned.
+2. Add all missing database contracts, migrations, indexes, constraints, RLS policies, AAL2 checks, idempotency, API contracts, error codes, audit events, and data dictionary entries.
+3. Replace synthetic SQL manager completion paths with deterministic production workflow orchestration and real manager interfaces. Synthetic fixtures must use the same persistence, trace, audit, budget, notification, and feedback paths as production.
+4. Complete the server-side AI runtime contracts before enabling live agents:
+   - Responses API integration;
+   - strict Structured Outputs and validation;
+   - model/prompt/version routing;
+   - tool-call and background-response records;
+   - webhook completion;
+   - bounded retries;
+   - redacted traces;
+   - provider usage reconciliation;
+   - report/action/feedback linkage;
+   - deterministic reservation and actual-cost accounting.
+5. Implement missing authenticated and internal functions, including manager settings, workflow listing/execution, spend summary, trace query/detail, report get/export, connection/device revoke, data export, archive compaction, and quality review.
+6. Complete all eight real manager workflows, integrations, archive/recovery lifecycle, Windows worker behavior, cross-manager purpose boundaries, and required UI states/pages.
+7. Add provider fixtures and failure-path tests for Google, Gmail, Calendar, Drive, Apple, Health, GitHub, OpenAI, R2, and the Windows worker.
+8. Add all missing quality gates: Deno tests, AI evaluation suites, Playwright manager flows, accessibility, screenshots, k6 performance, CodeQL, dependency review, archive maintenance, migration drift, generated-type checks, and security tests.
+9. Run the entire synthetic system end to end with live agents disabled. Do not call OpenAI during this stage.
+10. Prove the instrumentation gate with mocks: every call has a reservation, model/prompt IDs, estimated/actual cost, provider usage, redacted trace, validation result, report linkage, feedback linkage, and safe failure state.
+11. Only after steps 1–10 pass, perform one bounded live OpenAI smoke call using the lowest-cost permitted model, deterministic synthetic input, no web search, no autonomous action, and a strict per-run cap.
+12. Keep the initial live-agent test aggregate below $2 (or a lower configured provider/application cap), with no unbounded retries or background work. Stop immediately if spend, tracing, validation, or budget enforcement is wrong.
+13. Expand live agents manager by manager only after each manager’s schema, evidence, safety, cost, and evaluation gates pass. Model output must never change hard caps, recipients, permissions, or approval requirements.
+14. Complete the operator-owned onboarding checklist and record production acceptance only after all provider/device/account steps are independently verified.
+15. Update the traceability matrix so no row remains `Partial`, update `docs/build/evidence/pass-08.md`, update the ledger, and document material decisions in ADRs.
+
+Blocked-goal protocol:
+- Continue through ordinary implementation and test failures.
+- Treat missing/invalid credentials, denied provider permission, unavailable provider resources, required MFA/device setup, or required operator consent as external blockers.
+- After the same blocker is observed for three consecutive goal turns, mark the goal blocked rather than leaving it active.
+- The blocked report must include the exact blocker, evidence, completed work, precise operator action, exact verification steps, and the command/prompt that resumes work.
+- Do not echo secret values or repeatedly report that the work is still blocked without changing status.
+
+Required final tests:
+- clean install and empty-database migrations;
+- full unit, database/RLS, Edge Function, worker, integration, security, and performance suites;
+- all manager and cross-manager synthetic happy/failure paths;
+- Chromium/WebKit desktop and iPhone Playwright flows;
+- archive/retrieve/restore and offline-worker approval flows;
+- instrumentation and provider-usage reconciliation;
+- one bounded live-agent smoke test with cost evidence;
+- staged manager-by-manager AI evaluations;
+- staging and production smoke tests after operator acceptance.
+
+PR protocol:
+Follow AGENTS.md exactly. Create the PR, enable squash auto-merge, monitor all required checks, fix failures, wait for merge, verify main and deployments, and record all evidence.
+
+Stopping condition:
+The traceability matrix contains no incomplete item; all eight managers, integrations, budgets, traces, audit, feedback, UI, worker, archive, recovery, CI/CD, onboarding, and security are complete; live agents were activated only after instrumentation and synthetic validation; the initial live-agent spend stayed within the configured cap; production acceptance is recorded; and no required check, security finding, placeholder, or operator-owned acceptance item remains unresolved.
+```
+
+---
+
 ## Pass 2 — Platform engine, AI runtime, budgets, tracing, feedback, and email
 
 **Branch:** `pass-02-platform-engine`  

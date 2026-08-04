@@ -3346,7 +3346,70 @@ When documentation conflicts with this file because a provider API changed, pres
 
 ---
 
-# 38. Codex final instruction
+# 38. Pass 8 completion sequencing and blocked-goal protocol
+
+Pass 8 is the completion pass after the seven historical passes. It must finish
+deterministic production behavior, observability, security, integrations, UI,
+worker, archive/recovery, tests, and CI before enabling live OpenAI agents.
+
+## 38.1 Deterministic-first sequencing
+
+Real agents are intentionally the final integration stage. Synthetic fixtures and
+provider mocks must exercise the same reservation, usage, trace, audit,
+validation, report, action, notification, and feedback paths as live calls.
+
+Before any live provider call, the system must prove:
+
+- strict Structured Outputs and validation;
+- model, prompt, version, tool, and correlation identifiers;
+- redacted trace trees and audit records;
+- estimated and actual currency/token accounting;
+- transactional reservations and hard-cap enforcement;
+- provider usage reconciliation;
+- bounded retry and failure behavior;
+- report/action/feedback linkage;
+- no model authority over recipients, permissions, hard caps, or approvals.
+
+The first live test must be one deterministic synthetic call using the lowest-cost
+permitted model, no web search, no autonomous action, and no unbounded background
+work. The initial aggregate ceiling is $2 unless the operator configures a lower
+provider/application limit. Agent activation then proceeds manager by manager only
+after evaluation, safety, evidence, and cost gates pass.
+
+## 38.2 Identity and secret handling
+
+The locked production application identity remains
+`matthewirving99@gmail.com`. `Matthew-Irving5` is the approved GitHub owner and
+display label, not a replacement login identity. Passwords, tokens, `.env` values,
+provider keys, MFA secrets, and recovery material must never be written to source,
+tests, documentation, screenshots, or logs.
+
+## 38.3 External blockers and operator handoff
+
+Normal code, test, deployment, and integration failures are implementation work,
+not blockers. A genuine external blocker is limited to missing/invalid credentials,
+denied provider permissions, unavailable provider resources, required MFA/device or
+account consent, or another action only the operator can perform.
+
+After the same blocker occurs for three consecutive goal turns, Codex must mark the
+active goal `blocked`. The handoff must include the exact blocker, evidence and
+checks run, completed work, precise operator action, exact verification steps, and
+the command or prompt that resumes work. Codex must not echo secrets or leave the
+goal active while repeatedly reporting the same blocker.
+
+## 38.4 Operator-owned acceptance actions
+
+The guided production checklist must distinguish Codex-verifiable work from
+operator actions: Supabase account/password setup, Microsoft Authenticator TOTP,
+Google OAuth consent, the Gmail delivery test, Apple Shortcut and Health Export
+authorization, Windows worker installation/pairing, personal and finance mapping,
+backup/restore acceptance, schedule review, and final production acceptance.
+
+No spend or email schedule may be enabled until these actions are recorded and the
+immutable acceptance record exists.
+
+---
+
+# 39. Codex final instruction
 
 Build the system exactly as specified. Optimise for correctness, security, low operating cost, traceability, and long-term maintainability. Do not optimise for demo speed at the expense of production completeness.
-
