@@ -1,5 +1,5 @@
 begin;
-select plan(55);
+select plan(60);
 
 select ok(
   not exists (
