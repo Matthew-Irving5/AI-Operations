@@ -128,10 +128,10 @@ on conflict (template_id, version) do nothing;
 insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idempotency_key)
 select '00000000-0000-0000-0000-000000000101', id, 'manual', 'pass8-instrumented-run'
 from public.workflow_definitions where code = 'systems-daily-cost-capacity';
-select lives_ok($$select public.reserve_instrumented_ai_call('00000000-0000-0000-0000-000000000101', (select id from public.workflow_runs where idempotency_key='pass8-instrumented-run'), (select id from public.ai_model_catalog where model_id='gpt-5.6-luna'), (select pv.id from public.prompt_versions pv join public.prompt_templates pt on pt.id=pv.template_id where pt.code='pass8-instrumentation-test' and pv.version=1), 0.01, 'pass8:mock:0001', '{"request":"redacted"}'::jsonb)$$, 'instrumentation reserves an enabled model call before provider submission');
-select is((select status from public.ai_calls where request_id='pass8:mock:0001'), 'reserved', 'instrumented call begins in reserved state');
-select lives_ok($$select public.settle_instrumented_ai_call((select id from public.ai_calls where request_id='pass8:mock:0001'), 0.005, 100, 50, 10, 0, 0, '{"input_tokens":100,"output_tokens":50}'::jsonb, '{"response":"redacted"}'::jsonb, true)$$, 'mock provider usage settles through the same reservation and trace path');
-select is((select validation_status from public.ai_calls where request_id='pass8:mock:0001'), 'passed', 'instrumented call stores validation result');
+select lives_ok($$select public.reserve_instrumented_ai_call('00000000-0000-0000-0000-000000000101', (select id from public.workflow_runs where idempotency_key='pass8-instrumented-run'), (select id from public.ai_model_catalog where model_id='gpt-5.6-luna'), (select pv.id from public.prompt_versions pv join public.prompt_templates pt on pt.id=pv.template_id where pt.code='pass8-instrumentation-test' and pv.version=1), 0.01, 'instrumentation-run-01', '{"request":"redacted"}'::jsonb)$$, 'instrumentation reserves an enabled model call before provider submission');
+select is((select status from public.ai_calls where request_id='instrumentation-run-01'), 'reserved', 'instrumented call begins in reserved state');
+select lives_ok($$select public.settle_instrumented_ai_call((select id from public.ai_calls where request_id='instrumentation-run-01'), 0.005, 100, 50, 10, 0, 0, '{"input_tokens":100,"output_tokens":50}'::jsonb, '{"response":"redacted"}'::jsonb, true)$$, 'mock provider usage settles through the same reservation and trace path');
+select is((select validation_status from public.ai_calls where request_id='instrumentation-run-01'), 'passed', 'instrumented call stores validation result');
 select is((select status from public.cost_reservations where run_id=(select id from public.workflow_runs where idempotency_key='pass8-instrumented-run')), 'consumed', 'successful mock call consumes its reservation');
 
 select * from finish();

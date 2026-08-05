@@ -1,0 +1,5 @@
+title = "AI Operations secret-scanning exceptions"
+
+[[allowlists]]
+description = "Pass 8 synthetic pgTAP request identifier false positive; no credential material."
+commits = ["2b86a64983ef0ce8e84840fc775f4364b5056ef4"]
