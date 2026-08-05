@@ -75,11 +75,12 @@ Deno.serve(async (request) => {
     return json({ code: "result_signature_invalid" }, 403);
   }
   const scan = await service.from("digital_scans").select(
-    "id,user_id,device_id,status",
+    "id,user_id,device_id,run_id,status",
   ).eq("id", body.scanId).eq("device_id", body.deviceId).in("status", [
     "queued",
     "waiting_for_device",
     "running",
+    "complete",
   ]).maybeSingle();
   if (!scan.data) {
     return json({ code: "scan_unavailable" }, 404);
@@ -105,19 +106,13 @@ Deno.serve(async (request) => {
     progress: 100,
     completed_at: new Date().toISOString(),
   }).eq("id", scan.data.id);
-  if (scan.data) {
-    const run = await service.from("digital_scans").select("run_id").eq(
-      "id",
-      scan.data.id,
-    ).single();
-    await service.from("workflow_runs").update({
-      status: "succeeded",
-      completed_at: new Date().toISOString(),
-    }).eq("id", run.data?.run_id).eq("status", "queued");
-    await service.from("job_queue").update({
-      status: "succeeded",
-      completed_at: new Date().toISOString(),
-    }).eq("run_id", run.data?.run_id).eq("status", "queued");
+  if (scan.data?.run_id) {
+    const completed = await service.rpc("complete_deterministic_workflow_run", {
+      p_run_id: scan.data.run_id,
+    });
+    if (completed.error) {
+      return json({ code: "scan_completion_failed" }, 500);
+    }
   }
   return json({ accepted: rows.length });
 });

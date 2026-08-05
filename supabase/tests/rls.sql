@@ -1,5 +1,5 @@
 begin;
-select plan(69);
+select plan(72);
 
 select ok(
   not exists (
@@ -117,6 +117,20 @@ insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idemp
 select '00000000-0000-0000-0000-000000000101', id, 'manual', 'synthetic-career-run' from public.workflow_definitions where code = 'career-daily-evidence-sync';
 select lives_ok($$select public.complete_deterministic_workflow_run(id) from public.workflow_runs where idempotency_key = 'synthetic-career-run'$$, 'Career completion creates a provenance-constrained report');
 select throws_ok($$insert into public.career_github_evidence(user_id, repository_external_id, repository_name, owner_login, evidence_kind, source_url, retrieved_at) values ('00000000-0000-0000-0000-000000000101', 1, 'denied', 'BrightSG', 'repository', 'https://github.com/Matthew-Irving5/denied', now())$$, 'new row for relation "career_github_evidence" violates check constraint "career_github_evidence_owner_login_check"', 'BrightSG can never be stored as Career GitHub evidence');
+
+insert into public.worker_devices(user_id, label, public_key_b64, state)
+values ('00000000-0000-0000-0000-000000000101', 'Synthetic completion worker', 'c3ludGhldGljLXB1YmxpYy1rZXk=', 'pending');
+insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idempotency_key)
+select '00000000-0000-0000-0000-000000000101', id, 'manual', 'pass8-digital-completion-run'
+from public.workflow_definitions where code = 'digital-estate-lightweight';
+insert into public.digital_scans(user_id, device_id, run_id, scan_kind, approved_roots, status, progress, completed_at)
+select '00000000-0000-0000-0000-000000000101',
+       (select id from public.worker_devices where label = 'Synthetic completion worker'),
+       (select id from public.workflow_runs where idempotency_key = 'pass8-digital-completion-run'),
+       'lightweight', '["synthetic-root"]'::jsonb, 'complete', 100, now();
+select lives_ok($$select public.complete_deterministic_workflow_run(id) from public.workflow_runs where idempotency_key='pass8-digital-completion-run'$$, 'a completed worker scan uses the shared deterministic completion contract');
+select is((select structured_metrics->>'ai_called' from public.reports where run_id=(select id from public.workflow_runs where idempotency_key='pass8-digital-completion-run')), 'false', 'digital completion records that no provider call occurred');
+select is((select count(*) from public.audit_events where action_type='complete_deterministic_workflow' and target_id=(select id::text from public.workflow_runs where idempotency_key='pass8-digital-completion-run')), 1::bigint, 'digital completion records the common immutable audit event');
 
 insert into public.prompt_templates(manager_id, code, active_version)
 select id, 'pass8-instrumentation-test', 1 from public.managers where code = 'systems'
