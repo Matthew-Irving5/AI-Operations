@@ -1,5 +1,5 @@
 begin;
-select plan(72);
+select plan(77);
 
 select ok(
   not exists (
@@ -88,6 +88,11 @@ select ok(exists(select 1 from pg_proc where proname = 'execute_health_finance_w
 insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idempotency_key)
 select '00000000-0000-0000-0000-000000000101', id, 'schedule', 'synthetic-health-daily-run' from public.workflow_definitions where code = 'health-daily-processing';
 select lives_ok($$select public.complete_deterministic_workflow_run(id) from public.workflow_runs where idempotency_key = 'synthetic-health-daily-run'$$, 'Health daily run completes safely with incomplete data');
+insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idempotency_key)
+select '00000000-0000-0000-0000-000000000101', id, 'schedule', 'synthetic-finance-monthly-run'
+from public.workflow_definitions where code = 'finance-monthly-close';
+select lives_ok($$select public.complete_deterministic_workflow_run(id) from public.workflow_runs where idempotency_key = 'synthetic-finance-monthly-run'$$, 'Finance monthly close completes through the shared deterministic contract');
+select is((select structured_metrics->>'ai_called' from public.reports where run_id = (select id from public.workflow_runs where idempotency_key = 'synthetic-finance-monthly-run')), 'false', 'Finance deterministic completion does not manufacture provider usage');
 select ok(exists(select 1 from public.workflow_definitions where code = 'career-daily-evidence-sync' and active), 'Career daily evidence workflow is active');
 select ok(exists(select 1 from public.workflow_definitions where code = 'digital-estate-lightweight' and active), 'Digital Estate lightweight workflow is active');
 select ok(exists(select 1 from public.workflow_definitions where code = 'digital-estate-deep-scan' and active), 'Digital Estate deep workflow is active');
@@ -113,6 +118,9 @@ select lives_ok($$select public.complete_deterministic_workflow_run(id) from pub
 select is((select structured_metrics->>'ai_called' from public.reports where run_id = (select id from public.workflow_runs where idempotency_key = 'on-demand-travel-request')), 'false', 'deterministic completion records that no provider call occurred');
 select is((select count(*) from public.audit_events where action_type = 'complete_deterministic_workflow' and target_id = (select id::text from public.workflow_runs where idempotency_key = 'on-demand-travel-request')), 1::bigint, 'deterministic completion records an immutable audit event');
 select is((select count(*) from public.trace_events where event_type = 'workflow_completed' and redacted_payload->>'run_id' = (select id::text from public.workflow_runs where idempotency_key = 'on-demand-travel-request')), 1::bigint, 'deterministic completion records a redacted validation trace');
+select lives_ok($$select public.create_on_demand_run_request('00000000-0000-0000-0000-000000000101', (select id from public.workflow_definitions where code='procurement-on-demand-research'), 'procurement', 1, 'gpt-5.6-luna', 0, 'on-demand-procurement-request', '{"purpose":"Synthetic equipment evaluation","constraints":"No purchase"}'::jsonb)$$, 'Bounded Procurement request is queued with its brief');
+select lives_ok($$select public.complete_deterministic_workflow_run(id) from public.workflow_runs where idempotency_key = 'on-demand-procurement-request'$$, 'the shared contract completes an on-demand Procurement manager without a provider call');
+select is((select structured_metrics->>'ai_called' from public.reports where run_id = (select id from public.workflow_runs where idempotency_key = 'on-demand-procurement-request')), 'false', 'Procurement deterministic completion records that no provider call occurred');
 insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idempotency_key)
 select '00000000-0000-0000-0000-000000000101', id, 'manual', 'synthetic-career-run' from public.workflow_definitions where code = 'career-daily-evidence-sync';
 select lives_ok($$select public.complete_deterministic_workflow_run(id) from public.workflow_runs where idempotency_key = 'synthetic-career-run'$$, 'Career completion creates a provenance-constrained report');
