@@ -1,0 +1,30 @@
+name: Performance
+
+on: [pull_request, merge_group]
+
+permissions:
+  contents: read
+
+jobs:
+  k6-login-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.18.2 }
+      - uses: actions/setup-node@v5
+        with: { node-version: 22.18.0, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @ai-operations/web build
+      - run: nohup pnpm --filter @ai-operations/web start >/tmp/ai-operations-web.log 2>&1 &
+      - name: Wait for the private dashboard login route
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:3000/login >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+      - uses: grafana/setup-k6-action@v1
+      - run: k6 run tests/performance/login.js
