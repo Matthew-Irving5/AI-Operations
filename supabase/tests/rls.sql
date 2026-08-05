@@ -1,5 +1,5 @@
 begin;
-select plan(60);
+select plan(65);
 
 select ok(
   not exists (
@@ -117,6 +117,22 @@ insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idemp
 select '00000000-0000-0000-0000-000000000101', id, 'manual', 'synthetic-career-run' from public.workflow_definitions where code = 'career-daily-evidence-sync';
 select lives_ok($$select public.complete_career_travel_procurement_run(id) from public.workflow_runs where idempotency_key = 'synthetic-career-run'$$, 'Career completion creates a provenance-constrained report');
 select throws_ok($$insert into public.career_github_evidence(user_id, repository_external_id, repository_name, owner_login, evidence_kind, source_url, retrieved_at) values ('00000000-0000-0000-0000-000000000101', 1, 'denied', 'BrightSG', 'repository', 'https://github.com/Matthew-Irving5/denied', now())$$, 'new row for relation "career_github_evidence" violates check constraint "career_github_evidence_owner_login_check"', 'BrightSG can never be stored as Career GitHub evidence');
+
+insert into public.prompt_templates(manager_id, code, active_version)
+select id, 'pass8-instrumentation-test', 1 from public.managers where code = 'systems'
+on conflict (code) do nothing;
+insert into public.prompt_versions(template_id, version, system_text, developer_text, json_schema, evaluation_status)
+select id, 1, 'Synthetic test policy', 'Return validated synthetic output.', '{"type":"object"}'::jsonb, 'approved'
+from public.prompt_templates where code = 'pass8-instrumentation-test'
+on conflict (template_id, version) do nothing;
+insert into public.workflow_runs(user_id, workflow_definition_id, trigger, idempotency_key)
+select '00000000-0000-0000-0000-000000000101', id, 'manual', 'pass8-instrumented-run'
+from public.workflow_definitions where code = 'systems-daily-cost-capacity';
+select lives_ok($$select public.reserve_instrumented_ai_call('00000000-0000-0000-0000-000000000101', (select id from public.workflow_runs where idempotency_key='pass8-instrumented-run'), (select id from public.ai_model_catalog where model_id='gpt-5.6-luna'), (select pv.id from public.prompt_versions pv join public.prompt_templates pt on pt.id=pv.template_id where pt.code='pass8-instrumentation-test' and pv.version=1), 0.01, 'pass8:mock:0001', '{"request":"redacted"}'::jsonb)$$, 'instrumentation reserves an enabled model call before provider submission');
+select is((select status from public.ai_calls where request_id='pass8:mock:0001'), 'reserved', 'instrumented call begins in reserved state');
+select lives_ok($$select public.settle_instrumented_ai_call((select id from public.ai_calls where request_id='pass8:mock:0001'), 0.005, 100, 50, 10, 0, 0, '{"input_tokens":100,"output_tokens":50}'::jsonb, '{"response":"redacted"}'::jsonb, true)$$, 'mock provider usage settles through the same reservation and trace path');
+select is((select validation_status from public.ai_calls where request_id='pass8:mock:0001'), 'passed', 'instrumented call stores validation result');
+select is((select status from public.cost_reservations where run_id=(select id from public.workflow_runs where idempotency_key='pass8-instrumented-run')), 'consumed', 'successful mock call consumes its reservation');
 
 select * from finish();
 rollback;

@@ -24,6 +24,7 @@ operator acceptance record.
 - Baseline: `corepack pnpm verify` passed before Pass 8 changes.
 - Deterministic execution: `202608040001_deterministic_workflow_completion.sql` adds one idempotent, audited, trace-producing completion contract for all managers while AI is disabled. `job-worker` now uses this contract rather than selecting a manager-specific synthetic SQL helper.
 - Webhook hardening: OpenAI completion events now leave calls in `completed_pending_reconciliation`; a webhook alone cannot manufacture a report before response validation, usage reconciliation, reservation settlement, and trace persistence.
+- Instrumentation gate: `202608050001_ai_instrumentation_gate.sql` requires an enabled model and prompt version, reserves budget before submission, persists a redacted trace and provider usage, then settles actual usage with a validation result. `202608050002_ai_cost_precision.sql` preserves sub-cent provider costs at six decimal places. The pgTAP mock exercises this lifecycle without an OpenAI call.
 - Static validation after the change: Prettier check, Deno format/lint/check for every Edge Function, and the pnpm workspace unit suite passed.
 - Local deterministic validation: `supabase db reset --local` applied every migration from an empty database; `pnpm test:db` passed all 60 pgTAP/RLS tests; `pnpm test:e2e` passed Chromium and WebKit browser coverage, including iPhone layouts and accessibility checks.
 - No provider call has been made.
