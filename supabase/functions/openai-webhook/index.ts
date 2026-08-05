@@ -54,25 +54,43 @@ Deno.serve(async (request) => {
     signature_verified: true,
     status: "received",
   }).select("id").maybeSingle();
-  if (event.error?.code === "23505") return json({ duplicate: true });
-  if (event.error) return json({ code: "event_store_failed" }, 500);
+  let eventId = event.data?.id;
+  if (event.error?.code === "23505") {
+    const existing = await service.from("webhook_events").select("id").eq(
+      "provider",
+      "openai",
+    ).eq("external_id", body.id).maybeSingle();
+    if (existing.error || !existing.data) {
+      return json({ code: "event_lookup_failed" }, 500);
+    }
+    eventId = existing.data.id;
+  }
+  if (event.error && event.error.code !== "23505") {
+    return json({ code: "event_store_failed" }, 500);
+  }
   if (body.type === "response.completed" && body.data?.id) {
     const call = await service.from("ai_calls").select(
-      "id,run_id,user_id,model_id,estimated_cost,request_id,redacted_trace",
+      "id,run_id,user_id,model_id,estimated_cost,request_id,redacted_trace,status",
     ).eq("response_id", body.data.id).maybeSingle();
     if (call.error) return json({ code: "response_lookup_failed" }, 500);
     if (call.data?.run_id) {
       const callData = call.data;
       const completedResponseId = body.data.id;
+      if (["succeeded", "failed", "cancelled"].includes(call.data.status)) {
+        await service.from("webhook_events").update({ status: "processed" })
+          .eq("id", eventId);
+        return json({ duplicate: true });
+      }
       const updated = await service.from("ai_calls").update({
         // A completion notification has no validated response body or usage.
         // Keep the call pending until the server-side reconciliation path has
         // retrieved, schema-validated, costed, and traced that response.
         status: "completed_pending_reconciliation",
-      }).eq(
-        "response_id",
-        body.data.id,
-      );
+      }).eq("response_id", body.data.id).in("status", [
+        "submitted",
+        "completed_pending_reconciliation",
+        "reconciliation_failed",
+      ]);
       if (updated.error) return json({ code: "response_update_failed" }, 500);
       const run = await service.from("workflow_runs").select(
         "correlation_id",
@@ -99,7 +117,14 @@ Deno.serve(async (request) => {
         () => null,
       );
       if (!isRecord(response)) {
-        return json({ accepted: true, reconciliation: "pending" });
+        await service.rpc("record_instrumented_ai_reconciliation_failure", {
+          p_call_id: call.data.id,
+          p_error_code: "provider_response_unavailable",
+          p_redacted_trace: { response_id: body.data.id },
+        });
+        await service.from("webhook_events").update({ status: "retrying" })
+          .eq("id", eventId);
+        return json({ code: "reconciliation_retry_required" }, 500);
       }
       const outputText = extractResponseOutputText(response);
       const trace = isRecord(call.data.redacted_trace)
@@ -127,7 +152,14 @@ Deno.serve(async (request) => {
         cost.error || typeof cost.data !== "number" ||
         cost.data > call.data.estimated_cost
       ) {
-        return json({ accepted: true, reconciliation: "cost_pending" });
+        await service.rpc("record_instrumented_ai_reconciliation_failure", {
+          p_call_id: call.data.id,
+          p_error_code: "provider_usage_reconciliation_failed",
+          p_redacted_trace: { response_id: body.data.id },
+        });
+        await service.from("webhook_events").update({ status: "retrying" })
+          .eq("id", eventId);
+        return json({ code: "reconciliation_retry_required" }, 500);
       }
       const settled = await service.rpc("settle_instrumented_ai_call", {
         p_call_id: call.data.id,
@@ -156,6 +188,8 @@ Deno.serve(async (request) => {
           redacted_error:
             "Background response failed structured-output validation.",
         }).eq("id", call.data.run_id);
+        await service.from("webhook_events").update({ status: "processed" })
+          .eq("id", eventId);
         return json({ accepted: true, reconciliation: "failed" });
       }
       const reportType = typeof trace.prompt_code === "string"
@@ -229,7 +263,15 @@ Deno.serve(async (request) => {
           validation: "passed",
         },
       });
+      await service.from("webhook_events").update({ status: "processed" })
+        .eq("id", eventId);
     }
+  }
+  if (eventId) {
+    await service.from("webhook_events").update({ status: "processed" }).eq(
+      "id",
+      eventId,
+    );
   }
   return json({ accepted: true });
 });

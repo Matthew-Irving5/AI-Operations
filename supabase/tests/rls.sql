@@ -1,5 +1,5 @@
 begin;
-select plan(77);
+select plan(79);
 
 select ok(
   not exists (
@@ -160,6 +160,8 @@ select lives_ok($$select public.create_on_demand_run_request('00000000-0000-0000
 select lives_ok($$select public.reserve_instrumented_ai_call('00000000-0000-0000-0000-000000000101', (select id from public.workflow_runs where idempotency_key='pass8-on-demand-instrumented'), (select id from public.ai_model_catalog where model_id='gpt-5.6-luna'), (select pv.id from public.prompt_versions pv join public.prompt_templates pt on pt.id=pv.template_id where pt.code='pass8-instrumentation-test' and pv.version=1), 0.01, 'on-demand-call-01', '{"request":"redacted"}'::jsonb)$$, 'on-demand call reserves within its independent hard cap');
 select lives_ok($$select public.mark_instrumented_ai_call_submitted((select id from public.ai_calls where request_id='on-demand-call-01'), 'resp_on_demand_fixture')$$, 'provider response identifier is recorded before settlement');
 select is((select public.calculate_instrumented_ai_cost((select id from public.ai_model_catalog where model_id='gpt-5.6-luna'), 100, 50, 10, 0)), 0.000391::numeric, 'actual cost calculation uses versioned database pricing without binary rounding');
+select lives_ok($$select public.record_instrumented_ai_reconciliation_failure((select id from public.ai_calls where request_id='on-demand-call-01'), 'provider_response_unavailable', '{"response_id":"resp_on_demand_fixture"}'::jsonb)$$, 'a transient provider reconciliation failure is recorded without releasing the reservation');
+select is((select status from public.ai_calls where request_id='on-demand-call-01'), 'reconciliation_failed', 'a failed reconciliation remains explicitly retryable');
 
 select * from finish();
 rollback;
