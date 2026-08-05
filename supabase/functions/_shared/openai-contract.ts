@@ -228,3 +228,23 @@ export function redactedProviderUsage(
       : 0,
   };
 }
+
+export function extractResponseOutputText(
+  response: Record<string, unknown>,
+): string | null {
+  if (isText(response.output_text, 60_000)) return response.output_text;
+  if (!Array.isArray(response.output)) return null;
+  const text = response.output.flatMap((item) => {
+    if (
+      !isRecord(item) || item.type !== "message" ||
+      !Array.isArray(item.content)
+    ) return [];
+    return item.content.flatMap((content) =>
+      isRecord(content) && content.type === "output_text" &&
+        typeof content.text === "string"
+        ? [content.text]
+        : []
+    );
+  }).join("");
+  return isText(text, 60_000) ? text : null;
+}

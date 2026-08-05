@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 import {
+  extractResponseOutputText,
   redactedProviderUsage,
   reportOutputSchema,
   validateReportOutput,
@@ -66,6 +67,7 @@ type ExecutionRequest = Readonly<{
   estimatedCost: number;
   requestId: string;
   maxAttempts: number;
+  background: boolean;
 }>;
 
 function parseRequest(value: unknown): ExecutionRequest | null {
@@ -80,6 +82,7 @@ function parseRequest(value: unknown): ExecutionRequest | null {
     (value.estimatedCost as number) > 2 ||
     !isRequestId(value.requestId) || !Number.isInteger(value.maxAttempts) ||
     (value.maxAttempts as number) < 1 || (value.maxAttempts as number) > 2 ||
+    typeof value.background !== "boolean" ||
     !Array.isArray(value.evidence) ||
     value.evidence.length < 1 || value.evidence.length > 50
   ) return null;
@@ -99,6 +102,7 @@ function parseRequest(value: unknown): ExecutionRequest | null {
     estimatedCost: value.estimatedCost as number,
     requestId: value.requestId,
     maxAttempts: value.maxAttempts as number,
+    background: value.background,
   };
 }
 
@@ -122,7 +126,7 @@ async function providerResponse(
           model: request.model,
           instructions,
           input: request.input,
-          background: false,
+          background: request.background,
           store: false,
           tools: [],
           text: {
@@ -197,7 +201,7 @@ Deno.serve(async (request) => {
       request_id: body.requestId,
       model: body.model,
       prompt_code: body.promptCode,
-      background: false,
+      background: body.background,
       web_search: false,
       evidence_ids: body.evidence.map((item) => item.id),
       max_attempts: body.maxAttempts,
@@ -211,10 +215,7 @@ Deno.serve(async (request) => {
     body,
     `${promptVersion.data.system_text}\n\n${promptVersion.data.developer_text}`,
   );
-  if (
-    !response || !safeText(response.id, 300) ||
-    !safeText(response.output_text, 60_000)
-  ) {
+  if (!response || !safeText(response.id, 300)) {
     await service.rpc("settle_instrumented_ai_call", {
       p_call_id: callId,
       p_actual_cost: 0,
@@ -243,9 +244,48 @@ Deno.serve(async (request) => {
     p_response_id: response.id,
   });
   if (submitted.error) return json({ code: "submission_record_failed" }, 500);
+  if (body.background) {
+    await service.from("trace_events").insert({
+      user_id: run.user_id,
+      correlation_id: run.correlation_id,
+      event_type: "background_response_submitted",
+      redacted_payload: {
+        call_id: callId,
+        response_id: response.id,
+        max_attempts: body.maxAttempts,
+      },
+    });
+    return json({ callId, responseId: response.id, status: "submitted" }, 202);
+  }
+  const outputText = extractResponseOutputText(response);
+  if (!outputText) {
+    await service.rpc("settle_instrumented_ai_call", {
+      p_call_id: callId,
+      p_actual_cost: 0,
+      p_input_tokens: 0,
+      p_output_tokens: 0,
+      p_cached_input_tokens: 0,
+      p_reasoning_tokens: 0,
+      p_search_calls: 0,
+      p_provider_usage: {},
+      p_redacted_trace: {
+        request_id: body.requestId,
+        response_id: response.id,
+        provider_result: "missing_output",
+      },
+      p_validation_passed: false,
+    });
+    await service.from("workflow_runs").update({
+      status: "failed",
+      completed_at: new Date().toISOString(),
+      error_code: "ai_provider_incomplete",
+      redacted_error: "AI provider response had no output.",
+    }).eq("id", body.runId);
+    return json({ code: "provider_incomplete" }, 502);
+  }
   let output: unknown = null;
   try {
-    output = JSON.parse(response.output_text);
+    output = JSON.parse(outputText);
   } catch { /* settled below as invalid */ }
   const validated = validateReportOutput(
     output,
@@ -275,7 +315,7 @@ Deno.serve(async (request) => {
     p_redacted_trace: {
       request_id: body.requestId,
       response_id: response.id,
-      response_sha256: await sha256(response.output_text),
+      response_sha256: await sha256(outputText),
       model: body.model,
       validation_passed: validated !== null,
       background: false,

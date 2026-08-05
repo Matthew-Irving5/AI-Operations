@@ -1,4 +1,5 @@
 import {
+  extractResponseOutputText,
   redactedProviderUsage,
   validateReportOutput,
 } from "./openai-contract.ts";
@@ -55,5 +56,17 @@ Deno.test("provider usage strips untrusted provider response fields", () => {
       cached_input_tokens: 2,
       reasoning_tokens: 1,
     },
+  );
+});
+
+Deno.test("raw Responses output is extracted without persisting provider payloads", () => {
+  assertEquals(
+    extractResponseOutputText({
+      output: [{
+        type: "message",
+        content: [{ type: "output_text", text: "Validated output." }],
+      }],
+    }),
+    "Validated output.",
   );
 });
