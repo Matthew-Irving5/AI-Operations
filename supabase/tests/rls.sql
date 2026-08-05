@@ -1,5 +1,5 @@
 begin;
-select plan(65);
+select plan(69);
 
 select ok(
   not exists (
@@ -133,6 +133,11 @@ select is((select status from public.ai_calls where request_id='instrumentation-
 select lives_ok($$select public.settle_instrumented_ai_call((select id from public.ai_calls where request_id='instrumentation-run-01'), 0.005, 100, 50, 10, 0, 0, '{"input_tokens":100,"output_tokens":50}'::jsonb, '{"response":"redacted"}'::jsonb, true)$$, 'mock provider usage settles through the same reservation and trace path');
 select is((select validation_status from public.ai_calls where request_id='instrumentation-run-01'), 'passed', 'instrumented call stores validation result');
 select is((select status from public.cost_reservations where run_id=(select id from public.workflow_runs where idempotency_key='pass8-instrumented-run')), 'consumed', 'successful mock call consumes its reservation');
+
+select lives_ok($$select public.create_on_demand_run_request('00000000-0000-0000-0000-000000000101', (select id from public.workflow_definitions where code='travel-on-demand-plan'), 'travel', 0.10, 'gpt-5.6-luna', 0, 'pass8-on-demand-instrumented', '{"destination":"synthetic"}'::jsonb)$$, 'on-demand instrumentation starts with an independently capped run');
+select lives_ok($$select public.reserve_instrumented_ai_call('00000000-0000-0000-0000-000000000101', (select id from public.workflow_runs where idempotency_key='pass8-on-demand-instrumented'), (select id from public.ai_model_catalog where model_id='gpt-5.6-luna'), (select pv.id from public.prompt_versions pv join public.prompt_templates pt on pt.id=pv.template_id where pt.code='pass8-instrumentation-test' and pv.version=1), 0.01, 'on-demand-call-01', '{"request":"redacted"}'::jsonb)$$, 'on-demand call reserves within its independent hard cap');
+select lives_ok($$select public.mark_instrumented_ai_call_submitted((select id from public.ai_calls where request_id='on-demand-call-01'), 'resp_on_demand_fixture')$$, 'provider response identifier is recorded before settlement');
+select is((select public.calculate_instrumented_ai_cost((select id from public.ai_model_catalog where model_id='gpt-5.6-luna'), 100, 50, 10, 0)), 0.000391::numeric, 'actual cost calculation uses versioned database pricing without binary rounding');
 
 select * from finish();
 rollback;
