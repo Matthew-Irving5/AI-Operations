@@ -15,8 +15,9 @@ test('login remains usable at iPhone width', async ({ page }) => {
 });
 
 test('direct sign-in API navigation returns to the login page', async ({ page }) => {
-  await page.goto('/api/auth/sign-in');
-  await expect(page).toHaveURL(/\/login$/);
+  const response = await page.request.get('/api/auth/sign-in', { maxRedirects: 0 });
+  expect(response.status()).toBe(307);
+  expect(response.headers().location).toMatch(/\/login$/);
 });
 
 test('MFA challenge is available before protected navigation', async ({ page }) => {
