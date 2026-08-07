@@ -18,8 +18,14 @@ export function requireSameOrigin(request: Request): NextResponse | undefined {
   const forwardedHost = request.headers.get('x-forwarded-host');
   const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
   const protocol = forwardedProto ?? requestUrl.protocol.slice(0, -1);
-  if (host) expectedOrigins.add(`${protocol}://${host}`);
-  if (forwardedHost) expectedOrigins.add(`${protocol}://${forwardedHost}`);
+  if (host) {
+    expectedOrigins.add(`${protocol}://${host}`);
+    expectedOrigins.add(`https://${host}`);
+  }
+  if (forwardedHost) {
+    expectedOrigins.add(`${protocol}://${forwardedHost}`);
+    expectedOrigins.add(`https://${forwardedHost}`);
+  }
 
   return expectedOrigins.has(originUrl.origin)
     ? undefined
