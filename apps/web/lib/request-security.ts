@@ -5,6 +5,15 @@ export function requireSameOrigin(request: Request): NextResponse | undefined {
   const origin = request.headers.get('origin');
   if (!origin) return NextResponse.json({ code: 'origin_required' }, { status: 403 });
 
+  // Some browser privacy/sandbox contexts serialize their opaque origin as
+  // `null`. Accept that only when the browser's forbidden fetch metadata
+  // confirms that the request came from this same origin.
+  if (origin === 'null') {
+    return request.headers.get('sec-fetch-site') === 'same-origin'
+      ? undefined
+      : NextResponse.json({ code: 'origin_invalid' }, { status: 403 });
+  }
+
   let originUrl: URL;
   try {
     originUrl = new URL(origin);
@@ -22,15 +31,6 @@ export function requireSameOrigin(request: Request): NextResponse | undefined {
     } catch {
       return NextResponse.json({ code: 'origin_configuration_invalid' }, { status: 500 });
     }
-  }
-
-  // Some browser privacy/sandbox contexts serialize their opaque origin as
-  // `null`. Accept that only when the browser's forbidden fetch metadata
-  // confirms that the request came from this same origin.
-  if (origin === 'null') {
-    return request.headers.get('sec-fetch-site') === 'same-origin'
-      ? undefined
-      : NextResponse.json({ code: 'origin_invalid' }, { status: 403 });
   }
 
   const expectedOrigins = new Set([configuredOrigin ?? requestUrl.origin]);
