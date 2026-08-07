@@ -35,4 +35,18 @@ describe('requireSameOrigin', () => {
 
     expect(response).toBeUndefined();
   });
+
+  it('accepts public HTTPS when the edge reports an HTTP forwarding hop', () => {
+    const response = requireSameOrigin(
+      new Request('https://internal-worker.example/api/auth/sign-in', {
+        headers: {
+          origin: 'https://ai-operations-production.ai-operations.workers.dev',
+          host: 'ai-operations-production.ai-operations.workers.dev',
+          'x-forwarded-proto': 'http',
+        },
+      }),
+    );
+
+    expect(response).toBeUndefined();
+  });
 });
