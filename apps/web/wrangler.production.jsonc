@@ -4,6 +4,7 @@
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-08-02",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "vars": { "PUBLIC_APP_ORIGIN": "https://ai-operations-production.ai-operations.workers.dev" },
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
   "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "ai-operations-production" }],
   "r2_buckets": [{ "binding": "ARCHIVE_BUCKET", "bucket_name": "ai-operations-production" }],

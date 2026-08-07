@@ -13,7 +13,24 @@ export function requireSameOrigin(request: Request): NextResponse | undefined {
   }
 
   const requestUrl = new URL(request.url);
-  const expectedOrigins = new Set([requestUrl.origin]);
+  const configuredOrigin = process.env.PUBLIC_APP_ORIGIN;
+  if (configuredOrigin) {
+    try {
+      if (new URL(configuredOrigin).origin !== configuredOrigin) {
+        return NextResponse.json({ code: 'origin_configuration_invalid' }, { status: 500 });
+      }
+    } catch {
+      return NextResponse.json({ code: 'origin_configuration_invalid' }, { status: 500 });
+    }
+  }
+
+  const expectedOrigins = new Set([configuredOrigin ?? requestUrl.origin]);
+  if (configuredOrigin) {
+    return expectedOrigins.has(originUrl.origin)
+      ? undefined
+      : NextResponse.json({ code: 'origin_invalid' }, { status: 403 });
+  }
+
   const host = request.headers.get('host');
   const forwardedHost = request.headers.get('x-forwarded-host');
   const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
