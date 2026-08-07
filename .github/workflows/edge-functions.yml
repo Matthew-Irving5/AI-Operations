@@ -1,5 +1,8 @@
 name: Edge functions
 on: [pull_request, merge_group]
+
+permissions:
+  contents: read
 jobs:
   deno:
     runs-on: ubuntu-latest

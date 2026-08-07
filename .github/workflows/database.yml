@@ -1,5 +1,8 @@
 name: Database
 on: [pull_request, merge_group]
+
+permissions:
+  contents: read
 jobs:
   migrations-and-rls:
     runs-on: ubuntu-latest
