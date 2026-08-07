@@ -1,8 +1,11 @@
 import { expect, test } from '@playwright/test';
 
 test('login is the only unauthenticated entry point', async ({ page }) => {
-  await page.goto('/overview');
+  const response = await page.goto('/overview');
   await expect(page).toHaveURL(/\/login$/);
+  const policy = response?.headers()['content-security-policy'] ?? '';
+  expect(policy).toContain("script-src 'self' 'nonce-");
+  expect(policy).not.toContain("script-src 'self';");
   await expect(page.getByRole('heading', { name: 'AI Operations' })).toBeVisible();
   await expect(page.getByLabel('Email')).toBeVisible();
   await expect(page.getByText('Multi-factor authentication is required.')).toBeVisible();
