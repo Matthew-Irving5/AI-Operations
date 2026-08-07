@@ -82,4 +82,20 @@ describe('requireSameOrigin', () => {
 
     expect(response).toBeUndefined();
   });
+
+  it('accepts an opaque browser origin only for same-origin fetch metadata', () => {
+    const accepted = requireSameOrigin(
+      new Request('https://operations.example/api/auth/sign-in', {
+        headers: { origin: 'null', 'sec-fetch-site': 'same-origin' },
+      }),
+    );
+    const rejected = requireSameOrigin(
+      new Request('https://operations.example/api/auth/sign-in', {
+        headers: { origin: 'null', 'sec-fetch-site': 'cross-site' },
+      }),
+    );
+
+    expect(accepted).toBeUndefined();
+    expect(rejected?.status).toBe(403);
+  });
 });

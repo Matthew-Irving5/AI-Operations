@@ -24,6 +24,15 @@ export function requireSameOrigin(request: Request): NextResponse | undefined {
     }
   }
 
+  // Some browser privacy/sandbox contexts serialize their opaque origin as
+  // `null`. Accept that only when the browser's forbidden fetch metadata
+  // confirms that the request came from this same origin.
+  if (origin === 'null') {
+    return request.headers.get('sec-fetch-site') === 'same-origin'
+      ? undefined
+      : NextResponse.json({ code: 'origin_invalid' }, { status: 403 });
+  }
+
   const expectedOrigins = new Set([configuredOrigin ?? requestUrl.origin]);
   const referer = request.headers.get('referer');
   if (referer) {
