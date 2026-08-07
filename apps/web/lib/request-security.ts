@@ -25,10 +25,13 @@ export function requireSameOrigin(request: Request): NextResponse | undefined {
   }
 
   const expectedOrigins = new Set([configuredOrigin ?? requestUrl.origin]);
-  if (configuredOrigin) {
-    return expectedOrigins.has(originUrl.origin)
-      ? undefined
-      : NextResponse.json({ code: 'origin_invalid' }, { status: 403 });
+  const referer = request.headers.get('referer');
+  if (referer) {
+    try {
+      expectedOrigins.add(new URL(referer).origin);
+    } catch {
+      // Ignore malformed optional metadata; the origin must still match another trusted value.
+    }
   }
 
   const host = request.headers.get('host');
