@@ -68,4 +68,18 @@ describe('requireSameOrigin', () => {
     expect(accepted).toBeUndefined();
     expect(rejected?.status).toBe(403);
   });
+
+  it('accepts the page origin from Referer when the edge runtime host is internal', () => {
+    vi.stubEnv('PUBLIC_APP_ORIGIN', 'https://configured.example');
+    const response = requireSameOrigin(
+      new Request('https://internal-worker.example/api/auth/sign-in', {
+        headers: {
+          origin: 'https://ai-operations-production.ai-operations.workers.dev',
+          referer: 'https://ai-operations-production.ai-operations.workers.dev/login',
+        },
+      }),
+    );
+
+    expect(response).toBeUndefined();
+  });
 });
