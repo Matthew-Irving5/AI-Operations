@@ -1,5 +1,8 @@
 name: Edge functions
 on: [pull_request, merge_group]
+
+permissions:
+  contents: read
 jobs:
   deno:
     runs-on: ubuntu-latest
@@ -9,3 +12,4 @@ jobs:
       - run: deno fmt --check supabase/functions
       - run: deno lint --rules-exclude=no-import-prefix supabase/functions
       - run: deno check supabase/functions/*/index.ts
+      - run: deno test supabase/functions/_shared/*_test.ts

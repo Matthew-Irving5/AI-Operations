@@ -14,3 +14,19 @@ export async function createSupabaseServerClient() {
     },
   });
 }
+
+/**
+ * Obtain a bearer token only after Supabase has validated the cookie-backed
+ * session with Auth. `getSession()` alone only reads untrusted cookie storage.
+ */
+export async function getAuthenticatedServerAccessToken(): Promise<string | null> {
+  const client = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await client.auth.getUser();
+  if (!user) return null;
+  const {
+    data: { session },
+  } = await client.auth.getSession();
+  return session?.access_token ?? null;
+}

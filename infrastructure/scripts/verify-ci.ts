@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process';
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 type Command = {
   executable: string;
@@ -49,6 +51,15 @@ function valueFromSupabaseStatus(status: string, name: string): string {
   return match[1];
 }
 
+const functionDirectories = readdirSync('supabase/functions', {
+  withFileTypes: true,
+})
+  .filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
+  .map((entry) => join('supabase/functions', entry.name, 'index.ts'));
+const edgeContractTests = readdirSync('supabase/functions/_shared')
+  .filter((entry) => entry.endsWith('_test.ts'))
+  .map((entry) => join('supabase/functions/_shared', entry));
+
 runInherited(pnpm(['verify']));
 if (process.platform === 'win32') {
   console.log(
@@ -66,6 +77,14 @@ runInherited({ executable: 'deno', args: ['fmt', '--check', 'supabase/functions'
 runInherited({
   executable: 'deno',
   args: ['lint', '--rules-exclude=no-import-prefix', 'supabase/functions'],
+});
+runInherited({
+  executable: 'deno',
+  args: ['check', ...functionDirectories],
+});
+runInherited({
+  executable: 'deno',
+  args: ['test', ...edgeContractTests],
 });
 runInherited({
   executable: 'python',
