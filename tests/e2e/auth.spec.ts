@@ -14,6 +14,11 @@ test('login remains usable at iPhone width', async ({ page }) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+test('direct sign-in API navigation returns to the login page', async ({ page }) => {
+  await page.goto('/api/auth/sign-in');
+  await expect(page).toHaveURL(/\/login$/);
+});
+
 test('MFA challenge is available before protected navigation', async ({ page }) => {
   await page.goto('/mfa');
   await expect(page.getByRole('heading', { name: 'Verify your identity' })).toBeVisible();

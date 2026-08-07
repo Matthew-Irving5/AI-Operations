@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { requireSameOrigin } from './request-security';
 
 describe('requireSameOrigin', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   it('accepts a same-origin mutation request', () => {
     expect(
       requireSameOrigin(
@@ -48,5 +50,22 @@ describe('requireSameOrigin', () => {
     );
 
     expect(response).toBeUndefined();
+  });
+
+  it('uses the configured public origin instead of proxy-derived hosts', () => {
+    vi.stubEnv('PUBLIC_APP_ORIGIN', 'https://ai-operations-production.ai-operations.workers.dev');
+    const accepted = requireSameOrigin(
+      new Request('https://internal-worker.example/api/auth/sign-in', {
+        headers: { origin: 'https://ai-operations-production.ai-operations.workers.dev' },
+      }),
+    );
+    const rejected = requireSameOrigin(
+      new Request('https://internal-worker.example/api/auth/sign-in', {
+        headers: { origin: 'https://ai-operations-staging.ai-operations.workers.dev' },
+      }),
+    );
+
+    expect(accepted).toBeUndefined();
+    expect(rejected?.status).toBe(403);
   });
 });
