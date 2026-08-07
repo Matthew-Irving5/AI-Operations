@@ -28,15 +28,21 @@ jobs:
           PRODUCTION_SUPABASE_ACCESS_TOKEN: ${{ secrets.PRODUCTION_SUPABASE_ACCESS_TOKEN }}
           PRODUCTION_SUPABASE_PROJECT_REF: ${{ secrets.PRODUCTION_SUPABASE_PROJECT_REF }}
           PRODUCTION_SUPABASE_DB_PASSWORD: ${{ secrets.PRODUCTION_SUPABASE_DB_PASSWORD }}
+          PRODUCTION_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          PRODUCTION_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
         run: |
           test -n "$PRODUCTION_SUPABASE_ACCESS_TOKEN" || { echo "Missing production secret: PRODUCTION_SUPABASE_ACCESS_TOKEN"; exit 1; }
           test -n "$PRODUCTION_SUPABASE_PROJECT_REF" || { echo "Missing production secret: PRODUCTION_SUPABASE_PROJECT_REF"; exit 1; }
           test -n "$PRODUCTION_SUPABASE_DB_PASSWORD" || { echo "Missing production secret: PRODUCTION_SUPABASE_DB_PASSWORD"; exit 1; }
+          test -n "$PRODUCTION_SUPABASE_URL" || { echo "Missing production secret: PRODUCTION_SUPABASE_URL"; exit 1; }
+          test -n "$PRODUCTION_SUPABASE_ANON_KEY" || { echo "Missing production secret: PRODUCTION_SUPABASE_ANON_KEY"; exit 1; }
       - name: Deploy Worker
         working-directory: apps/web
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
         run: pnpm run deploy -- --config wrangler.production.jsonc
       - name: Apply production migrations
         env:
