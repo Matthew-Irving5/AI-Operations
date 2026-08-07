@@ -21,4 +21,18 @@ describe('requireSameOrigin', () => {
     expect(response?.status).toBe(403);
     await expect(response?.json()).resolves.toEqual({ code: 'origin_invalid' });
   });
+
+  it('accepts the public host when the edge runtime URL uses an internal host', () => {
+    const response = requireSameOrigin(
+      new Request('https://internal-worker.example/api/auth/sign-in', {
+        headers: {
+          origin: 'https://ai-operations-production.ai-operations.workers.dev',
+          host: 'ai-operations-production.ai-operations.workers.dev',
+          'x-forwarded-proto': 'https',
+        },
+      }),
+    );
+
+    expect(response).toBeUndefined();
+  });
 });
