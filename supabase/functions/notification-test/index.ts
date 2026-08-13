@@ -40,11 +40,6 @@ Deno.serve(async (request) => {
   ) {
     return json({ code: "authenticated_session_required" }, 403);
   }
-  const { data: assurance } = await caller.auth.mfa
-    .getAuthenticatorAssuranceLevel();
-  if (assurance?.currentLevel !== "aal2") {
-    return json({ code: "mfa_required" }, 403);
-  }
   if (!await consumeRateLimit(identity.user.id, "gmail_test_notification", 3)) {
     return json({ code: "rate_limited" }, 429);
   }
