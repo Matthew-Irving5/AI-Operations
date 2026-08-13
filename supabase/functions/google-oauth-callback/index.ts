@@ -3,6 +3,8 @@ const service = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
 );
+const env = (preferred: string, compatibility: string) =>
+  Deno.env.get(preferred) ?? Deno.env.get(compatibility);
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -84,8 +86,11 @@ Deno.serve(async (request) => {
   if (claim.error || !claim.data) {
     return json({ code: "oauth_state_invalid" }, 403);
   }
-  const clientId = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID"),
-    clientSecret = Deno.env.get("GOOGLE_OAUTH_CLIENT_SECRET");
+  const clientId = env("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_CLOUD_CLIENT_ID"),
+    clientSecret = env(
+      "GOOGLE_OAUTH_CLIENT_SECRET",
+      "GOOGLE_CLOUD_CLIENT_SECRET",
+    );
   if (!clientId || !clientSecret) {
     return json({ code: "google_oauth_not_configured" }, 503);
   }
