@@ -156,8 +156,11 @@ export function OnboardingForm({
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ code, complete }),
     });
-    if (!response.ok)
-      return setStatus('Checklist update was rejected. Complete fresh MFA and retry.');
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as { code?: string } | null;
+      const reason = body?.code ?? `http_${response.status}`;
+      return setStatus(`Checklist update rejected (${reason}). Complete fresh MFA and retry.`);
+    }
     setCompleted((current) => {
       const next = new Set(current);
       complete ? next.add(code) : next.delete(code);
