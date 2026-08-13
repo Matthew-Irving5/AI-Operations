@@ -5,6 +5,8 @@ const service = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
 );
 const allowedEmail = "matthewirving99@gmail.com";
+const env = (preferred: string, compatibility: string) =>
+  Deno.env.get(preferred) ?? Deno.env.get(compatibility);
 const scopes = [
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/gmail.send",
@@ -68,8 +70,8 @@ Deno.serve(async (request) => {
     !identity.user || identity.user.email?.toLowerCase() !== allowedEmail ||
     assurance?.currentLevel !== "aal2"
   ) return json({ code: "forbidden" }, 403);
-  const clientId = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID"),
-    redirectUri = Deno.env.get("GOOGLE_OAUTH_REDIRECT_URI");
+  const clientId = env("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_CLOUD_CLIENT_ID"),
+    redirectUri = env("GOOGLE_OAUTH_REDIRECT_URI", "GOOGLE_CLOUD_REDIRECT_URI");
   if (!clientId || !redirectUri) {
     return json({ code: "google_oauth_not_configured" }, 503);
   }
