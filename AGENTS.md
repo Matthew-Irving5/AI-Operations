@@ -87,6 +87,36 @@ Never:
 - Every UI state has loading, empty, error, and permission-denied handling.
 - Mobile Safari and desktop Chromium are required targets.
 
+## Debugging and incident method
+
+When diagnosing a production failure, establish the failing boundary before
+forming a root-cause theory. Trace the request hop by hop: browser request,
+application route, provider call, persistence/RLS operation, and the next
+redirect or session read. Record the status and structured response for each
+hop, using a correlation/request ID where available.
+
+- Treat a successful upstream operation as a boundary: if a provider returns
+  `200`, stop treating that provider call as the failure and inspect the next
+  application operation.
+- For authenticated flows, verify both identities and persistence: the Auth
+  user/session, the application profile row, required `is_allowed` flags,
+  claims/AAL, cookies, and RLS predicates. An Auth user can exist while the
+  application user row required by RLS is missing.
+- Check provider logs and database invariants early, before investigating
+  niche browser, CDN, CSP, clock, or token hypotheses. Rank hypotheses by the
+  evidence already observed and test the cheapest/highest-probability one
+  first.
+- Do not ask the operator to repeatedly paste minified JavaScript initiator
+  stacks. Request only the exact status, endpoint, structured response, log
+  exception, or redacted screenshot needed to distinguish the next boundary.
+- If the client response is blank, use server/provider logs or add temporary
+  safe stage-level diagnostics with correlation IDs; never log secrets, codes,
+  cookies, tokens, or personal payloads. Remove temporary diagnostics after
+  the root cause is confirmed.
+- After a production fix, repeat the complete flow from a fresh session and
+  verify both the user-visible result and the relevant provider/database audit
+  record.
+
 ## Pass start protocol
 
 1. Verify repository:
