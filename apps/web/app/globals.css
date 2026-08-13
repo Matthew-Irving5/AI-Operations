@@ -64,12 +64,29 @@ nav a:hover {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
-  color: var(--muted);
   font-size: 12px;
+}
+.session-status button,
+.session-warning button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
 }
 .session-warning {
   border-color: #e7a85c;
   color: #ffd49a;
+}
+.session-warning button {
+  color: #ffd49a;
+}
+.session-detail {
+  display: block;
+  max-width: 250px;
+  margin-top: 6px;
+  color: var(--muted);
+  line-height: 1.4;
 }
 main {
   padding: 32px;

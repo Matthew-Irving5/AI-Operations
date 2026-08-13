@@ -59,11 +59,11 @@ Deno.serve(async (request) => {
     return json({ code: "acceptance_requires_finalise" }, 422);
   }
   const completed_at = body.complete ? new Date().toISOString() : null;
-  const update = await service.from("onboarding_checklist_items").upsert({
-    user_id: identity.user.id,
-    code: body.code,
-    completed_at,
-  }, { onConflict: "user_id,code" });
+  const update = await service.rpc("update_onboarding_checklist_item", {
+    p_user_id: identity.user.id,
+    p_code: body.code,
+    p_completed_at: completed_at,
+  });
   if (update.error) {
     return json({
       code: "onboarding_update_failed",
