@@ -7,6 +7,7 @@ const WARNING_MS = 60_000;
 
 export function SessionActivity() {
   const [remaining, setRemaining] = useState(IDLE_LIMIT_MS);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     let lastActivity = Date.now();
@@ -36,11 +37,20 @@ export function SessionActivity() {
   const minutes = Math.floor(remaining / 60_000);
   const seconds = Math.floor((remaining % 60_000) / 1000);
   const warning = remaining <= WARNING_MS;
+  const label = warning
+    ? `Session expires in ${minutes}:${seconds.toString().padStart(2, '0')}`
+    : 'Session active';
   return (
-    <p className={warning ? 'session-warning' : 'session-status'} aria-live="polite">
-      {warning
-        ? `Session expires in ${minutes}:${seconds.toString().padStart(2, '0')}`
-        : 'Session active'}
-    </p>
+    <div className={warning ? 'session-warning' : 'session-status'}>
+      <button type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
+        {label}
+      </button>
+      {expanded && (
+        <span className="session-detail" role="status">
+          Inactivity logout in {minutes}:{seconds.toString().padStart(2, '0')}. Move, scroll, or
+          type on the page to reset this clock.
+        </span>
+      )}
+    </div>
   );
 }
