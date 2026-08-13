@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-export function GoogleConnect() {
+export function GoogleConnect({ label = 'Connect Google' }: Readonly<{ label?: string }>) {
   const [status, setStatus] = useState('');
   async function connect() {
     setStatus('Preparing secure Google consent...');
@@ -20,7 +20,7 @@ export function GoogleConnect() {
   return (
     <div>
       <button type="button" onClick={() => void connect()}>
-        Connect Google
+        {label}
       </button>
       <p aria-live="polite">{status}</p>
     </div>
