@@ -157,8 +157,12 @@ export function OnboardingForm({
       body: JSON.stringify({ code, complete }),
     });
     if (!response.ok) {
-      const body = (await response.json().catch(() => null)) as { code?: string } | null;
-      const reason = body?.code ?? `http_${response.status}`;
+      const body = (await response.json().catch(() => null)) as {
+        code?: string;
+        reason?: string;
+      } | null;
+      const reason =
+        [body?.code, body?.reason].filter(Boolean).join(':') || `http_${response.status}`;
       return setStatus(
         `Checklist update rejected (${reason}). Sign in again if your session has expired.`,
       );

@@ -64,7 +64,12 @@ Deno.serve(async (request) => {
     code: body.code,
     completed_at,
   }, { onConflict: "user_id,code" });
-  if (update.error) return json({ code: "onboarding_update_failed" }, 500);
+  if (update.error) {
+    return json({
+      code: "onboarding_update_failed",
+      reason: update.error.code ?? "database_error",
+    }, 500);
+  }
   await service.from("audit_events").insert({
     user_id: identity.user.id,
     actor_type: "user",
