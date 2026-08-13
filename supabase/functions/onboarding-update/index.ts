@@ -48,7 +48,7 @@ Deno.serve(async (request) => {
   if (
     !identity.user ||
     identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com"
-  ) return json({ code: "fresh_mfa_required" }, 403);
+  ) return json({ code: "authenticated_session_required" }, 403);
   if (!await consumeRateLimit(identity.user.id, "onboarding_update", 30)) {
     return json({ code: "rate_limited" }, 429);
   }

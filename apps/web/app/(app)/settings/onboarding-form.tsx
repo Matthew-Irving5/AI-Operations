@@ -159,7 +159,9 @@ export function OnboardingForm({
     if (!response.ok) {
       const body = (await response.json().catch(() => null)) as { code?: string } | null;
       const reason = body?.code ?? `http_${response.status}`;
-      return setStatus(`Checklist update rejected (${reason}). Complete fresh MFA and retry.`);
+      return setStatus(
+        `Checklist update rejected (${reason}). Sign in again if your session has expired.`,
+      );
     }
     setCompleted((current) => {
       const next = new Set(current);
