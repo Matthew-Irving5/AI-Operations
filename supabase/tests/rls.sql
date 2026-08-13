@@ -1,5 +1,5 @@
 begin;
-select plan(79);
+select plan(83);
 
 select ok(
   not exists (
@@ -104,6 +104,10 @@ select ok((select relrowsecurity from pg_class where relname='onboarding_checkli
 select ok((select relrowsecurity from pg_class where relname='production_acceptances' and relnamespace = 'public'::regnamespace), 'Production acceptance has RLS enabled');
 select ok(exists(select 1 from pg_proc where proname = 'production_onboarding_complete'), 'Production onboarding completion guard exists');
 select ok(not has_table_privilege('authenticated', 'public.workflow_schedules', 'UPDATE'), 'Direct schedule enablement is not available to browser roles');
+select ok(has_table_privilege('service_role', 'public.oauth_states', 'INSERT'), 'OAuth start can persist state through the service role');
+select ok(has_table_privilege('service_role', 'public.oauth_states', 'UPDATE'), 'OAuth callback can consume state through the service role');
+select ok(has_table_privilege('service_role', 'public.connection_credentials', 'INSERT'), 'OAuth callback can persist encrypted credentials through the service role');
+select ok(has_table_privilege('service_role', 'public.audit_events', 'INSERT'), 'OAuth callback can record its audit event through the service role');
 select is(public.production_onboarding_complete('00000000-0000-0000-0000-000000000101'), false, 'Schedules remain gated until the preliminary onboarding steps are recorded');
 select ok((select relrowsecurity from pg_class where relname='edge_request_windows' and relnamespace = 'public'::regnamespace), 'Edge rate windows have RLS enabled');
 select is(public.consume_edge_request_quota('00000000-0000-0000-0000-000000000101', 'test_quota', 1), true, 'First rate-limited request is accepted');

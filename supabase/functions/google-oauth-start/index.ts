@@ -85,7 +85,7 @@ Deno.serve(async (request) => {
   }
   const state = b64(crypto.getRandomValues(new Uint8Array(32))),
     verifier = b64(crypto.getRandomValues(new Uint8Array(48)));
-  await service.from("oauth_states").insert({
+  const stateInsert = await service.from("oauth_states").insert({
     user_id: identity.user.id,
     provider: "google",
     state_hash: await sha(state),
@@ -94,6 +94,12 @@ Deno.serve(async (request) => {
     redirect_uri: redirectUri,
     expires_at: new Date(Date.now() + 600_000).toISOString(),
   });
+  if (stateInsert.error) {
+    return json({
+      code: "oauth_state_persist_failed",
+      reason: stateInsert.error.code ?? "database_error",
+    }, 500);
+  }
   const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   url.search = new URLSearchParams({
     client_id: clientId,
