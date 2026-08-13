@@ -79,19 +79,20 @@ Deno.serve(async (request) => {
     .eq("user_id", identity.user.id)
     .eq("provider", "google")
     .maybeSingle();
-  if (
-    connection.error || !connection.data ||
-    connection.data.status !== "connected"
-  ) {
+  if (connection.error) {
+    return json({ code: "google_connection_lookup_failed" }, 500);
+  }
+  if (!connection.data || connection.data.status !== "connected") {
     return json({ code: "google_connection_missing" }, 409);
   }
   const credential = await service.from("connection_credentials")
     .select("encrypted_refresh_token")
     .eq("connection_id", connection.data.id)
     .maybeSingle();
-  if (credential.error || !credential.data) {
-    return json({ code: "google_connection_missing" }, 409);
+  if (credential.error) {
+    return json({ code: "google_credential_lookup_failed" }, 500);
   }
+  if (!credential.data) return json({ code: "google_credential_missing" }, 409);
   let refreshToken: string;
   try {
     refreshToken = await decrypt(credential.data.encrypted_refresh_token);
