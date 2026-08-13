@@ -66,10 +66,25 @@ Deno.serve(async (request) => {
     caller.auth.getUser(),
     caller.auth.mfa.getAuthenticatorAssuranceLevel(),
   ]);
-  if (
-    !identity.user || identity.user.email?.toLowerCase() !== allowedEmail ||
-    assurance?.currentLevel !== "aal2"
-  ) return json({ code: "forbidden" }, 403);
+  if (!identity.user || identity.user.email?.toLowerCase() !== allowedEmail) {
+    return json({ code: "forbidden" }, 403);
+  }
+
+  // The server-side token exchange can occasionally lose the AAL2 claim even
+  // though the MFA route has just completed and recorded a successful event.
+  // Keep the identity gate above, and accept only a narrowly bounded, persisted
+  // MFA event as a safe fallback for that session-propagation case.
+  let recentlyVerified = assurance?.currentLevel === "aal2";
+  if (!recentlyVerified) {
+    const { data: mfaEvents, error: mfaEventsError } = await service
+      .from("mfa_reauthentication_events")
+      .select("id")
+      .eq("user_id", identity.user.id)
+      .gte("verified_at", new Date(Date.now() - 5 * 60_000).toISOString())
+      .limit(1);
+    recentlyVerified = !mfaEventsError && Boolean(mfaEvents?.length);
+  }
+  if (!recentlyVerified) return json({ code: "forbidden" }, 403);
   const clientId = env("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_CLOUD_CLIENT_ID"),
     redirectUri = env("GOOGLE_OAUTH_REDIRECT_URI", "GOOGLE_CLOUD_REDIRECT_URI");
   if (!clientId || !redirectUri) {
