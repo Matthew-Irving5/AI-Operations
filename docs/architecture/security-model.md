@@ -4,4 +4,11 @@ The sole production identity is allowlisted in the database. Authenticated route
 
 State-changing Next.js routes reject requests without a same-origin `Origin` header and authenticate the user with Supabase `getUser` before an access token is relayed to a JWT-verified Edge Function. Supabase session cookies are server-managed. Service-role credentials, access tokens, database passwords, Cloudflare tokens, and R2 credentials remain server/deployment secrets and must never be bundled into frontend output.
 
+The Google OAuth start function verifies the active Supabase session and the
+production identity allowlist. It does not impose a second five-minute MFA
+event window: the dashboard is already behind the AAL2 app layout, and an
+active session is the correct gate for initiating a connection. Actions that
+change credentials, scopes, budgets, or approvals retain their dedicated
+fresh-MFA checks.
+
 The browser is protected with a restrictive CSP, frame denial, no-referrer policy, disabled camera/microphone/geolocation permissions, MIME sniffing protection, and HSTS. Database tables use RLS and authenticated table mutations are removed where a privileged action must pass an Edge Function’s AAL2, allowlist, validation, idempotency, and audit checks. Schedule enabling additionally requires the recorded production acceptance; the service function verifies it server-side and does not trust UI state.
