@@ -148,6 +148,7 @@ export function OnboardingForm({
 }: Readonly<{ completedCodes: string[]; accepted: boolean }>) {
   const [completed, setCompleted] = useState(() => new Set(completedCodes));
   const [status, setStatus] = useState(accepted ? 'Production onboarding accepted.' : '');
+  const [testStatus, setTestStatus] = useState('');
   const completeCount = useMemo(() => completed.size, [completed]);
   async function toggle(code: string, complete: boolean) {
     setStatus('Saving checklist item...');
@@ -183,6 +184,16 @@ export function OnboardingForm({
         : 'Acceptance was rejected: complete every checklist item with fresh MFA.',
     );
   }
+  async function sendGmailTest() {
+    setTestStatus('Sending test notification...');
+    const response = await fetch('/api/notifications/test', { method: 'POST' });
+    const body = (await response.json().catch(() => null)) as { code?: string } | null;
+    setTestStatus(
+      response.ok
+        ? 'Test sent. Check Matthew.irving.ai@gmail.com.'
+        : `Test failed (${body?.code ?? `http_${response.status}`}).`,
+    );
+  }
   return (
     <section className="stack" aria-label="Production onboarding checklist">
       <p className="card">
@@ -207,6 +218,14 @@ export function OnboardingForm({
                 {instructions.map((instruction) => (
                   <p key={instruction}>{instruction}</p>
                 ))}
+                {code === 'gmail_test' && (
+                  <div className="stack">
+                    <button type="button" onClick={() => void sendGmailTest()}>
+                      Send test notification
+                    </button>
+                    <p aria-live="polite">{testStatus}</p>
+                  </div>
+                )}
               </div>
             </details>
           </div>
