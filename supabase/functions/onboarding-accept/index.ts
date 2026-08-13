@@ -27,9 +27,20 @@ Deno.serve(async (request) => {
   ]);
   if (
     !identity.user ||
-    identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com" ||
-    assurance?.currentLevel !== "aal2"
+    identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com"
   ) return json({ code: "fresh_mfa_required" }, 403);
+  const recentMfa = await service
+    .from("mfa_reauthentication_events")
+    .select("id")
+    .eq("user_id", identity.user.id)
+    .gte("verified_at", new Date(Date.now() - 5 * 60_000).toISOString())
+    .limit(1);
+  if (
+    assurance?.currentLevel !== "aal2" &&
+    (recentMfa.error || !recentMfa.data?.length)
+  ) {
+    return json({ code: "fresh_mfa_required" }, 403);
+  }
   if (!await consumeRateLimit(identity.user.id, "onboarding_accept", 5)) {
     return json({ code: "rate_limited" }, 429);
   }
