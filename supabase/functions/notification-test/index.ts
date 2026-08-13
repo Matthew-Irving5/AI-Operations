@@ -7,6 +7,8 @@ const service = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
 );
 const recipient = "matthew.irving.ai@gmail.com";
+const env = (preferred: string, compatibility: string) =>
+  Deno.env.get(preferred) ?? Deno.env.get(compatibility);
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -20,6 +22,27 @@ const base64Url = (value: string) => {
     "=",
     "",
   );
+};
+const decrypt = async (value: string) => {
+  const raw = Deno.env.get("APP_TOKEN_ENCRYPTION_KEY");
+  if (!raw) throw new Error("token_encryption_unconfigured");
+  const [noncePart, cipherPart] = value.split(".");
+  if (!noncePart || !cipherPart) throw new Error("encrypted_value_invalid");
+  const keyBytes = Uint8Array.from(atob(raw), (char) => char.charCodeAt(0));
+  if (keyBytes.byteLength !== 32) {
+    throw new Error("token_encryption_key_invalid");
+  }
+  const plaintext = await crypto.subtle.decrypt(
+    {
+      name: "AES-GCM",
+      iv: Uint8Array.from(atob(noncePart), (char) => char.charCodeAt(0)),
+    },
+    await crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, [
+      "decrypt",
+    ]),
+    Uint8Array.from(atob(cipherPart), (char) => char.charCodeAt(0)),
+  );
+  return new TextDecoder().decode(plaintext);
 };
 
 Deno.serve(async (request) => {
@@ -43,8 +66,55 @@ Deno.serve(async (request) => {
   if (!await consumeRateLimit(identity.user.id, "gmail_test_notification", 3)) {
     return json({ code: "rate_limited" }, 429);
   }
-  const accessToken = Deno.env.get("GMAIL_ACCESS_TOKEN");
-  if (!accessToken) return json({ code: "gmail_not_configured" }, 503);
+  const clientId = env("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_CLOUD_CLIENT_ID");
+  const clientSecret = env(
+    "GOOGLE_OAUTH_CLIENT_SECRET",
+    "GOOGLE_CLOUD_CLIENT_SECRET",
+  );
+  if (!clientId || !clientSecret || !Deno.env.get("APP_TOKEN_ENCRYPTION_KEY")) {
+    return json({ code: "google_not_configured" }, 503);
+  }
+  const connection = await service.from("connections")
+    .select("id,status")
+    .eq("user_id", identity.user.id)
+    .eq("provider", "google")
+    .maybeSingle();
+  if (
+    connection.error || !connection.data ||
+    connection.data.status !== "connected"
+  ) {
+    return json({ code: "google_connection_missing" }, 409);
+  }
+  const credential = await service.from("connection_credentials")
+    .select("encrypted_refresh_token")
+    .eq("connection_id", connection.data.id)
+    .maybeSingle();
+  if (credential.error || !credential.data) {
+    return json({ code: "google_connection_missing" }, 409);
+  }
+  let refreshToken: string;
+  try {
+    refreshToken = await decrypt(credential.data.encrypted_refresh_token);
+  } catch {
+    return json({ code: "google_credential_invalid" }, 500);
+  }
+  const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+  const tokenBody = await tokenResponse.json().catch(() => ({})) as {
+    access_token?: string;
+  };
+  if (!tokenResponse.ok || !tokenBody.access_token) {
+    return json({ code: "google_reauth_required" }, 409);
+  }
+  const accessToken = tokenBody.access_token;
   const correlationId = crypto.randomUUID();
   const dedupeKey = `gmail-test:${correlationId}`;
   const notification = await service.from("notifications").insert({
