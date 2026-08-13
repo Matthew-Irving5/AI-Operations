@@ -28,6 +28,7 @@ export default async function DataSourcesPage() {
             Freshness is recorded after each successful incremental sync. Reconnect if this
             connection requires reauthentication.
           </p>
+          <GoogleConnect label="Reconnect Google" />
         </article>
       ))}
       {!google.length ? (
