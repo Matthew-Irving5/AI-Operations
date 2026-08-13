@@ -131,13 +131,18 @@ Deno.serve(async (request) => {
   if (connection.error || !connection.data) {
     return json({ code: "connection_store_failed" }, 500);
   }
-  await service.from("connection_credentials").upsert({
+  const credential = await service.from("connection_credentials").upsert({
     connection_id: connection.data.id,
     encrypted_refresh_token: await encrypt(tokens.refresh_token),
     token_expires_at: tokens.expires_in
       ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
       : null,
-  });
+  }, { onConflict: "connection_id" }).select("connection_id").single();
+  if (credential.error || !credential.data) {
+    await service.from("connections").update({ status: "disconnected" })
+      .eq("id", connection.data.id);
+    return json({ code: "credential_store_failed" }, 500);
+  }
   await service.from("audit_events").insert({
     user_id: result.data.user_id,
     actor_type: "user",
