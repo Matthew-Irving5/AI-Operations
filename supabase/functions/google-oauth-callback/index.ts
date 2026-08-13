@@ -147,8 +147,24 @@ Deno.serve(async (request) => {
     aal: "aal2",
     result: "success",
   });
+  const appOrigin = Deno.env.get("PUBLIC_APP_ORIGIN") ??
+    Deno.env.get("APP_PUBLIC_ORIGIN");
+  if (!appOrigin) return json({ code: "app_origin_unconfigured" }, 503);
+  let redirectOrigin: URL;
+  try {
+    redirectOrigin = new URL(appOrigin);
+  } catch {
+    return json({ code: "app_origin_invalid" }, 503);
+  }
+  if (
+    redirectOrigin.protocol !== "https:" ||
+    !new Set([
+      "ai-operations-production.ai-operations.workers.dev",
+      "ai-operations-staging.ai-operations.workers.dev",
+    ]).has(redirectOrigin.hostname)
+  ) return json({ code: "app_origin_invalid" }, 503);
   return Response.redirect(
-    new URL("/data-sources?google=connected", url).toString(),
+    new URL("/data-sources?google=connected", redirectOrigin).toString(),
     302,
   );
 });
