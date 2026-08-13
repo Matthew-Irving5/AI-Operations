@@ -87,6 +87,36 @@ main {
   display: grid;
   gap: 12px;
 }
+.onboarding-item-header {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.onboarding-item-header > label {
+  flex: 0 0 auto;
+  padding-top: 2px;
+  white-space: nowrap;
+}
+.onboarding-item details {
+  min-width: 0;
+  flex: 1;
+}
+.onboarding-item summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 2px 0;
+}
+.onboarding-instructions {
+  color: var(--muted);
+  line-height: 1.5;
+  margin-top: 10px;
+}
+.onboarding-instructions p {
+  margin: 0 0 10px;
+}
+.onboarding-instructions p:last-child {
+  margin-bottom: 0;
+}
 .feedback {
   display: grid;
   gap: 8px;

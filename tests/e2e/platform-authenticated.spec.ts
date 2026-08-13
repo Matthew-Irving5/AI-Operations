@@ -155,6 +155,10 @@ test('Systems, device, and onboarding surfaces are reachable and preserve produc
     page.getByRole('heading', { name: 'Settings & production onboarding' }),
   ).toBeVisible();
   await expect(page.getByText('0/17 required setup steps recorded')).toBeVisible();
+  const supabaseInstructions = page.getByText('Production Supabase secrets');
+  await expect(supabaseInstructions).toBeVisible();
+  await supabaseInstructions.click();
+  await expect(page.getByText(/PRODUCTION_SUPABASE_ACCESS_TOKEN/)).toBeVisible();
   await expect(
     page.getByRole('button', { name: 'Record final production acceptance' }),
   ).toBeDisabled();
