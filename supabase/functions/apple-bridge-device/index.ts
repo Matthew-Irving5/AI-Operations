@@ -33,7 +33,9 @@ async function callerFor(request: Request) {
     caller.auth.getUser(),
     caller.auth.mfa.getAuthenticatorAssuranceLevel(),
   ]);
-  if (!identity.user || identity.user.email?.toLowerCase() !== allowedEmail) return null;
+  if (!identity.user || identity.user.email?.toLowerCase() !== allowedEmail) {
+    return null;
+  }
   return { user: identity.user, aal: assurance?.currentLevel };
 }
 
