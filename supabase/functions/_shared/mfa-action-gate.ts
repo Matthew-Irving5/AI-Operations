@@ -1,13 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 
-const service = createClient(
-  Deno.env.get("SUPABASE_URL") ?? "",
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-);
-
 export async function consumeMfaActionGate(
   gateId: string | undefined,
-  userId: string,
+  accessToken: string,
   actionKey: "apple_bridge_create" | "gmail_test_notification",
 ): Promise<boolean> {
   if (
@@ -17,15 +12,14 @@ export async function consumeMfaActionGate(
   ) {
     return false;
   }
-  const { data, error } = await service
-    .from("mfa_action_gates")
-    .update({ consumed_at: new Date().toISOString() })
-    .eq("id", gateId)
-    .eq("user_id", userId)
-    .eq("action_key", actionKey)
-    .is("consumed_at", null)
-    .gt("expires_at", new Date().toISOString())
-    .select("id")
-    .maybeSingle();
-  return !error && !!data;
+  const caller = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+    { global: { headers: { Authorization: `Bearer ${accessToken}` } } },
+  );
+  const { data, error } = await caller.rpc("consume_mfa_action_gate", {
+    p_gate_id: gateId,
+    p_action_key: actionKey,
+  });
+  return !error && data === true;
 }
