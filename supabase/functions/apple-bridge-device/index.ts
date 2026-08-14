@@ -1,5 +1,4 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
-import { consumeMfaActionGate } from "../_shared/mfa-action-gate.ts";
 
 const service = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
@@ -38,7 +37,7 @@ async function callerFor(request: Request) {
   }
   return {
     user: identity.user,
-    accessToken: authorization.slice("Bearer ".length),
+    database: caller,
   };
 }
 
@@ -61,40 +60,34 @@ Deno.serve(async (request) => {
     ) {
       return json({ code: "invalid_device" }, 400);
     }
-    if (
-      !(await consumeMfaActionGate(
-        body.mfaGateId,
-        caller.accessToken,
-        "apple_bridge_create",
-      ))
-    ) {
-      return json({ code: "fresh_mfa_required" }, 403);
-    }
     const rawToken = token();
-    const inserted = await service
-      .from("apple_bridge_devices")
-      .insert({
-        user_id: user.id,
-        label: body.label,
-        enabled_lists: [...new Set(body.enabledLists)],
-        token_hash: await digest(rawToken),
-        token_prefix: rawToken.slice(0, 8),
-      })
-      .select("id,label,enabled_lists,created_at")
-      .single();
-    if (inserted.error || !inserted.data) {
+    const inserted = await caller.database.rpc(
+      "create_apple_bridge_device_from_mfa_gate",
+      {
+        p_gate_id: body.mfaGateId,
+        p_label: body.label,
+        p_enabled_lists: [...new Set(body.enabledLists)],
+        p_token_hash: await digest(rawToken),
+        p_token_prefix: rawToken.slice(0, 8),
+      },
+    );
+    if (inserted.error) {
       return json({ code: "device_create_failed" }, 500);
     }
+    const device = Array.isArray(inserted.data)
+      ? inserted.data[0]
+      : inserted.data;
+    if (!device) return json({ code: "fresh_mfa_required" }, 403);
     await service.from("audit_events").insert({
       user_id: user.id,
       actor_type: "user",
       action_type: "apple_bridge_device_created",
       target_type: "apple_bridge_device",
-      target_id: inserted.data.id,
+      target_id: device.id,
       aal: "mfa_gate",
       result: "success",
     });
-    return json({ device: inserted.data, token: rawToken }, 201);
+    return json({ device, token: rawToken }, 201);
   }
   if (request.method === "DELETE") {
     const id = new URL(request.url).searchParams.get("id");
