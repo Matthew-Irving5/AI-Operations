@@ -190,7 +190,7 @@ export function OnboardingForm({
     const body = (await response.json().catch(() => null)) as { code?: string } | null;
     if (response.status === 403 && body?.code === 'fresh_mfa_required') {
       sessionStorage.setItem('gmail_test_intent', '1');
-      window.location.assign('/mfa?returnTo=%2Fsettings%3Fresume%3Dgmail_test');
+      window.location.assign('/mfa?returnTo=%2Fsettings%3Fresume%3Dgmail_test&job=gmail_test');
       return;
     }
     setTestStatus(
