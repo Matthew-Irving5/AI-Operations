@@ -17,28 +17,31 @@ export function AppleBridgeSetup() {
   const [token, setToken] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const createDevice = useCallback(async (intent = { label, enabledLists }) => {
-    setBusy(true);
-    setMessage('Creating secure Apple bridge…');
-    const response = await fetch('/api/apple-bridge/device', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(intent),
-    });
-    const body = (await response.json().catch(() => null)) as DeviceResponse | null;
-    if (response.status === 403 && body?.code === 'fresh_mfa_required') {
-      sessionStorage.setItem(resumeKey, JSON.stringify(intent));
-      window.location.assign('/mfa?returnTo=%2Fdata-sources%3Fresume%3Dapple_bridge');
-      return;
-    }
-    setBusy(false);
-    if (!response.ok || !body?.token) {
-      setMessage(`Bridge setup failed (${body?.code ?? `http_${response.status}`}).`);
-      return;
-    }
-    setToken(body.token);
-    setMessage('Device created. Copy this token into the Shortcut now; it is shown only once.');
-  }, [enabledLists, label]);
+  const createDevice = useCallback(
+    async (intent = { label, enabledLists }) => {
+      setBusy(true);
+      setMessage('Creating secure Apple bridge…');
+      const response = await fetch('/api/apple-bridge/device', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(intent),
+      });
+      const body = (await response.json().catch(() => null)) as DeviceResponse | null;
+      if (response.status === 403 && body?.code === 'fresh_mfa_required') {
+        sessionStorage.setItem(resumeKey, JSON.stringify(intent));
+        window.location.assign('/mfa?returnTo=%2Fdata-sources%3Fresume%3Dapple_bridge');
+        return;
+      }
+      setBusy(false);
+      if (!response.ok || !body?.token) {
+        setMessage(`Bridge setup failed (${body?.code ?? `http_${response.status}`}).`);
+        return;
+      }
+      setToken(body.token);
+      setMessage('Device created. Copy this token into the Shortcut now; it is shown only once.');
+    },
+    [enabledLists, label],
+  );
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -49,10 +52,16 @@ export function AppleBridgeSetup() {
     try {
       const intent = JSON.parse(raw) as { label?: string; enabledLists?: string[] };
       if (intent.label && intent.enabledLists?.length) {
-        window.setTimeout(() => void createDevice({ label: intent.label!, enabledLists: intent.enabledLists! }), 0);
+        window.setTimeout(
+          () => void createDevice({ label: intent.label!, enabledLists: intent.enabledLists! }),
+          0,
+        );
       }
     } catch {
-      window.setTimeout(() => setMessage('The saved setup request was invalid. Start bridge setup again.'), 0);
+      window.setTimeout(
+        () => setMessage('The saved setup request was invalid. Start bridge setup again.'),
+        0,
+      );
     }
   }, [createDevice]);
 
@@ -69,15 +78,30 @@ export function AppleBridgeSetup() {
             <input
               type="checkbox"
               checked={enabledLists.includes(list)}
-              onChange={(event) => setEnabledLists((current) => event.target.checked ? [...current, list] : current.filter((item) => item !== list))}
-            />{' '}{list}
+              onChange={(event) =>
+                setEnabledLists((current) =>
+                  event.target.checked
+                    ? [...current, list]
+                    : current.filter((item) => item !== list),
+                )
+              }
+            />{' '}
+            {list}
           </label>
         ))}
       </fieldset>
-      <button type="button" disabled={busy || !label.trim() || !enabledLists.length} onClick={() => void createDevice()}>
+      <button
+        type="button"
+        disabled={busy || !label.trim() || !enabledLists.length}
+        onClick={() => void createDevice()}
+      >
         {busy ? 'Setting up…' : 'Set up Apple Shortcut bridge'}
       </button>
-      {token && <p><strong>One-time device token:</strong> <code>{token}</code></p>}
+      {token && (
+        <p>
+          <strong>One-time device token:</strong> <code>{token}</code>
+        </p>
+      )}
       <p aria-live="polite">{message}</p>
     </div>
   );
