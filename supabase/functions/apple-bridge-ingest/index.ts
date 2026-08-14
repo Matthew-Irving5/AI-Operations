@@ -65,7 +65,7 @@ Deno.serve(async (request) => {
     /^Bearer\s+/i,
     "",
   );
-  if (!token) return json({ code: "unauthorised" }, 401);
+  if (!token) return json({ code: "device_token_missing" }, 401);
   const body = await request.json().catch(() => null) as {
     idempotencyKey?: string;
     reminders?: unknown[];
@@ -80,8 +80,10 @@ Deno.serve(async (request) => {
   const device = await service.from("apple_bridge_devices").select(
     "id,user_id,enabled_lists,revoked_at",
   ).eq("token_hash", tokenHash).maybeSingle();
-  if (device.error || !device.data || device.data.revoked_at) {
-    return json({ code: "unauthorised" }, 401);
+  if (device.error) return json({ code: "device_lookup_failed" }, 500);
+  if (!device.data) return json({ code: "device_token_unknown" }, 401);
+  if (device.data.revoked_at) {
+    return json({ code: "device_token_revoked" }, 401);
   }
   const deviceData = device.data;
   const payloadHash = await digest(JSON.stringify(body));
