@@ -3,6 +3,8 @@ const service = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
 );
+const env = (preferred: string, compatibility: string) =>
+  Deno.env.get(preferred) ?? Deno.env.get(compatibility);
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -84,8 +86,11 @@ Deno.serve(async (request) => {
   if (claim.error || !claim.data) {
     return json({ code: "oauth_state_invalid" }, 403);
   }
-  const clientId = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID"),
-    clientSecret = Deno.env.get("GOOGLE_OAUTH_CLIENT_SECRET");
+  const clientId = env("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_CLOUD_CLIENT_ID"),
+    clientSecret = env(
+      "GOOGLE_OAUTH_CLIENT_SECRET",
+      "GOOGLE_CLOUD_CLIENT_SECRET",
+    );
   if (!clientId || !clientSecret) {
     return json({ code: "google_oauth_not_configured" }, 503);
   }
@@ -126,13 +131,18 @@ Deno.serve(async (request) => {
   if (connection.error || !connection.data) {
     return json({ code: "connection_store_failed" }, 500);
   }
-  await service.from("connection_credentials").upsert({
+  const credential = await service.from("connection_credentials").upsert({
     connection_id: connection.data.id,
     encrypted_refresh_token: await encrypt(tokens.refresh_token),
     token_expires_at: tokens.expires_in
       ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
       : null,
-  });
+  }, { onConflict: "connection_id" }).select("connection_id").single();
+  if (credential.error || !credential.data) {
+    await service.from("connections").update({ status: "disconnected" })
+      .eq("id", connection.data.id);
+    return json({ code: "credential_store_failed" }, 500);
+  }
   await service.from("audit_events").insert({
     user_id: result.data.user_id,
     actor_type: "user",
@@ -142,8 +152,24 @@ Deno.serve(async (request) => {
     aal: "aal2",
     result: "success",
   });
+  const appOrigin = Deno.env.get("PUBLIC_APP_ORIGIN") ??
+    Deno.env.get("APP_PUBLIC_ORIGIN");
+  if (!appOrigin) return json({ code: "app_origin_unconfigured" }, 503);
+  let redirectOrigin: URL;
+  try {
+    redirectOrigin = new URL(appOrigin);
+  } catch {
+    return json({ code: "app_origin_invalid" }, 503);
+  }
+  if (
+    redirectOrigin.protocol !== "https:" ||
+    !new Set([
+      "ai-operations-production.ai-operations.workers.dev",
+      "ai-operations-staging.ai-operations.workers.dev",
+    ]).has(redirectOrigin.hostname)
+  ) return json({ code: "app_origin_invalid" }, 503);
   return Response.redirect(
-    new URL("/data-sources?google=connected", url).toString(),
+    new URL("/data-sources?google=connected", redirectOrigin).toString(),
     302,
   );
 });

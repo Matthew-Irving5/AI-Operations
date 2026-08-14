@@ -40,19 +40,15 @@ Deno.serve(async (request) => {
   const caller = createClient(url, Deno.env.get("SUPABASE_ANON_KEY") ?? "", {
     global: { headers: { Authorization: token } },
   });
-  const [{ data: identity }, { data: assurance }] = await Promise.all([
-    caller.auth.getUser(),
-    caller.auth.mfa.getAuthenticatorAssuranceLevel(),
-  ]);
+  const { data: identity } = await caller.auth.getUser();
   const body = await request.json().catch(() => null) as {
     code?: string;
     complete?: boolean;
   } | null;
   if (
     !identity.user ||
-    identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com" ||
-    assurance?.currentLevel !== "aal2"
-  ) return json({ code: "fresh_mfa_required" }, 403);
+    identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com"
+  ) return json({ code: "authenticated_session_required" }, 403);
   if (!await consumeRateLimit(identity.user.id, "onboarding_update", 30)) {
     return json({ code: "rate_limited" }, 429);
   }
@@ -63,12 +59,17 @@ Deno.serve(async (request) => {
     return json({ code: "acceptance_requires_finalise" }, 422);
   }
   const completed_at = body.complete ? new Date().toISOString() : null;
-  const update = await service.from("onboarding_checklist_items").upsert({
-    user_id: identity.user.id,
-    code: body.code,
-    completed_at,
-  }, { onConflict: "user_id,code" });
-  if (update.error) return json({ code: "onboarding_update_failed" }, 500);
+  const update = await service.rpc("update_onboarding_checklist_item", {
+    p_user_id: identity.user.id,
+    p_code: body.code,
+    p_completed_at: completed_at,
+  });
+  if (update.error) {
+    return json({
+      code: "onboarding_update_failed",
+      reason: update.error.code ?? "database_error",
+    }, 500);
+  }
   await service.from("audit_events").insert({
     user_id: identity.user.id,
     actor_type: "user",

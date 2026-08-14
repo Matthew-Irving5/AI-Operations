@@ -28,6 +28,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ code: 'verification_failed' }, { status: 401 });
     }
 
+    // Persist the elevated session in the SSR cookie store. The verification
+    // response contains a new AAL2 pair; without explicitly setting it, the
+    // next request can continue presenting the pre-MFA AAL1 cookie.
+    const { error: sessionError } = await supabase.auth.setSession({
+      access_token: verification.access_token,
+      refresh_token: verification.refresh_token,
+    });
+    if (sessionError) {
+      return NextResponse.json({ code: 'session_persist_failed' }, { status: 500 });
+    }
+
     // Auth returns an AAL2 JWT. Use it explicitly for the audit insert; the
     // incoming cookie can still contain the pre-verification AAL1 JWT.
     const elevated = createSupabaseAccessTokenClient(verification.access_token);

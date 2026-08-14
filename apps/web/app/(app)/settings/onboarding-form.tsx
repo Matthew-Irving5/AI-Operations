@@ -148,6 +148,7 @@ export function OnboardingForm({
 }: Readonly<{ completedCodes: string[]; accepted: boolean }>) {
   const [completed, setCompleted] = useState(() => new Set(completedCodes));
   const [status, setStatus] = useState(accepted ? 'Production onboarding accepted.' : '');
+  const [testStatus, setTestStatus] = useState('');
   const completeCount = useMemo(() => completed.size, [completed]);
   async function toggle(code: string, complete: boolean) {
     setStatus('Saving checklist item...');
@@ -156,8 +157,17 @@ export function OnboardingForm({
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ code, complete }),
     });
-    if (!response.ok)
-      return setStatus('Checklist update was rejected. Complete fresh MFA and retry.');
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as {
+        code?: string;
+        reason?: string;
+      } | null;
+      const reason =
+        [body?.code, body?.reason].filter(Boolean).join(':') || `http_${response.status}`;
+      return setStatus(
+        `Checklist update rejected (${reason}). Sign in again if your session has expired.`,
+      );
+    }
     setCompleted((current) => {
       const next = new Set(current);
       complete ? next.add(code) : next.delete(code);
@@ -172,6 +182,16 @@ export function OnboardingForm({
       response.ok
         ? 'Production onboarding accepted. Schedules may now be reviewed individually.'
         : 'Acceptance was rejected: complete every checklist item with fresh MFA.',
+    );
+  }
+  async function sendGmailTest() {
+    setTestStatus('Sending test notification...');
+    const response = await fetch('/api/notifications/test', { method: 'POST' });
+    const body = (await response.json().catch(() => null)) as { code?: string } | null;
+    setTestStatus(
+      response.ok
+        ? 'Test sent. Check Matthew.irving.ai@gmail.com.'
+        : `Test failed (${body?.code ?? `http_${response.status}`}).`,
     );
   }
   return (
@@ -198,6 +218,14 @@ export function OnboardingForm({
                 {instructions.map((instruction) => (
                   <p key={instruction}>{instruction}</p>
                 ))}
+                {code === 'gmail_test' && (
+                  <div className="stack">
+                    <button type="button" onClick={() => void sendGmailTest()}>
+                      Send test notification
+                    </button>
+                    <p aria-live="polite">{testStatus}</p>
+                  </div>
+                )}
               </div>
             </details>
           </div>

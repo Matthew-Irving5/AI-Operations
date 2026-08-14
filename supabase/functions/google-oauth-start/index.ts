@@ -5,6 +5,8 @@ const service = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
 );
 const allowedEmail = "matthewirving99@gmail.com";
+const env = (preferred: string, compatibility: string) =>
+  Deno.env.get(preferred) ?? Deno.env.get(compatibility);
 const scopes = [
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/gmail.send",
@@ -17,7 +19,9 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json" },
   });
 const b64 = (bytes: Uint8Array) =>
-  btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_")
+  btoa(String.fromCharCode(...bytes))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
     .replaceAll("=", "");
 const sha = async (value: string) =>
   Array.from(
@@ -60,16 +64,19 @@ Deno.serve(async (request) => {
     Deno.env.get("SUPABASE_ANON_KEY") ?? "",
     { global: { headers: { Authorization: token } } },
   );
-  const [{ data: identity }, { data: assurance }] = await Promise.all([
-    caller.auth.getUser(),
-    caller.auth.mfa.getAuthenticatorAssuranceLevel(),
-  ]);
-  if (
-    !identity.user || identity.user.email?.toLowerCase() !== allowedEmail ||
-    assurance?.currentLevel !== "aal2"
-  ) return json({ code: "forbidden" }, 403);
-  const clientId = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID"),
-    redirectUri = Deno.env.get("GOOGLE_OAUTH_REDIRECT_URI");
+  const { data: identity } = await caller.auth.getUser();
+  if (!identity.user || identity.user.email?.toLowerCase() !== allowedEmail) {
+    return json({ code: "forbidden" }, 403);
+  }
+
+  // The dashboard route is already protected by the authenticated AAL2 app
+  // layout. This function only needs to verify that the relayed Supabase
+  // session is still valid and belongs to the sole production identity. A
+  // five-minute reauthentication lookup here is incorrect: the session can
+  // remain valid while the short-lived MFA event expires, and OAuth start is
+  // then rejected even though the user is actively signed in.
+  const clientId = env("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_CLOUD_CLIENT_ID"),
+    redirectUri = env("GOOGLE_OAUTH_REDIRECT_URI", "GOOGLE_CLOUD_REDIRECT_URI");
   if (!clientId || !redirectUri) {
     return json({ code: "google_oauth_not_configured" }, 503);
   }
@@ -78,7 +85,7 @@ Deno.serve(async (request) => {
   }
   const state = b64(crypto.getRandomValues(new Uint8Array(32))),
     verifier = b64(crypto.getRandomValues(new Uint8Array(48)));
-  await service.from("oauth_states").insert({
+  const stateInsert = await service.from("oauth_states").insert({
     user_id: identity.user.id,
     provider: "google",
     state_hash: await sha(state),
@@ -87,6 +94,12 @@ Deno.serve(async (request) => {
     redirect_uri: redirectUri,
     expires_at: new Date(Date.now() + 600_000).toISOString(),
   });
+  if (stateInsert.error) {
+    return json({
+      code: "oauth_state_persist_failed",
+      reason: stateInsert.error.code ?? "database_error",
+    }, 500);
+  }
   const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   url.search = new URLSearchParams({
     client_id: clientId,

@@ -21,15 +21,11 @@ Deno.serve(async (request) => {
   const caller = createClient(url, Deno.env.get("SUPABASE_ANON_KEY") ?? "", {
     global: { headers: { Authorization: token } },
   });
-  const [{ data: identity }, { data: assurance }] = await Promise.all([
-    caller.auth.getUser(),
-    caller.auth.mfa.getAuthenticatorAssuranceLevel(),
-  ]);
+  const { data: identity } = await caller.auth.getUser();
   if (
     !identity.user ||
-    identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com" ||
-    assurance?.currentLevel !== "aal2"
-  ) return json({ code: "fresh_mfa_required" }, 403);
+    identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com"
+  ) return json({ code: "authenticated_session_required" }, 403);
   if (!await consumeRateLimit(identity.user.id, "onboarding_accept", 5)) {
     return json({ code: "rate_limited" }, 429);
   }

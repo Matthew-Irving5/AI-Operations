@@ -57,6 +57,7 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.PRODUCTION_SUPABASE_ACCESS_TOKEN }}
           PROJECT_REF: ${{ secrets.PRODUCTION_SUPABASE_PROJECT_REF }}
         run: |
+          npx supabase secrets set PUBLIC_APP_ORIGIN=https://ai-operations-production.ai-operations.workers.dev --project-ref "$PROJECT_REF"
           for function in supabase/functions/*; do
             [[ "$(basename "$function")" == _* ]] && continue
             deployed=false

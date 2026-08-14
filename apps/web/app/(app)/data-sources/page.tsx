@@ -1,4 +1,5 @@
 import { connectionsData } from '../../../lib/platform-data';
+import { GoogleConnect } from './google-connect';
 
 export default async function DataSourcesPage() {
   const connections = await connectionsData();
@@ -27,12 +28,16 @@ export default async function DataSourcesPage() {
             Freshness is recorded after each successful incremental sync. Reconnect if this
             connection requires reauthentication.
           </p>
+          <GoogleConnect label="Reconnect Google" />
         </article>
       ))}
       {!google.length ? (
         <p className="card">
-          No Google account is connected. Start OAuth from the setup wizard after configuring the
-          server-side Google client.
+          No Google account is connected. Start secure OAuth after configuring the server-side
+          Google client.
+          <br />
+          <br />
+          <GoogleConnect />
         </p>
       ) : null}
       <h2>Apple Shortcut bridge</h2>
