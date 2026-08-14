@@ -1,4 +1,5 @@
 import { connectionsData } from '../../../lib/platform-data';
+import { AppleBridgeSetup } from './apple-bridge-setup';
 import { GoogleConnect } from './google-connect';
 
 export default async function DataSourcesPage() {
@@ -41,10 +42,11 @@ export default async function DataSourcesPage() {
         </p>
       ) : null}
       <h2>Apple Shortcut bridge</h2>
-      <p className="card">
+      <div className="card">
         Create a device token from the secure bridge setup, paste it into the Shortcut once, and
         send Calendar and mapped Reminder snapshots. A revoked token cannot be used again.
-      </p>
+        <AppleBridgeSetup />
+      </div>
     </>
   );
 }

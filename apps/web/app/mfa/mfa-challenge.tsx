@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 
-export function MfaChallenge({ factorId }: { factorId?: string }) {
+export function MfaChallenge({ factorId, returnTo = '/overview' }: { factorId?: string; returnTo?: string }) {
   const [code, setCode] = useState('');
   const [message, setMessage] = useState('');
   const [enrolment, setEnrolment] = useState<{
@@ -35,7 +35,7 @@ export function MfaChallenge({ factorId }: { factorId?: string }) {
     });
     if (!response.ok)
       return setMessage('Verification failed. Check the current code and try again.');
-    window.location.assign('/overview');
+    window.location.assign(returnTo);
   }
   return (
     <form className="card" onSubmit={submit}>

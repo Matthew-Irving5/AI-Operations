@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 const steps = [
   {
@@ -64,7 +64,7 @@ const steps = [
     code: 'apple_bridge',
     label: 'Apple Shortcut bridge installation',
     instructions: [
-      'Install the Apple Shortcut using the onboarding guide, register the device with fresh MFA, and run a snapshot test.',
+      'Open Data Sources → Apple Shortcut bridge, click Set up Apple Shortcut bridge, complete the six-digit MFA page when prompted, and copy the one-time token into the Shortcut.',
       'Confirm Calendar and Reminders data arrive with stable IDs and that revocation is understood.',
     ],
   },
@@ -184,16 +184,27 @@ export function OnboardingForm({
         : 'Acceptance was rejected: complete every checklist item with fresh MFA.',
     );
   }
-  async function sendGmailTest() {
+  const sendGmailTest = useCallback(async () => {
     setTestStatus('Sending test notification...');
     const response = await fetch('/api/notifications/test', { method: 'POST' });
     const body = (await response.json().catch(() => null)) as { code?: string } | null;
+    if (response.status === 403 && body?.code === 'fresh_mfa_required') {
+      sessionStorage.setItem('gmail_test_intent', '1');
+      window.location.assign('/mfa?returnTo=%2Fsettings%3Fresume%3Dgmail_test');
+      return;
+    }
     setTestStatus(
       response.ok
         ? 'Test sent. Check Matthew.irving.ai@gmail.com.'
         : `Test failed (${body?.code ?? `http_${response.status}`}).`,
     );
-  }
+  }, []);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('resume') !== 'gmail_test' || sessionStorage.getItem('gmail_test_intent') !== '1') return;
+    sessionStorage.removeItem('gmail_test_intent');
+    window.setTimeout(() => void sendGmailTest(), 0);
+  }, [sendGmailTest]);
   return (
     <section className="stack" aria-label="Production onboarding checklist">
       <p className="card">
