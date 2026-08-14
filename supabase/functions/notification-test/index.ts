@@ -63,7 +63,8 @@ Deno.serve(async (request) => {
   ) {
     return json({ code: "authenticated_session_required" }, 403);
   }
-  const { data: assurance } = await caller.auth.mfa.getAuthenticatorAssuranceLevel();
+  const { data: assurance } = await caller.auth.mfa
+    .getAuthenticatorAssuranceLevel();
   if (assurance?.currentLevel !== "aal2") {
     return json({ code: "fresh_mfa_required" }, 403);
   }

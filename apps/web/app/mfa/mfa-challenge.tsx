@@ -2,7 +2,13 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 
-export function MfaChallenge({ factorId, returnTo = '/overview' }: { factorId?: string; returnTo?: string }) {
+export function MfaChallenge({
+  factorId,
+  returnTo = '/overview',
+}: {
+  factorId?: string;
+  returnTo?: string;
+}) {
   const [code, setCode] = useState('');
   const [message, setMessage] = useState('');
   const [enrolment, setEnrolment] = useState<{
