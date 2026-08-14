@@ -201,7 +201,11 @@ export function OnboardingForm({
   }, []);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('resume') !== 'gmail_test' || sessionStorage.getItem('gmail_test_intent') !== '1') return;
+    if (
+      params.get('resume') !== 'gmail_test' ||
+      sessionStorage.getItem('gmail_test_intent') !== '1'
+    )
+      return;
     sessionStorage.removeItem('gmail_test_intent');
     window.setTimeout(() => void sendGmailTest(), 0);
   }, [sendGmailTest]);
