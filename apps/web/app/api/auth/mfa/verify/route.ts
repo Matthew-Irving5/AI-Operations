@@ -10,12 +10,6 @@ const bodySchema = z.object({
   factorId: z.string().uuid(),
   code: z.string().regex(/^\d{6}$/),
   job: z.enum(['apple_bridge', 'gmail_test']).optional(),
-  jobPayload: z
-    .object({
-      label: z.string().min(1).max(80),
-      enabledLists: z.array(z.string().min(1).max(80)).min(1),
-    })
-    .optional(),
 });
 
 export async function POST(request: Request) {
@@ -62,25 +56,14 @@ export async function POST(request: Request) {
     if (eventError)
       return NextResponse.json({ code: 'reauthentication_record_failed' }, { status: 500 });
     if (parsed.data.job) {
-      const functionName =
-        parsed.data.job === 'apple_bridge' ? 'apple-bridge-device' : 'notification-test';
-      const jobResponse = await fetch(
-        new URL(`/functions/v1/${functionName}`, process.env.NEXT_PUBLIC_SUPABASE_URL),
-        {
-          method: 'POST',
-          headers: {
-            authorization: `Bearer ${verification.access_token}`,
-            ...(parsed.data.job === 'apple_bridge' ? { 'content-type': 'application/json' } : {}),
-          },
-          ...(parsed.data.job === 'apple_bridge'
-            ? { body: JSON.stringify(parsed.data.jobPayload) }
-            : {}),
-        },
-      );
-      const jobResult = await jobResponse.json().catch(() => ({ code: 'job_failed' }));
-      if (!jobResponse.ok)
-        return NextResponse.json({ code: 'job_failed', reason: jobResult }, { status: 502 });
-      return NextResponse.json({ aal: 'aal2', jobCompleted: true, jobResult });
+      const actionKey =
+        parsed.data.job === 'apple_bridge' ? 'apple_bridge_create' : 'gmail_test_notification';
+      const { data: mfaGateId, error: gateError } = await elevated.rpc('create_mfa_action_gate', {
+        p_action_key: actionKey,
+      });
+      if (gateError || !mfaGateId)
+        return NextResponse.json({ code: 'mfa_gate_create_failed' }, { status: 500 });
+      return NextResponse.json({ aal: 'aal2', mfaGateId });
     }
     return NextResponse.json({ aal: 'aal2' });
   } catch {

@@ -6,6 +6,7 @@ import { getAuthenticatedServerAccessToken } from '../../../../lib/supabase-serv
 const bodySchema = z.object({
   label: z.string().min(1).max(80),
   enabledLists: z.array(z.string().min(1).max(80)).min(1),
+  mfaGateId: z.string().uuid(),
 });
 
 export async function POST(request: Request) {

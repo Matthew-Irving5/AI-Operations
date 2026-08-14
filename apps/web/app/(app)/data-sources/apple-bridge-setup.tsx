@@ -18,22 +18,15 @@ export function AppleBridgeSetup() {
   const [busy, setBusy] = useState(false);
 
   const createDevice = useCallback(
-    async (intent = { label, enabledLists }) => {
+    async (intent: { label: string; enabledLists: string[] }, mfaGateId: string) => {
       setBusy(true);
       setMessage('Creating secure Apple bridge…');
       const response = await fetch('/api/apple-bridge/device', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(intent),
+        body: JSON.stringify({ ...intent, mfaGateId }),
       });
       const body = (await response.json().catch(() => null)) as DeviceResponse | null;
-      if (response.status === 403 && body?.code === 'fresh_mfa_required') {
-        sessionStorage.setItem(resumeKey, JSON.stringify(intent));
-        window.location.assign(
-          '/mfa?returnTo=%2Fdata-sources%3Fresume%3Dapple_bridge&job=apple_bridge',
-        );
-        return;
-      }
       setBusy(false);
       if (!response.ok || !body?.token) {
         setMessage(`Bridge setup failed (${body?.code ?? `http_${response.status}`}).`);
@@ -42,8 +35,15 @@ export function AppleBridgeSetup() {
       setToken(body.token);
       setMessage('Device created. Copy this token into the Shortcut now; it is shown only once.');
     },
-    [enabledLists, label],
+    [],
   );
+
+  function startSetup() {
+    sessionStorage.setItem(resumeKey, JSON.stringify({ label, enabledLists }));
+    window.location.assign(
+      '/mfa?returnTo=%2Fdata-sources%3Fresume%3Dapple_bridge&job=apple_bridge',
+    );
+  }
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -54,21 +54,21 @@ export function AppleBridgeSetup() {
     try {
       const intent = JSON.parse(raw) as { label?: string; enabledLists?: string[] };
       if (intent.label && intent.enabledLists?.length) {
-        const rawResult = sessionStorage.getItem('mfa_job_result');
-        sessionStorage.removeItem('mfa_job_result');
-        const completed = rawResult
-          ? (JSON.parse(rawResult) as { job?: string; result?: { token?: string } })
-          : null;
-        if (completed?.job === 'apple_bridge' && completed.result?.token) {
-          window.setTimeout(() => {
-            setToken(completed.result!.token!);
-            setMessage(
-              'MFA succeeded and the device was created. Copy this one-time token into the Shortcut.',
-            );
-          }, 0);
+        const rawGate = sessionStorage.getItem('mfa_job_gate');
+        sessionStorage.removeItem('mfa_job_gate');
+        const gate = rawGate ? (JSON.parse(rawGate) as { job?: string; id?: string }) : null;
+        if (gate?.job === 'apple_bridge' && gate.id) {
+          window.setTimeout(
+            () =>
+              void createDevice(
+                { label: intent.label!, enabledLists: intent.enabledLists! },
+                gate.id!,
+              ),
+            0,
+          );
         } else {
           window.setTimeout(
-            () => void createDevice({ label: intent.label!, enabledLists: intent.enabledLists! }),
+            () => setMessage('MFA did not create a valid job gate. Start setup again.'),
             0,
           );
         }
@@ -109,7 +109,7 @@ export function AppleBridgeSetup() {
       <button
         type="button"
         disabled={busy || !label.trim() || !enabledLists.length}
-        onClick={() => void createDevice()}
+        onClick={startSetup}
       >
         {busy ? 'Setting up…' : 'Set up Apple Shortcut bridge'}
       </button>
