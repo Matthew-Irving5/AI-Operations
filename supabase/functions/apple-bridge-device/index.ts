@@ -33,15 +33,15 @@ async function callerFor(request: Request) {
     caller.auth.getUser(),
     caller.auth.mfa.getAuthenticatorAssuranceLevel(),
   ]);
-  return identity.user && identity.user.email?.toLowerCase() === allowedEmail &&
-      assurance?.currentLevel === "aal2"
-    ? identity.user
-    : null;
+  if (!identity.user || identity.user.email?.toLowerCase() !== allowedEmail) return null;
+  return { user: identity.user, aal: assurance?.currentLevel };
 }
 
 Deno.serve(async (request) => {
-  const user = await callerFor(request);
-  if (!user) return json({ code: "forbidden" }, 403);
+  const caller = await callerFor(request);
+  if (!caller) return json({ code: "forbidden" }, 403);
+  if (caller.aal !== "aal2") return json({ code: "fresh_mfa_required" }, 403);
+  const user = caller.user;
   if (request.method === "POST") {
     const body = await request.json().catch(() => null) as {
       label?: string;
