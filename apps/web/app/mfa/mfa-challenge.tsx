@@ -36,13 +36,27 @@ export function MfaChallenge({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!activeFactorId) return;
+    const intentKey = job === 'apple_bridge' ? 'apple_bridge_setup_intent' : 'gmail_test_intent';
+    const rawIntent = job ? sessionStorage.getItem(intentKey) : null;
+    const jobPayload =
+      rawIntent && job === 'apple_bridge'
+        ? (JSON.parse(rawIntent) as { label: string; enabledLists: string[] })
+        : undefined;
     const response = await fetch('/api/auth/mfa/verify', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ factorId: activeFactorId, code, job }),
+      body: JSON.stringify({ factorId: activeFactorId, code, job, jobPayload }),
     });
+    const result = (await response.json().catch(() => null)) as {
+      jobCompleted?: boolean;
+      jobResult?: unknown;
+    } | null;
     if (!response.ok)
       return setMessage('Verification failed. Check the current code and try again.');
+    if (job && result?.jobCompleted) {
+      sessionStorage.removeItem(intentKey);
+      sessionStorage.setItem('mfa_job_result', JSON.stringify({ job, result: result.jobResult }));
+    }
     window.location.assign(returnTo);
   }
   return (
