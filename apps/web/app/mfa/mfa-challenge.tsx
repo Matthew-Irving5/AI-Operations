@@ -5,9 +5,11 @@ import { FormEvent, useEffect, useState } from 'react';
 export function MfaChallenge({
   factorId,
   returnTo = '/overview',
+  job,
 }: {
   factorId?: string;
   returnTo?: string;
+  job?: 'apple_bridge' | 'gmail_test';
 }) {
   const [code, setCode] = useState('');
   const [message, setMessage] = useState('');
@@ -37,7 +39,7 @@ export function MfaChallenge({
     const response = await fetch('/api/auth/mfa/verify', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ factorId: activeFactorId, code }),
+      body: JSON.stringify({ factorId: activeFactorId, code, job }),
     });
     if (!response.ok)
       return setMessage('Verification failed. Check the current code and try again.');

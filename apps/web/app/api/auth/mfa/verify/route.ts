@@ -5,8 +5,13 @@ import {
   createSupabaseServerClient,
 } from '../../../../../lib/supabase-server';
 import { requireSameOrigin } from '../../../../../lib/request-security';
+import { setMfaJobCookie, type MfaJob } from '../../../../../lib/mfa-job';
 
-const bodySchema = z.object({ factorId: z.string().uuid(), code: z.string().regex(/^\d{6}$/) });
+const bodySchema = z.object({
+  factorId: z.string().uuid(),
+  code: z.string().regex(/^\d{6}$/),
+  job: z.enum(['apple_bridge', 'gmail_test']).optional(),
+});
 
 export async function POST(request: Request) {
   try {
@@ -49,9 +54,12 @@ export async function POST(request: Request) {
     const { error: eventError } = await elevated
       .from('mfa_reauthentication_events')
       .insert({ user_id: userData.user.id, method: 'totp' });
-    return eventError
-      ? NextResponse.json({ code: 'reauthentication_record_failed' }, { status: 500 })
-      : NextResponse.json({ aal: 'aal2' });
+    if (eventError)
+      return NextResponse.json({ code: 'reauthentication_record_failed' }, { status: 500 });
+    const response = NextResponse.json({ aal: 'aal2' });
+    if (parsed.data.job)
+      setMfaJobCookie(response, parsed.data.job as MfaJob, verification.access_token);
+    return response;
   } catch {
     return NextResponse.json({ code: 'mfa_verification_failed' }, { status: 500 });
   }

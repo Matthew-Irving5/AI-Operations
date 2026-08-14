@@ -29,7 +29,9 @@ export function AppleBridgeSetup() {
       const body = (await response.json().catch(() => null)) as DeviceResponse | null;
       if (response.status === 403 && body?.code === 'fresh_mfa_required') {
         sessionStorage.setItem(resumeKey, JSON.stringify(intent));
-        window.location.assign('/mfa?returnTo=%2Fdata-sources%3Fresume%3Dapple_bridge');
+        window.location.assign(
+          '/mfa?returnTo=%2Fdata-sources%3Fresume%3Dapple_bridge&job=apple_bridge',
+        );
         return;
       }
       setBusy(false);
