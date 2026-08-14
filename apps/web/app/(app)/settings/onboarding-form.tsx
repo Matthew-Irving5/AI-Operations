@@ -207,6 +207,18 @@ export function OnboardingForm({
     )
       return;
     sessionStorage.removeItem('gmail_test_intent');
+    const rawResult = sessionStorage.getItem('mfa_job_result');
+    sessionStorage.removeItem('mfa_job_result');
+    if (rawResult) {
+      const completed = JSON.parse(rawResult) as { job?: string };
+      if (completed.job === 'gmail_test') {
+        window.setTimeout(
+          () => setTestStatus('MFA succeeded. Test sent. Check Matthew.irving.ai@gmail.com.'),
+          0,
+        );
+        return;
+      }
+    }
     window.setTimeout(() => void sendGmailTest(), 0);
   }, [sendGmailTest]);
   return (

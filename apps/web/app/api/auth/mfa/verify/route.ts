@@ -5,12 +5,17 @@ import {
   createSupabaseServerClient,
 } from '../../../../../lib/supabase-server';
 import { requireSameOrigin } from '../../../../../lib/request-security';
-import { setMfaJobCookie, type MfaJob } from '../../../../../lib/mfa-job';
 
 const bodySchema = z.object({
   factorId: z.string().uuid(),
   code: z.string().regex(/^\d{6}$/),
   job: z.enum(['apple_bridge', 'gmail_test']).optional(),
+  jobPayload: z
+    .object({
+      label: z.string().min(1).max(80),
+      enabledLists: z.array(z.string().min(1).max(80)).min(1),
+    })
+    .optional(),
 });
 
 export async function POST(request: Request) {
@@ -56,10 +61,28 @@ export async function POST(request: Request) {
       .insert({ user_id: userData.user.id, method: 'totp' });
     if (eventError)
       return NextResponse.json({ code: 'reauthentication_record_failed' }, { status: 500 });
-    const response = NextResponse.json({ aal: 'aal2' });
-    if (parsed.data.job)
-      setMfaJobCookie(response, parsed.data.job as MfaJob, verification.access_token);
-    return response;
+    if (parsed.data.job) {
+      const functionName =
+        parsed.data.job === 'apple_bridge' ? 'apple-bridge-device' : 'notification-test';
+      const jobResponse = await fetch(
+        new URL(`/functions/v1/${functionName}`, process.env.NEXT_PUBLIC_SUPABASE_URL),
+        {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${verification.access_token}`,
+            ...(parsed.data.job === 'apple_bridge' ? { 'content-type': 'application/json' } : {}),
+          },
+          ...(parsed.data.job === 'apple_bridge'
+            ? { body: JSON.stringify(parsed.data.jobPayload) }
+            : {}),
+        },
+      );
+      const jobResult = await jobResponse.json().catch(() => ({ code: 'job_failed' }));
+      if (!jobResponse.ok)
+        return NextResponse.json({ code: 'job_failed', reason: jobResult }, { status: 502 });
+      return NextResponse.json({ aal: 'aal2', jobCompleted: true, jobResult });
+    }
+    return NextResponse.json({ aal: 'aal2' });
   } catch {
     return NextResponse.json({ code: 'mfa_verification_failed' }, { status: 500 });
   }

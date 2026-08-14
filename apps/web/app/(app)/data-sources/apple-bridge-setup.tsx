@@ -54,10 +54,24 @@ export function AppleBridgeSetup() {
     try {
       const intent = JSON.parse(raw) as { label?: string; enabledLists?: string[] };
       if (intent.label && intent.enabledLists?.length) {
-        window.setTimeout(
-          () => void createDevice({ label: intent.label!, enabledLists: intent.enabledLists! }),
-          0,
-        );
+        const rawResult = sessionStorage.getItem('mfa_job_result');
+        sessionStorage.removeItem('mfa_job_result');
+        const completed = rawResult
+          ? (JSON.parse(rawResult) as { job?: string; result?: { token?: string } })
+          : null;
+        if (completed?.job === 'apple_bridge' && completed.result?.token) {
+          window.setTimeout(() => {
+            setToken(completed.result!.token!);
+            setMessage(
+              'MFA succeeded and the device was created. Copy this one-time token into the Shortcut.',
+            );
+          }, 0);
+        } else {
+          window.setTimeout(
+            () => void createDevice({ label: intent.label!, enabledLists: intent.enabledLists! }),
+            0,
+          );
+        }
       }
     } catch {
       window.setTimeout(
