@@ -184,21 +184,24 @@ export function OnboardingForm({
         : 'Acceptance was rejected: complete every checklist item with fresh MFA.',
     );
   }
-  const sendGmailTest = useCallback(async () => {
+  const sendGmailTest = useCallback(async (mfaGateId: string) => {
     setTestStatus('Sending test notification...');
-    const response = await fetch('/api/notifications/test', { method: 'POST' });
+    const response = await fetch('/api/notifications/test', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mfaGateId }),
+    });
     const body = (await response.json().catch(() => null)) as { code?: string } | null;
-    if (response.status === 403 && body?.code === 'fresh_mfa_required') {
-      sessionStorage.setItem('gmail_test_intent', '1');
-      window.location.assign('/mfa?returnTo=%2Fsettings%3Fresume%3Dgmail_test&job=gmail_test');
-      return;
-    }
     setTestStatus(
       response.ok
         ? 'Test sent. Check Matthew.irving.ai@gmail.com.'
         : `Test failed (${body?.code ?? `http_${response.status}`}).`,
     );
   }, []);
+  function startGmailTest() {
+    sessionStorage.setItem('gmail_test_intent', '1');
+    window.location.assign('/mfa?returnTo=%2Fsettings%3Fresume%3Dgmail_test&job=gmail_test');
+  }
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (
@@ -207,19 +210,16 @@ export function OnboardingForm({
     )
       return;
     sessionStorage.removeItem('gmail_test_intent');
-    const rawResult = sessionStorage.getItem('mfa_job_result');
-    sessionStorage.removeItem('mfa_job_result');
-    if (rawResult) {
-      const completed = JSON.parse(rawResult) as { job?: string };
-      if (completed.job === 'gmail_test') {
-        window.setTimeout(
-          () => setTestStatus('MFA succeeded. Test sent. Check Matthew.irving.ai@gmail.com.'),
-          0,
-        );
+    const rawGate = sessionStorage.getItem('mfa_job_gate');
+    sessionStorage.removeItem('mfa_job_gate');
+    if (rawGate) {
+      const gate = JSON.parse(rawGate) as { job?: string; id?: string };
+      if (gate.job === 'gmail_test' && gate.id) {
+        window.setTimeout(() => void sendGmailTest(gate.id!), 0);
         return;
       }
     }
-    window.setTimeout(() => void sendGmailTest(), 0);
+    window.setTimeout(() => setTestStatus('MFA did not create a valid job gate. Try again.'), 0);
   }, [sendGmailTest]);
   return (
     <section className="stack" aria-label="Production onboarding checklist">
@@ -247,7 +247,7 @@ export function OnboardingForm({
                 ))}
                 {code === 'gmail_test' && (
                   <div className="stack">
-                    <button type="button" onClick={() => void sendGmailTest()}>
+                    <button type="button" onClick={startGmailTest}>
                       Send test notification
                     </button>
                     <p aria-live="polite">{testStatus}</p>
