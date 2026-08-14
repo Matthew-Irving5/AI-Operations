@@ -70,7 +70,7 @@ Deno.serve(async (request) => {
   if (
     !(await consumeMfaActionGate(
       gateRequest?.mfaGateId,
-      identity.user.id,
+      authorization.slice("Bearer ".length),
       "gmail_test_notification",
     ))
   ) {

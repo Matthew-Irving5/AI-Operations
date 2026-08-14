@@ -36,7 +36,10 @@ async function callerFor(request: Request) {
   if (!identity.user || identity.user.email?.toLowerCase() !== allowedEmail) {
     return null;
   }
-  return { user: identity.user };
+  return {
+    user: identity.user,
+    accessToken: authorization.slice("Bearer ".length),
+  };
 }
 
 Deno.serve(async (request) => {
@@ -61,7 +64,7 @@ Deno.serve(async (request) => {
     if (
       !(await consumeMfaActionGate(
         body.mfaGateId,
-        user.id,
+        caller.accessToken,
         "apple_bridge_create",
       ))
     ) {
