@@ -49,14 +49,97 @@ const envelopeSchema = z.object({
   attachments: z.array(z.never()).length(0),
 }).strict();
 
-const json = (body: unknown, status = 200) =>
+const json = (body: unknown, status = 200, diagnosticId?: string) =>
   new Response(JSON.stringify(body), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
+      ...(diagnosticId ? { "x-correlation-id": diagnosticId } : {}),
     },
   });
+
+type DiagnosticIssue = {
+  path: string;
+  rule: string;
+  message: string;
+  expected?: string;
+  received_type: string;
+  unexpected_keys?: string[];
+};
+
+const expectedEnvelope = {
+  schema_version: "number, exactly 1",
+  snapshot_id: "UUID string",
+  request_id: "UUID string",
+  client: '{ type: "ios-shortcut", version: "1.0.0" }',
+  captured_at: "offset-aware ISO-8601 string ending Z or +/-HH:MM",
+  sources: "array (empty array is valid)",
+  records: "array (empty array is valid)",
+  attachments: "empty array in schema version 1",
+} as const;
+
+function jsonType(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+function valueAtPath(root: unknown, path: PropertyKey[]): unknown {
+  let current = root;
+  for (const segment of path) {
+    if (typeof current !== "object" || current === null) return undefined;
+    current = (current as Record<PropertyKey, unknown>)[segment];
+  }
+  return current;
+}
+
+function diagnosticIssues(
+  root: unknown,
+  issues: z.core.$ZodIssue[],
+): DiagnosticIssue[] {
+  return issues.slice(0, 20).map((issue) => {
+    const details = issue as z.core.$ZodIssue & {
+      expected?: unknown;
+      keys?: PropertyKey[];
+    };
+    return {
+      path: issue.path.length === 0 ? "$" : issue.path.map(String).join("."),
+      rule: issue.code,
+      message: issue.message,
+      ...(details.expected === undefined
+        ? {}
+        : { expected: String(details.expected) }),
+      received_type: jsonType(valueAtPath(root, issue.path)),
+      ...(details.keys
+        ? { unexpected_keys: details.keys.map(String).slice(0, 20) }
+        : {}),
+    };
+  });
+}
+
+function errorResponse(
+  diagnosticId: string,
+  status: number,
+  code: string,
+  stage: string,
+  message: string,
+  details?: Record<string, unknown>,
+): Response {
+  console.error(
+    JSON.stringify({ diagnostic_id: diagnosticId, status, code, stage }),
+  );
+  return json(
+    {
+      ok: false,
+      code,
+      diagnostic_id: diagnosticId,
+      error: { stage, message, ...details },
+    },
+    status,
+    diagnosticId,
+  );
+}
 
 function validationReason(
   value: unknown,
@@ -71,30 +154,90 @@ function validationReason(
 }
 
 Deno.serve(async (request) => {
+  const diagnosticId = crypto.randomUUID();
   if (request.method !== "POST") {
-    return json({ code: "method_not_allowed" }, 405);
+    return errorResponse(
+      diagnosticId,
+      405,
+      "method_not_allowed",
+      "http_method",
+      `Expected POST but received ${request.method}.`,
+      { expected: "POST", received: request.method },
+    );
   }
   const declaredLength = Number(request.headers.get("content-length") ?? 0);
   if (declaredLength > MOBILE_LIMITS.requestBytes) {
-    return json({ code: "payload_too_large" }, 413);
+    return errorResponse(
+      diagnosticId,
+      413,
+      "payload_too_large",
+      "request_size",
+      "The request exceeds the maximum transport size.",
+      {
+        maximum_bytes: MOBILE_LIMITS.requestBytes,
+        received_bytes: declaredLength,
+      },
+    );
   }
 
   const token = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)
     ?.[1]?.trim();
-  if (!token) return json({ code: "device_token_missing" }, 401);
+  if (!token) {
+    return errorResponse(
+      diagnosticId,
+      401,
+      "device_token_missing",
+      "authentication_header",
+      "The Authorization header is missing or is not in Bearer token format.",
+      { expected_header: "Authorization: Bearer <DEVICE_TOKEN>" },
+    );
+  }
 
   const rawBody = await request.text();
   if (encoder.encode(rawBody).byteLength > MOBILE_LIMITS.requestBytes) {
-    return json({ code: "payload_too_large" }, 413);
+    return errorResponse(
+      diagnosticId,
+      413,
+      "payload_too_large",
+      "request_size",
+      "The decoded request body exceeds the maximum transport size.",
+      {
+        maximum_bytes: MOBILE_LIMITS.requestBytes,
+        received_bytes: encoder.encode(rawBody).byteLength,
+      },
+    );
   }
   let rawEnvelope: unknown;
   try {
     rawEnvelope = JSON.parse(rawBody);
-  } catch {
-    return json({ code: "invalid_json" }, 400);
+  } catch (error) {
+    return errorResponse(
+      diagnosticId,
+      400,
+      "invalid_json",
+      "json_parse",
+      "The request body is not valid JSON. In Shortcuts, set Request Body to JSON and pass one Dictionary.",
+      {
+        content_type: request.headers.get("content-type") ?? "missing",
+        received_bytes: encoder.encode(rawBody).byteLength,
+        parser_message: error instanceof SyntaxError
+          ? error.message.slice(0, 200)
+          : "JSON parsing failed",
+      },
+    );
   }
   if (jsonDepth(rawEnvelope) > MOBILE_LIMITS.nestingDepth + 2) {
-    return json({ code: "payload_too_deep" }, 400);
+    return errorResponse(
+      diagnosticId,
+      400,
+      "payload_too_deep",
+      "envelope_depth",
+      "The JSON nesting depth exceeds the transport limit.",
+      {
+        maximum_depth: MOBILE_LIMITS.nestingDepth + 2,
+        received_depth: jsonDepth(rawEnvelope),
+      },
+    );
   }
 
   const parsed = envelopeSchema.safeParse(rawEnvelope);
@@ -103,16 +246,31 @@ Deno.serve(async (request) => {
       rawEnvelope !== null &&
       "schema_version" in rawEnvelope &&
       (rawEnvelope as { schema_version?: unknown }).schema_version !== 1;
-    return json({
-      code: unsupported ? "unsupported_schema_version" : "invalid_envelope",
-    }, 400);
+    return errorResponse(
+      diagnosticId,
+      400,
+      unsupported ? "unsupported_schema_version" : "invalid_envelope",
+      "envelope_validation",
+      "The top-level Shortcut dictionary does not match the mobile snapshot v1 contract. Review every issue path below.",
+      {
+        issues: diagnosticIssues(rawEnvelope, parsed.error.issues),
+        issue_count: parsed.error.issues.length,
+        expected_envelope: expectedEnvelope,
+      },
+    );
   }
   const envelope = parsed.data;
   if (
     new Set(envelope.sources.map((source) => source.source)).size !==
       envelope.sources.length
   ) {
-    return json({ code: "duplicate_source_manifest" }, 400);
+    return errorResponse(
+      diagnosticId,
+      400,
+      "duplicate_source_manifest",
+      "source_manifest_validation",
+      "Each source name may appear only once in the sources array.",
+    );
   }
 
   const parsedRecords = await Promise.all(
@@ -189,6 +347,15 @@ Deno.serve(async (request) => {
       reject_reason: "duplicate_record_id",
     };
   });
+  const rejectedRecords = normalizedRecords.flatMap((record, index) =>
+    record.ingest_status === "rejected"
+      ? [{
+        index,
+        record_id: record.record_id,
+        reason: record.reject_reason,
+      }]
+      : []
+  );
 
   const canonicalEnvelope = canonicalJson(envelope);
   const { data, error } = await bridge.rpc("ingest_mobile_snapshot", {
@@ -208,13 +375,62 @@ Deno.serve(async (request) => {
     })),
     p_records: normalizedRecords,
   });
-  if (error || !data) return json({ code: "mobile_ingest_failed" }, 500);
+  if (error || !data) {
+    return errorResponse(
+      diagnosticId,
+      500,
+      "mobile_ingest_failed",
+      "database_persistence",
+      "The envelope passed HTTP validation but could not be persisted.",
+      {
+        provider_code: error?.code ?? "missing_rpc_result",
+        provider_message: error?.message?.slice(0, 300) ??
+          "The database returned no result.",
+      },
+    );
+  }
   const outcome = data as { code?: string; replay?: boolean };
-  if (outcome.code === "device_token_unknown") return json(outcome, 401);
+  if (outcome.code === "device_token_unknown") {
+    return errorResponse(
+      diagnosticId,
+      401,
+      outcome.code,
+      "device_authentication",
+      "The bearer token did not match an active Apple bridge device. Generate or copy the device token again.",
+    );
+  }
   if (
     outcome.code === "request_id_payload_mismatch" ||
     outcome.code === "snapshot_id_conflict"
-  ) return json(outcome, 409);
-  if (outcome.code) return json(outcome, 400);
-  return json(outcome, outcome.replay ? 200 : 202);
+  ) {
+    return errorResponse(
+      diagnosticId,
+      409,
+      outcome.code,
+      "idempotency_validation",
+      outcome.code === "request_id_payload_mismatch"
+        ? "This request_id was already used with a different body. Generate a new request_id for a new submission."
+        : "This snapshot_id was already used by another request. Generate a new snapshot_id for a new capture.",
+    );
+  }
+  if (outcome.code) {
+    return errorResponse(
+      diagnosticId,
+      400,
+      outcome.code,
+      "database_contract_validation",
+      `The database contract rejected the request with code ${outcome.code}.`,
+    );
+  }
+  return json(
+    {
+      ...outcome,
+      diagnostic_id: diagnosticId,
+      ...(rejectedRecords.length > 0
+        ? { rejected_records: rejectedRecords }
+        : {}),
+    },
+    outcome.replay ? 200 : 202,
+    diagnosticId,
+  );
 });
