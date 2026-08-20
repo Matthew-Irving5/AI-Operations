@@ -45,3 +45,15 @@ returns HTTP `200` with `replay: true`. The v1 limits are 1,000,000 request byte
 records, 64,000 bytes per record, and 12 nested levels per record. Malformed individual records are
 recorded as rejected while valid records in the same envelope remain accepted. Ingestion is passive:
 it cannot invoke an agent, send email, enable a schedule, or execute an action.
+
+### Diagnosing a rejected Shortcut request
+
+Every response contains a `diagnostic_id`, also returned in the `x-correlation-id` header. A rejected
+request contains `error.stage`, a plain-language `error.message`, and safe structured details. An
+`invalid_envelope` response lists every failing field under `error.issues`; each issue includes its
+dot-separated `path`, validation `rule`, expected constraint where available, and the received JSON
+type. It also includes the complete expected top-level envelope shape. Values, device tokens, and raw
+personal payloads are never echoed or logged. Provide the complete response JSON and diagnostic ID
+when reporting a failure. Successfully parsed envelopes with rejected individual records include a
+bounded `rejected_records` list containing only record indexes, client record IDs, and rejection
+reasons.
