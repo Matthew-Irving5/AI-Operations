@@ -1,5 +1,5 @@
 begin;
-select plan(83);
+select plan(95);
 
 select ok(
   not exists (
@@ -166,6 +166,43 @@ select lives_ok($$select public.mark_instrumented_ai_call_submitted((select id f
 select is((select public.calculate_instrumented_ai_cost((select id from public.ai_model_catalog where model_id='gpt-5.6-luna'), 100, 50, 10, 0)), 0.000391::numeric, 'actual cost calculation uses versioned database pricing without binary rounding');
 select lives_ok($$select public.record_instrumented_ai_reconciliation_failure((select id from public.ai_calls where request_id='on-demand-call-01'), 'provider_response_unavailable', '{"response_id":"resp_on_demand_fixture"}'::jsonb)$$, 'a transient provider reconciliation failure is recorded without releasing the reservation');
 select is((select status from public.ai_calls where request_id='on-demand-call-01'), 'reconciliation_failed', 'a failed reconciliation remains explicitly retryable');
+
+select ok((select relrowsecurity from pg_class where relname='mobile_snapshots' and relnamespace = 'public'::regnamespace), 'Mobile snapshots have RLS enabled');
+select ok((select relrowsecurity from pg_class where relname='mobile_snapshot_sources' and relnamespace = 'public'::regnamespace), 'Mobile snapshot sources have RLS enabled');
+select ok((select relrowsecurity from pg_class where relname='mobile_ingestion_records' and relnamespace = 'public'::regnamespace), 'Raw mobile records have RLS enabled');
+select ok((select relrowsecurity from pg_class where relname='mobile_ingestion_attachments' and relnamespace = 'public'::regnamespace), 'Mobile attachments have RLS enabled');
+select ok((select relrowsecurity from pg_class where relname='mobile_record_adaptations' and relnamespace = 'public'::regnamespace), 'Mobile adapter provenance has RLS enabled');
+select ok(not has_table_privilege('authenticated', 'public.mobile_ingestion_records', 'SELECT'), 'Raw mobile payloads are not directly readable by browser sessions');
+insert into public.apple_bridge_devices(user_id, label, token_hash, token_prefix)
+values ('00000000-0000-0000-0000-000000000101', 'Synthetic universal bridge', repeat('a', 64), 'synthetic')
+on conflict (token_hash) do nothing;
+select is(
+  public.ingest_mobile_snapshot(repeat('a', 64), 1,
+    '10000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001',
+    'ios-shortcut', '1.0.0', '2026-08-20T12:25:03+01:00'::timestamptz,
+    repeat('b', 64), '[]'::jsonb, '[]'::jsonb)->>'status',
+  'accepted', 'An authenticated empty transport snapshot is accepted'
+);
+select is((select count(*) from public.mobile_snapshots where snapshot_id='10000000-0000-4000-8000-000000000001'), 1::bigint, 'The empty transport snapshot is durably recorded');
+select is(
+  public.ingest_mobile_snapshot(repeat('a', 64), 1,
+    '10000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001',
+    'ios-shortcut', '1.0.0', '2026-08-20T12:25:03+01:00'::timestamptz,
+    repeat('b', 64), '[]'::jsonb, '[]'::jsonb)->>'replay',
+  'true', 'An identical request replay returns the original result'
+);
+select is((select count(*) from public.mobile_snapshots where snapshot_id='10000000-0000-4000-8000-000000000001'), 1::bigint, 'An identical replay does not create a second snapshot');
+select is(
+  public.ingest_mobile_snapshot(repeat('a', 64), 1,
+    '10000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001',
+    'ios-shortcut', '1.0.0', '2026-08-20T12:25:03+01:00'::timestamptz,
+    repeat('c', 64), '[]'::jsonb, '[]'::jsonb)->>'code',
+  'request_id_payload_mismatch', 'A replay identity cannot be reused with a different payload'
+);
+select is(public.ingest_mobile_snapshot(repeat('f', 64), 1,
+    '10000000-0000-4000-8000-000000000002', '20000000-0000-4000-8000-000000000002',
+    'ios-shortcut', '1.0.0', now(), repeat('d', 64), '[]'::jsonb, '[]'::jsonb)->>'code',
+  'device_token_unknown', 'An unknown device token hash is rejected');
 
 select * from finish();
 rollback;
