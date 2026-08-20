@@ -41,7 +41,7 @@ that same attempt. `captured_at` must be an offset-aware ISO-8601 timestamp; an 
 ```
 
 A new receipt returns HTTP `202` with `status: accepted` and zero summary counts. An identical retry
-returns HTTP `200` with `replay: true`. The v1 limits are 1,000,000 request bytes, 32 sources, 500
+returns HTTP `200` with `replay: true`. The v1 limits are 8,388,608 request bytes, 32 sources, 2,500
 records, 64,000 bytes per record, and 12 nested levels per record. Malformed individual records are
 recorded as rejected while valid records in the same envelope remain accepted. Ingestion is passive:
 it cannot invoke an agent, send email, enable a schedule, or execute an action.
@@ -57,3 +57,6 @@ personal payloads are never echoed or logged. Provide the complete response JSON
 when reporting a failure. Successfully parsed envelopes with rejected individual records include a
 bounded `rejected_records` list containing only record indexes, client record IDs, and rejection
 reasons.
+
+The exact five-source record payloads and deterministic adapter behaviour are documented in
+[`mobile-source-contracts.md`](mobile-source-contracts.md).
