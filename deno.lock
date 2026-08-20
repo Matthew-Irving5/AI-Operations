@@ -34,7 +34,8 @@
     "https://deno.land/std@0.224.0/internal/diff.ts": "6234a4b493ebe65dc67a18a0eb97ef683626a1166a1906232ce186ae9f65f4e6",
     "https://deno.land/std@0.224.0/internal/format.ts": "0a98ee226fd3d43450245b1844b47003419d34d210fa989900861c79820d21c2",
     "https://deno.land/std@0.224.0/internal/mod.ts": "534125398c8e7426183e12dc255bb635d94e06d0f93c60a297723abe69d3b22e",
-    "https://esm.sh/@supabase/supabase-js@2.57.0": "119dc185b1310fd98a9ee7cb6a660879a2562ea3730ebed9b80e85ecc8c7e3ee"
+    "https://esm.sh/@supabase/supabase-js@2.57.0": "119dc185b1310fd98a9ee7cb6a660879a2562ea3730ebed9b80e85ecc8c7e3ee",
+    "https://esm.sh/zod@4.1.5": "716d4c669ca0dcea7c085f01741ee8cdd092826892d169cc025a5b1b79871b1f"
   },
   "workspace": {
     "packageJson": {

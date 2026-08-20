@@ -28,6 +28,9 @@ verify_jwt = true
 [functions.apple-bridge-ingest]
 verify_jwt = false
 
+[functions.mobile-snapshot-ingest]
+verify_jwt = false
+
 [functions.apple-bridge-actions]
 verify_jwt = false
 

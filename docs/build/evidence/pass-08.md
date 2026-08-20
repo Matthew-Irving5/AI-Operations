@@ -38,3 +38,11 @@ operator acceptance record.
 - PR gate status: PR #21 was rebased after the repository became public and GitHub's generated CodeQL Advanced workflow merged as PR #22. It is ready for review and passes CI, database/RLS, Edge Deno, E2E, performance, security, Windows-worker, dependency-review, and CodeQL analysis for Actions, TypeScript/JavaScript, and Python. No check has been bypassed.
 - Local deterministic validation: `supabase db reset --local` applied every migration from an empty database; `pnpm test:db` passed all 79 pgTAP/RLS tests; `pnpm verify` passed; `pnpm test:e2e` passed all 22 Chromium and WebKit/iPhone browser checks including accessibility; Windows-worker pytest passed 9 tests; and `pnpm security` completed without a secret-scanning failure. The k6 login smoke completed 718 requests at up to 10 virtual users with 0% failures and 3.22 ms p95 response time (threshold under 1 second).
 - No provider call has been made.
+
+## Universal mobile transport evidence
+
+- ADR 0007 freezes the passive, versioned snapshot contract and explicitly separates ingestion from execution.
+- Migration `202608200001_universal_mobile_ingestion.sql` creates the RLS-protected immutable snapshot, source, raw-record, attachment-reservation, and adapter-provenance tables. Browser roles have no direct raw-payload access.
+- `mobile-snapshot-ingest` validates the v1 envelope with Zod, authenticates the existing revocable device token, canonicalises offset-aware timestamps and JSON hashes server-side, partially accepts malformed record sets, and uses a security-definer RPC for atomic persistence and replay protection.
+- Staging database lint completed with no schema warnings. A temporary synthetic staging device submitted an envelope containing empty `sources`, `records`, and `attachments`: the first request returned HTTP 202 with `status: accepted` and zero received records; an identical replay returned HTTP 200 with `replay: true`. The synthetic receipt, device, application identity, and Auth identity were removed immediately after validation.
+- An unauthenticated staging request returned HTTP 401 with `device_token_missing`. No personal payload, plaintext device token, AI call, notification, schedule, workflow, or external action was created.
