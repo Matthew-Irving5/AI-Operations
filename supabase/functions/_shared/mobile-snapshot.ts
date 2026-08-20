@@ -1,7 +1,7 @@
 export const MOBILE_LIMITS = {
-  requestBytes: 1_000_000,
+  requestBytes: 8 * 1024 * 1024,
   sources: 32,
-  records: 500,
+  records: 2_500,
   recordBytes: 64_000,
   nestingDepth: 12,
 } as const;

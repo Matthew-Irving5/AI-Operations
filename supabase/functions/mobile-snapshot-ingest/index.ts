@@ -1,6 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 import { z } from "https://esm.sh/zod@4.1.5";
 import {
+  mobileEnvelopeSchema,
+  mobileIdentifier,
+  mobileRecordSchema,
+} from "../_shared/mobile-snapshot-contract.ts";
+import {
   canonicalJson,
   jsonDepth,
   MOBILE_LIMITS,
@@ -12,42 +17,6 @@ const bridge = createClient(
   Deno.env.get("SUPABASE_ANON_KEY") ?? "",
 );
 const encoder = new TextEncoder();
-const identifier = z.string().regex(/^[a-z][a-z0-9._-]{0,63}$/);
-const offsetTimestamp = z.string().max(40).refine(
-  (value) =>
-    /(?:Z|[+-]\d{2}:\d{2})$/.test(value) && !Number.isNaN(Date.parse(value)),
-  "offset-aware timestamp required",
-);
-const sourceSchema = z.object({
-  source: identifier,
-  requested: z.boolean(),
-  captured: z.boolean(),
-  captured_at: offsetTimestamp.nullable(),
-  record_count: z.number().int().nonnegative().max(MOBILE_LIMITS.records),
-  error: z.string().max(256).nullable(),
-}).strict();
-const recordSchema = z.object({
-  record_id: z.string().uuid(),
-  source: identifier,
-  kind: identifier,
-  external_id: z.string().max(512).nullable().optional(),
-  created_at: offsetTimestamp.nullable(),
-  modified_at: offsetTimestamp.nullable(),
-  payload: z.record(z.string(), z.unknown()),
-}).strict();
-const envelopeSchema = z.object({
-  schema_version: z.literal(1),
-  snapshot_id: z.string().uuid(),
-  request_id: z.string().uuid(),
-  client: z.object({
-    type: z.literal("ios-shortcut"),
-    version: z.string().min(1).max(32),
-  }).strict(),
-  captured_at: offsetTimestamp,
-  sources: z.array(sourceSchema).max(MOBILE_LIMITS.sources),
-  records: z.array(z.unknown()).max(MOBILE_LIMITS.records),
-  attachments: z.array(z.never()).length(0),
-}).strict();
 
 const json = (body: unknown, status = 200, diagnosticId?: string) =>
   new Response(JSON.stringify(body), {
@@ -240,7 +209,7 @@ Deno.serve(async (request) => {
     );
   }
 
-  const parsed = envelopeSchema.safeParse(rawEnvelope);
+  const parsed = mobileEnvelopeSchema.safeParse(rawEnvelope);
   if (!parsed.success) {
     const unsupported = typeof rawEnvelope === "object" &&
       rawEnvelope !== null &&
@@ -275,7 +244,7 @@ Deno.serve(async (request) => {
 
   const parsedRecords = await Promise.all(
     envelope.records.map(async (rawRecord) => {
-      const result = recordSchema.safeParse(rawRecord);
+      const result = mobileRecordSchema.safeParse(rawRecord);
       const rawHash = await sha256Hex(canonicalJson(rawRecord));
       if (
         !result.success ||
@@ -292,11 +261,11 @@ Deno.serve(async (request) => {
             ? candidate.record_id
             : null,
           source: typeof candidate.source === "string" &&
-              identifier.safeParse(candidate.source).success
+              mobileIdentifier.safeParse(candidate.source).success
             ? candidate.source
             : null,
           kind: typeof candidate.kind === "string" &&
-              identifier.safeParse(candidate.kind).success
+              mobileIdentifier.safeParse(candidate.kind).success
             ? candidate.kind
             : null,
           external_id: null,
@@ -358,8 +327,9 @@ Deno.serve(async (request) => {
   );
 
   const canonicalEnvelope = canonicalJson(envelope);
+  const tokenHash = await sha256Hex(token);
   const { data, error } = await bridge.rpc("ingest_mobile_snapshot", {
-    p_token_hash: await sha256Hex(token),
+    p_token_hash: tokenHash,
     p_schema_version: envelope.schema_version,
     p_snapshot_id: envelope.snapshot_id,
     p_request_id: envelope.request_id,
@@ -389,7 +359,12 @@ Deno.serve(async (request) => {
       },
     );
   }
-  const outcome = data as { code?: string; replay?: boolean };
+  const outcome = data as {
+    code?: string;
+    replay?: boolean;
+    status?: string;
+    summary?: Record<string, unknown>;
+  };
   if (outcome.code === "device_token_unknown") {
     return errorResponse(
       diagnosticId,
@@ -422,9 +397,58 @@ Deno.serve(async (request) => {
       `The database contract rejected the request with code ${outcome.code}.`,
     );
   }
+  const { data: adaptationData, error: adaptationError } = await bridge.rpc(
+    "adapt_mobile_snapshot",
+    { p_token_hash: tokenHash, p_snapshot_id: envelope.snapshot_id },
+  );
+  if (adaptationError || !adaptationData) {
+    return errorResponse(
+      diagnosticId,
+      500,
+      "mobile_adaptation_failed",
+      "deterministic_adaptation",
+      "The immutable raw snapshot was stored, but deterministic source adaptation did not complete. Retry with the same snapshot_id and request_id.",
+      {
+        raw_snapshot_persisted: true,
+        retry_with_same_identifiers: true,
+        provider_code: adaptationError?.code ?? "missing_adapter_result",
+        provider_message: adaptationError?.message?.slice(0, 300) ??
+          "The adapter returned no result.",
+      },
+    );
+  }
+  const adaptation = adaptationData as {
+    code?: string;
+    status: string;
+    adapted: number;
+    duplicate: number;
+    rejected: number;
+    deferred: number;
+    rejections: Array<{
+      record_id: string;
+      adapter: string;
+      reason: string;
+    }>;
+  };
+  if (adaptation.code) {
+    return errorResponse(
+      diagnosticId,
+      500,
+      adaptation.code,
+      "deterministic_adaptation",
+      "The immutable raw snapshot was stored, but the adapter could not locate its authenticated snapshot context. Retry with the same identifiers.",
+      { raw_snapshot_persisted: true, retry_with_same_identifiers: true },
+    );
+  }
   return json(
     {
       ...outcome,
+      status: adaptation.rejected > 0 ? "partial" : outcome.status,
+      summary: {
+        ...outcome.summary,
+        deferred: adaptation.deferred,
+      },
+      adaptation,
       diagnostic_id: diagnosticId,
       ...(rejectedRecords.length > 0
         ? { rejected_records: rejectedRecords }
