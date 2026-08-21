@@ -157,6 +157,12 @@ continue. The response reports partial acceptance. Unknown source/kind values
 are accepted into raw storage when their identifiers and payload satisfy the
 generic boundary.
 
+Source-adapter validation rejections return deterministic field-level issues to
+the authenticated device. Issues identify paths and JSON types; received values
+are allowed only for explicitly classified, bounded non-sensitive coercion
+fields. Free text, URLs, date contents, and other personal payload values are not
+returned or logged.
+
 Limits must exist for total request bytes, number of sources, number of records,
 per-record payload bytes, identifier lengths, and nesting depth. Exact initial
 limits are implementation constants documented with the API and tested at their
