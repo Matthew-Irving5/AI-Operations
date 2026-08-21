@@ -5,6 +5,7 @@ import {
   mobileIdentifier,
   mobileRecordSchema,
 } from "../_shared/mobile-snapshot-contract.ts";
+import { normalizeMobileShortcutEnvelope } from "../_shared/mobile-snapshot-compatibility.ts";
 import {
   canonicalJson,
   jsonDepth,
@@ -209,20 +210,40 @@ Deno.serve(async (request) => {
     );
   }
 
-  const parsed = mobileEnvelopeSchema.safeParse(rawEnvelope);
+  const compatibility = normalizeMobileShortcutEnvelope(rawEnvelope);
+  const compatibilityDiagnostic = {
+    applied: compatibility.changes.length > 0,
+    normalized_field_count: compatibility.changes.length,
+    changes: compatibility.changes,
+  };
+  if (compatibility.changes.length > 0) {
+    console.info(JSON.stringify({
+      diagnostic_id: diagnosticId,
+      stage: "shortcut_compatibility_normalization",
+      normalized_field_count: compatibility.changes.length,
+      normalizations: compatibility.changes.map((change) => ({
+        path: change.path,
+        normalization: change.normalization,
+      })),
+    }));
+  }
+
+  const parsed = mobileEnvelopeSchema.safeParse(compatibility.value);
   if (!parsed.success) {
-    const unsupported = typeof rawEnvelope === "object" &&
-      rawEnvelope !== null &&
-      "schema_version" in rawEnvelope &&
-      (rawEnvelope as { schema_version?: unknown }).schema_version !== 1;
+    const unsupported = typeof compatibility.value === "object" &&
+      compatibility.value !== null &&
+      "schema_version" in compatibility.value &&
+      (compatibility.value as { schema_version?: unknown }).schema_version !==
+        1;
     return errorResponse(
       diagnosticId,
       400,
       unsupported ? "unsupported_schema_version" : "invalid_envelope",
       "envelope_validation",
-      "The top-level Shortcut dictionary does not match the mobile snapshot v1 contract. Review every issue path below.",
+      "The Shortcut request did not match the strict mobile snapshot v1 contract after applying the permitted compatibility normalisations. Review every issue path below; unsupported values are never guessed or silently coerced.",
       {
-        issues: diagnosticIssues(rawEnvelope, parsed.error.issues),
+        compatibility_normalization: compatibilityDiagnostic,
+        issues: diagnosticIssues(compatibility.value, parsed.error.issues),
         issue_count: parsed.error.issues.length,
         expected_envelope: expectedEnvelope,
       },
@@ -453,6 +474,7 @@ Deno.serve(async (request) => {
       ...(rejectedRecords.length > 0
         ? { rejected_records: rejectedRecords }
         : {}),
+      compatibility_normalization: compatibilityDiagnostic,
     },
     outcome.replay ? 200 : 202,
     diagnosticId,

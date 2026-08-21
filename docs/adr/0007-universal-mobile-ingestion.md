@@ -7,11 +7,11 @@ contract changes require this ADR to be amended before implementation diverges.
 
 ## Context
 
-AI Operations needs one extensible iOS Shortcut rather than a different transport
-contract for each supported Apple data source. iOS is not a generic extractor:
-each supported source still needs source-specific Shortcut collection actions.
-The transport and backend receipt boundary should remain stable as collection
-blocks and backend adapters evolve independently.
+AI Operations needs one extensible iOS Shortcut rather than a different
+transport contract for each supported Apple data source. iOS is not a generic
+extractor: each supported source still needs source-specific Shortcut collection
+actions. The transport and backend receipt boundary should remain stable as
+collection blocks and backend adapters evolve independently.
 
 The mobile bridge has two conceptually separate jobs:
 
@@ -50,8 +50,8 @@ iOS Shortcut
   operator's private iOS Shortcut. "Never persisted plaintext" applies to the
   backend. A token-bearing Shortcut must not be exported or shared; loss or
   suspected disclosure requires device-token revocation and replacement.
-- The server hashes the token and derives the canonical device and user. It
-  does not trust a client-supplied device or user identifier.
+- The server hashes the token and derives the canonical device and user. It does
+  not trust a client-supplied device or user identifier.
 - Client-reported counts and statuses are observations. The server calculates
   and stores authoritative received, accepted, rejected, and adapted counts.
 
@@ -115,9 +115,10 @@ iOS Shortcut
 
 `captured_at` is required, offset-aware ISO-8601, and denotes the logical
 capture time. The server parses it and canonicalises it to UTC; the client must
-not append a false `Z` suffix. Record `created_at` and `modified_at` are nullable
-source-provided offset-aware timestamps, not server receipt times. The server
-canonicalises supplied timestamps to UTC and records its own `received_at`.
+not append a false `Z` suffix. Record `created_at` and `modified_at` are
+nullable source-provided offset-aware timestamps, not server receipt times. The
+server canonicalises supplied timestamps to UTC and records its own
+`received_at`.
 
 `source` and `kind` accept future values but must match
 `^[a-z][a-z0-9._-]{0,63}$`. Payload must be a JSON object. Client type and
@@ -129,6 +130,17 @@ authenticated upload-slot flow exists. Binary content is never Base64-embedded
 in snapshot JSON.
 
 ### Validation and partial acceptance
+
+Before strict v1 schema validation, the HTTP boundary applies a deterministic,
+field-specific iOS Shortcuts compatibility pass. It trims `source` and `kind`,
+coerces unsigned decimal `record_count` strings to integers, defaults a missing
+or empty source-manifest `error` to `null`, and coerces exact lowercase
+`"true"`/`"false"` strings only for fields whose canonical transport or typed
+source contract requires booleans. It does not parse stringified
+arrays/dictionaries, coerce unrelated record payload values, repair identifiers
+or dates, or accept unsupported versions. The normalized result must pass the
+unchanged strict canonical v1 schema. Diagnostics record only normalized field
+paths and conversion names, never values or payload contents.
 
 Reject the whole request for:
 
@@ -147,8 +159,8 @@ generic boundary.
 
 Limits must exist for total request bytes, number of sources, number of records,
 per-record payload bytes, identifier lengths, and nesting depth. Exact initial
-limits are implementation constants documented with the API and tested at
-their boundaries.
+limits are implementation constants documented with the API and tested at their
+boundaries.
 
 ### Raw persistence and provenance
 
@@ -211,17 +223,17 @@ guarantees retry stability within one snapshot.
 
 ### Safety boundary
 
-- Raw ingestion and deterministic adaptation may write protected database
-  state but may not directly create external/business side effects.
+- Raw ingestion and deterministic adaptation may write protected database state
+  but may not directly create external/business side effects.
 - Unknown records remain inert until a reviewed adapter and downstream policy
   explicitly support them.
 - Model output is never used to validate authentication, establish identity,
   deduplicate raw receipts, or decide whether ingestion itself is accepted.
 - Raw payloads are RLS-protected, excluded from ordinary UI/model traces, and
   redacted before any later approved model use.
-- iOS permissions and explicit Shortcut configuration are the collection
-  consent boundary. The server records submitted source manifests without
-  creating a second general consent-management subsystem in version 1.
+- iOS permissions and explicit Shortcut configuration are the collection consent
+  boundary. The server records submitted source manifests without creating a
+  second general consent-management subsystem in version 1.
 
 ### Response
 
@@ -254,8 +266,8 @@ administration UI.
 
 ## Consequences
 
-- Adding a supported source requires a Shortcut collection block and normally
-  a versioned backend adapter, but no transport-envelope redesign.
+- Adding a supported source requires a Shortcut collection block and normally a
+  versioned backend adapter, but no transport-envelope redesign.
 - Adapter bugs can be repaired and raw records deterministically reprocessed.
 - Flexible ingestion remains passive and cannot silently become execution.
 - Raw storage increases privacy, retention, and cost obligations; limits,
