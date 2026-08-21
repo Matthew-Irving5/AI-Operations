@@ -1,5 +1,5 @@
 begin;
-select plan(30);
+select plan(36);
 
 insert into public.apple_bridge_devices(id, user_id, label, token_hash, token_prefix)
 values ('00000000-0000-4000-8000-000000000301',
@@ -105,11 +105,35 @@ select is(public.ingest_mobile_snapshot(
   '30000000-0000-4000-8000-000000000012',
   'ios-shortcut', '1.0.0', now(), repeat('5', 64),
   '[{"source":"reminders","requested":true,"captured":true,"captured_at":null,"record_count":1,"error":null}]'::jsonb,
-  '[{"record_id":"31000000-0000-4000-8000-000000000011","source":"reminders","kind":"reminder","external_id":null,"source_created_at":null,"source_modified_at":null,"canonical_hash":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","payload":{"title":"Missing required fields"},"raw_record":{"fixture":"malformed"},"ingest_status":"accepted","reject_reason":null}]'::jsonb
+  '[{"record_id":"31000000-0000-4000-8000-000000000011","source":"reminders","kind":"reminder","external_id":null,"source_created_at":null,"source_modified_at":null,"canonical_hash":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","payload":{"title":"Private synthetic title","notes":"Private synthetic notes","priority":"High","is_completed":"No","is_flagged":"Yes","due_at":"","completion_at":"","url":"https://example.invalid/private","has_subtasks":"No"},"raw_record":{"fixture":"malformed"},"ingest_status":"accepted","reject_reason":null}]'::jsonb
 )->>'status', 'accepted', 'A generically valid raw record remains accepted before typed validation');
 select is(public.adapt_mobile_snapshot(repeat('3', 64),
   '30000000-0000-4000-8000-000000000011')->>'status', 'partial',
   'A malformed source payload produces a partial adapter result');
+select is(jsonb_array_length((public.adapt_mobile_snapshot(repeat('3', 64),
+  '30000000-0000-4000-8000-000000000011')->'rejections'->0->'issues')), 3,
+  'Reminder rejection reports every mismatched boolean field in one response');
+select ok((public.adapt_mobile_snapshot(repeat('3', 64),
+  '30000000-0000-4000-8000-000000000011')->'rejections'->0->'issues') @>
+  '[{"path":"is_completed","expected":"boolean","received_type":"string","received":"No"}]'::jsonb,
+  'Reminder rejection includes the safe received boolean representation');
+select ok((public.adapt_mobile_snapshot(repeat('3', 64),
+  '30000000-0000-4000-8000-000000000011')->'rejections'->0->'issues') @>
+  '[{"path":"is_flagged","expected":"boolean","received_type":"string","received":"Yes"},{"path":"has_subtasks","expected":"boolean","received_type":"string","received":"No"}]'::jsonb,
+  'Reminder rejection identifies all remaining boolean mismatches');
+select ok((public.adapt_mobile_snapshot(repeat('3', 64),
+  '30000000-0000-4000-8000-000000000011')->'rejections'->0->'issues')::text
+  !~ '(Private synthetic title|Private synthetic notes|example[.]invalid)',
+  'Reminder diagnostics never expose title, notes, or URL contents');
+select ok(public.mobile_adapter_validation_issues(
+  'reminders:v1', 'invalid_reminders_v1_payload',
+  '{"title":"Synthetic","notes":"","priority":"None","is_completed":false,"is_flagged":false,"due_at":"No Date","completion_at":"","url":"","has_subtasks":false}'::jsonb
+) @> '[{"path":"due_at","expected":"empty string or offset-aware ISO-8601 timestamp","received_type":"string"}]'::jsonb,
+  'Reminder diagnostics reveal invalid date format without revealing its value');
+select ok(public.mobile_adapter_validation_issues(
+  'reminders:v1', 'invalid_reminders_v1_payload',
+  '{"title":"Synthetic","notes":"","priority":"None","is_completed":false,"is_flagged":false,"due_at":"No Date","completion_at":"","url":"","has_subtasks":false}'::jsonb
+)::text !~ 'No Date', 'Reminder diagnostics redact invalid date contents');
 select is((select count(*) from public.mobile_record_adaptations
   where record_internal_id=(select id from public.mobile_ingestion_records
     where record_id='31000000-0000-4000-8000-000000000011') and status='rejected'),

@@ -63,6 +63,13 @@ parse stringified arrays/dictionaries. Invalid identifiers, dates, counts,
 versions, and structures still fail with issue paths plus a value-free
 compatibility summary and correlation ID.
 
+Typed adapter rejections include an `issues` array so a Shortcut mapping can be
+corrected in one pass. Each issue reports its payload field path, expected type,
+and received JSON type. For bounded non-sensitive coercion fields such as
+Reminder booleans and priority, it also returns a maximum 64-character received
+value. Reminder titles, notes, URLs, and date contents are never echoed in
+diagnostics.
+
 ## Persistence and safety
 
 The endpoint first commits the immutable raw snapshot and then runs

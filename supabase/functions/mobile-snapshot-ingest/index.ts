@@ -449,6 +449,12 @@ Deno.serve(async (request) => {
       record_id: string;
       adapter: string;
       reason: string;
+      issues: Array<{
+        path: string;
+        expected: string;
+        received_type: string;
+        received?: string | number | boolean;
+      }>;
     }>;
   };
   if (adaptation.code) {
