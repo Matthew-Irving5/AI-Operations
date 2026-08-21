@@ -7,7 +7,8 @@ export type MobileCompatibilityChange = {
     | "numeric_string_to_integer"
     | "missing_error_to_null"
     | "empty_error_to_null"
-    | "boolean_string_to_boolean";
+    | "boolean_string_to_boolean"
+    | "apple_yes_no_to_boolean";
 };
 
 export type MobileCompatibilityResult = {
@@ -45,6 +46,22 @@ function normalizeBoolean(
   changes.push({
     path: `${path}.${key}`,
     normalization: "boolean_string_to_boolean",
+  });
+}
+
+function normalizeReminderBoolean(
+  target: JsonObject,
+  key: string,
+  path: string,
+  changes: MobileCompatibilityChange[],
+): void {
+  normalizeBoolean(target, key, path, changes);
+  const value = target[key];
+  if (typeof value !== "string" || !/^(yes|no)$/i.test(value)) return;
+  target[key] = value.toLowerCase() === "yes";
+  changes.push({
+    path: `${path}.${key}`,
+    normalization: "apple_yes_no_to_boolean",
   });
 }
 
@@ -118,7 +135,7 @@ export function normalizeMobileShortcutEnvelope(
           for (
             const key of ["is_completed", "is_flagged", "has_subtasks"]
           ) {
-            normalizeBoolean(payload, key, `${path}.payload`, changes);
+            normalizeReminderBoolean(payload, key, `${path}.payload`, changes);
           }
         } else if (
           normalized.source === "calendar" &&

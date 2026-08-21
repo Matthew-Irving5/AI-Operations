@@ -142,6 +142,11 @@ or dates, or accept unsupported versions. The normalized result must pass the
 unchanged strict canonical v1 schema. Diagnostics record only normalized field
 paths and conversion names, never values or payload contents.
 
+For `reminders:v1` only, the native Apple fields `is_completed`, `is_flagged`,
+and `has_subtasks` additionally accept exact case-insensitive `"Yes"` and
+`"No"`, which normalize to booleans. This rule does not apply to any other
+field, source, or approximate spelling.
+
 Reject the whole request for:
 
 - missing or invalid device authentication;
