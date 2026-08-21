@@ -63,6 +63,10 @@ parse stringified arrays/dictionaries. Invalid identifiers, dates, counts,
 versions, and structures still fail with issue paths plus a value-free
 compatibility summary and correlation ID.
 
+Apple's exact case-insensitive `Yes`/`No` serialization is also accepted only
+for Reminder `is_completed`, `is_flagged`, and `has_subtasks`, becoming JSON
+booleans before adapter validation. Other fields and spellings are not coerced.
+
 Typed adapter rejections include an `issues` array so a Shortcut mapping can be
 corrected in one pass. Each issue reports its payload field path, expected type,
 and received JSON type. For bounded non-sensitive coercion fields such as

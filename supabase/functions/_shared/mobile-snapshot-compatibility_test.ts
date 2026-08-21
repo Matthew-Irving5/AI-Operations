@@ -128,6 +128,87 @@ Deno.test("coerces exact boolean strings only for typed source boolean fields", 
   assertEquals(records[1].payload.all_day, false);
 });
 
+Deno.test("coerces Apple Yes and No case-insensitively only for Reminder booleans", () => {
+  const result = normalizeMobileShortcutEnvelope(envelope({
+    records: [{
+      record_id: "31000000-0000-4000-8000-000000000001",
+      source: "reminders",
+      kind: "reminder",
+      payload: {
+        is_completed: "Yes",
+        is_flagged: "NO",
+        has_subtasks: "nO",
+        unrelated: "Yes",
+      },
+    }, {
+      record_id: "31000000-0000-4000-8000-000000000002",
+      source: "calendar",
+      kind: "calendar_event",
+      payload: { all_day: "Yes" },
+    }],
+  }));
+  const records = (result.value as {
+    records: Array<{ payload: Record<string, unknown> }>;
+  }).records;
+  assertEquals(records[0].payload, {
+    is_completed: true,
+    is_flagged: false,
+    has_subtasks: false,
+    unrelated: "Yes",
+  });
+  assertEquals(records[1].payload.all_day, "Yes");
+  assertEquals(
+    result.changes.filter((change) =>
+      change.normalization === "apple_yes_no_to_boolean"
+    ).length,
+    3,
+  );
+});
+
+Deno.test("preserves native booleans and supports exact lowercase true and false", () => {
+  const result = normalizeMobileShortcutEnvelope(envelope({
+    records: [{
+      record_id: "31000000-0000-4000-8000-000000000001",
+      source: "reminders",
+      kind: "reminder",
+      payload: {
+        is_completed: true,
+        is_flagged: "true",
+        has_subtasks: "false",
+      },
+    }],
+  }));
+  const payload = (result.value as {
+    records: Array<{ payload: Record<string, unknown> }>;
+  }).records[0].payload;
+  assertEquals(payload, {
+    is_completed: true,
+    is_flagged: true,
+    has_subtasks: false,
+  });
+});
+
+Deno.test("rejects unsupported Reminder boolean strings without coercion", () => {
+  for (const invalid of ["Y", "N", "1", "on", " yes ", "TRUE", "False", ""]) {
+    const result = normalizeMobileShortcutEnvelope(envelope({
+      records: [{
+        record_id: "31000000-0000-4000-8000-000000000001",
+        source: "reminders",
+        kind: "reminder",
+        payload: {
+          is_completed: invalid,
+          is_flagged: false,
+          has_subtasks: false,
+        },
+      }],
+    }));
+    const payload = (result.value as {
+      records: Array<{ payload: Record<string, unknown> }>;
+    }).records[0].payload;
+    assertEquals(payload.is_completed, invalid);
+  }
+});
+
 Deno.test("does not mutate its input", () => {
   const input = envelope({
     sources: [{
