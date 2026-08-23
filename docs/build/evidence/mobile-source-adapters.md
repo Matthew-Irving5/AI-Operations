@@ -15,6 +15,10 @@ unchanged.
 - Screen Time remains lossless text. Health reported values/units remain exact; only explicit
   deterministic type/unit pairs receive separate normalization rows.
 - Adapter functions contain no AI, HTTP, workflow, notification, schedule, or action path.
+- A concurrency-safe identity registry deduplicates equivalent typed records across daily snapshots
+  while retaining every immutable raw receipt and duplicate provenance link.
+- Location accepts only JSON numbers or strict decimal strings for latitude, longitude, and altitude;
+  both representations normalize into bounded numeric typed columns.
 
 ## Limits
 

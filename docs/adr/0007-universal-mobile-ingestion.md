@@ -147,6 +147,11 @@ and `has_subtasks` additionally accept exact case-insensitive `"Yes"` and
 `"No"`, which normalize to booleans. This rule does not apply to any other
 field, source, or approximate spelling.
 
+For `location:v1` only, `latitude`, `longitude`, and `altitude` accept either a
+JSON number or a strict decimal string emitted by iOS Shortcuts. The adapter
+normalises both representations to database numeric values and still enforces
+coordinate bounds. No other location field receives numeric coercion.
+
 Reject the whole request for:
 
 - missing or invalid device authentication;
@@ -231,6 +236,11 @@ Deduplication is owned by each source adapter in this order when available:
 No generic native `version` field is manufactured. Without native identity,
 cross-snapshot entity deduplication is inherently best-effort; `record_id` only
 guarantees retry stability within one snapshot.
+
+A protected, concurrency-safe typed-deduplication registry maps each resolved
+adapter key to its canonical derived row. Later equivalent raw records receive
+`duplicate` adaptation provenance pointing to that row. Raw receipts are never
+discarded, and historical typed duplicates predating the registry are retained.
 
 ### Safety boundary
 
