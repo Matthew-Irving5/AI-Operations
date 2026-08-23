@@ -1,5 +1,5 @@
 begin;
-select plan(36);
+select plan(49);
 
 insert into public.apple_bridge_devices(id, user_id, label, token_hash, token_prefix)
 values ('00000000-0000-4000-8000-000000000301',
@@ -92,6 +92,85 @@ select is((select count(*) from public.mobile_reminder_items)
   +(select count(*) from public.mobile_location_observation_items)
   +(select count(*) from public.mobile_screen_time_activity_items), 5::bigint,
   'Idempotent reprocessing creates no duplicate typed rows');
+
+select is(public.mobile_typed_deduplication_key(
+  'native-1', '2026-08-20T12:00:00+01:00'::timestamptz, repeat('a', 64)),
+  public.mobile_typed_deduplication_key(
+    'native-1', '2026-08-20T11:00:00Z'::timestamptz, repeat('b', 64)),
+  'Native identity plus the same native modification time deduplicates regardless of content hash');
+select isnt(public.mobile_typed_deduplication_key(
+  'native-1', '2026-08-20T11:00:00Z'::timestamptz, repeat('a', 64)),
+  public.mobile_typed_deduplication_key(
+    'native-1', '2026-08-21T11:00:00Z'::timestamptz, repeat('a', 64)),
+  'A genuinely newer native modification creates a new typed version');
+select is(public.mobile_typed_deduplication_key(null, null, repeat('a', 64)),
+  'content:' || repeat('a', 64),
+  'Records without native identity use canonical content hash as the cross-snapshot fallback');
+
+select is(public.ingest_mobile_snapshot(
+  repeat('3', 64), 1,
+  '30000000-0000-4000-8000-000000000021',
+  '30000000-0000-4000-8000-000000000022',
+  'ios-shortcut', '1.0.0', '2026-08-21T12:00:00+01:00', repeat('6', 64),
+  '[
+    {"source":"reminders","requested":true,"captured":true,"captured_at":"2026-08-21T12:00:00+01:00","record_count":1,"error":null},
+    {"source":"calendar","requested":true,"captured":true,"captured_at":"2026-08-21T12:00:00+01:00","record_count":1,"error":null},
+    {"source":"health","requested":true,"captured":true,"captured_at":"2026-08-21T12:00:00+01:00","record_count":1,"error":null},
+    {"source":"location","requested":true,"captured":true,"captured_at":"2026-08-21T12:00:00+01:00","record_count":1,"error":null},
+    {"source":"screen_time","requested":true,"captured":true,"captured_at":"2026-08-21T12:00:00+01:00","record_count":1,"error":null}
+  ]'::jsonb,
+  '[
+    {"record_id":"32000000-0000-4000-8000-000000000001","source":"reminders","kind":"reminder","external_id":null,"source_created_at":null,"source_modified_at":null,"canonical_hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","payload":{"title":"Synthetic reminder","notes":"Fixture","priority":"High","is_completed":false,"is_flagged":true,"due_at":"","completion_at":"","url":"","has_subtasks":false},"raw_record":{"fixture":"duplicate reminder"},"ingest_status":"accepted","reject_reason":null},
+    {"record_id":"32000000-0000-4000-8000-000000000002","source":"calendar","kind":"calendar_event","external_id":null,"source_created_at":null,"source_modified_at":null,"canonical_hash":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","payload":{"title":"Synthetic event","start_at":"2026-08-20T13:00:00+01:00","end_at":"2026-08-20T14:00:00+01:00","all_day":false,"calendar":"Personal","location":"","notes":"Fixture","url":""},"raw_record":{"fixture":"duplicate calendar"},"ingest_status":"accepted","reject_reason":null},
+    {"record_id":"32000000-0000-4000-8000-000000000003","source":"health","kind":"health_sample","external_id":null,"source_created_at":null,"source_modified_at":null,"canonical_hash":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","payload":{"type":"Steps","value":"1234","unit":"count","start_at":"2026-08-20T00:00:00+01:00","end_at":"2026-08-20T12:00:00+01:00","duration":"12 hours","source_name":"Synthetic iPhone","name":"Steps"},"raw_record":{"fixture":"duplicate health"},"ingest_status":"accepted","reject_reason":null},
+    {"record_id":"32000000-0000-4000-8000-000000000004","source":"location","kind":"location_observation","external_id":null,"source_created_at":null,"source_modified_at":null,"canonical_hash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","payload":{"latitude":54.9783,"longitude":-1.6178,"altitude":42,"name":"Synthetic place","street":"","city":"Newcastle","state":"","postcode":"","region":"England"},"raw_record":{"fixture":"duplicate location"},"ingest_status":"accepted","reject_reason":null},
+    {"record_id":"32000000-0000-4000-8000-000000000005","source":"screen_time","kind":"app_website_activity","external_id":null,"source_created_at":null,"source_modified_at":null,"canonical_hash":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","payload":{"raw_text":"Synthetic Screen Time item: 12 minutes"},"raw_record":{"fixture":"duplicate screen time"},"ingest_status":"accepted","reject_reason":null}
+  ]'::jsonb
+)->>'status', 'accepted', 'A later snapshot still preserves equivalent records in immutable raw storage');
+select is(public.adapt_mobile_snapshot(repeat('3', 64),
+  '30000000-0000-4000-8000-000000000021')->>'duplicate', '5',
+  'Equivalent records in a later snapshot are deduplicated across all five adapters');
+select is((select count(*) from public.mobile_record_adaptations
+  where record_internal_id in (select id from public.mobile_ingestion_records
+    where snapshot_internal_id=(select id from public.mobile_snapshots
+      where snapshot_id='30000000-0000-4000-8000-000000000021')) and status='duplicate'),
+  5::bigint, 'Cross-snapshot duplicates retain provenance to canonical typed rows');
+select is((select count(*) from public.mobile_reminder_items)
+  +(select count(*) from public.mobile_calendar_event_items)
+  +(select count(*) from public.mobile_health_sample_items)
+  +(select count(*) from public.mobile_location_observation_items)
+  +(select count(*) from public.mobile_screen_time_activity_items), 5::bigint,
+  'Cross-snapshot deduplication creates no repeated typed state');
+select is((select count(*) from public.mobile_ingestion_records
+  where snapshot_internal_id in (select id from public.mobile_snapshots
+    where snapshot_id in ('30000000-0000-4000-8000-000000000001',
+      '30000000-0000-4000-8000-000000000021'))), 10::bigint,
+  'Cross-snapshot deduplication never deletes raw receipts');
+
+select is(public.ingest_mobile_snapshot(
+  repeat('3', 64), 1,
+  '30000000-0000-4000-8000-000000000031',
+  '30000000-0000-4000-8000-000000000032',
+  'ios-shortcut', '1.0.0', now(), repeat('7', 64),
+  '[{"source":"location","requested":true,"captured":true,"captured_at":null,"record_count":1,"error":null}]'::jsonb,
+  '[{"record_id":"33000000-0000-4000-8000-000000000001","source":"location","kind":"location_observation","external_id":null,"source_created_at":null,"source_modified_at":null,"canonical_hash":"1111111111111111111111111111111111111111111111111111111111111111","payload":{"latitude":" 54.9783 ","longitude":"-1.6178","altitude":"42.5","name":"Synthetic string coordinates","street":"","city":"Newcastle","state":"","postcode":"","region":"England"},"raw_record":{"fixture":"string coordinates"},"ingest_status":"accepted","reject_reason":null}]'::jsonb
+)->>'status', 'accepted', 'String coordinate compatibility remains inside the typed adapter boundary');
+select is(public.adapt_mobile_snapshot(repeat('3', 64),
+  '30000000-0000-4000-8000-000000000031')->>'status', 'complete',
+  'Location accepts deterministic decimal strings from iOS Shortcuts');
+select ok((select latitude=54.9783 and longitude=-1.6178 and altitude=42.5
+  from public.mobile_location_observation_items
+  where raw_record_id=(select id from public.mobile_ingestion_records
+    where record_id='33000000-0000-4000-8000-000000000001')),
+  'Location decimal strings are normalized to numeric typed columns');
+select throws_ok($$select public.mobile_shortcut_numeric(
+  '{"latitude":"not-a-coordinate"}'::jsonb, 'latitude')$$,
+  'P0001', 'invalid_location_v1_payload',
+  'Location compatibility rejects arbitrary non-numeric strings');
+select throws_ok($$select public.mobile_shortcut_numeric(
+  '{"latitude":null}'::jsonb, 'latitude')$$,
+  'P0001', 'invalid_location_v1_payload',
+  'Location compatibility rejects null rather than coercing it');
 select is((select count(*) from public.workflow_runs),
   (select workflows from mobile_side_effect_baseline), 'Adaptation creates no workflow');
 select is((select count(*) from public.actions),

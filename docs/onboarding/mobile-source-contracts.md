@@ -35,8 +35,11 @@ safely deferred; they are never guessed. The initial collection types are Steps,
 Heart Rate, Resting Heart Rate, Heart Rate Variability (SDNN), Sleep, Active
 Energy, Walking + Running Distance, Exercise Minutes, and Weight.
 
-Location stores only the supplied coordinates, altitude, and place/address
-strings. It does not invent accuracy. Screen Time stores each Shortcuts text
+Location accepts latitude, longitude, and altitude as JSON numbers or strict
+decimal strings produced by iOS Shortcuts, normalises them to database numeric
+values, and rejects all other coercions. It stores only the supplied
+coordinates, altitude, and place/address strings and does not invent accuracy.
+Screen Time stores each Shortcuts text
 representation losslessly and does not use an LLM or infer fields.
 
 ## Limits
@@ -88,3 +91,11 @@ snapshot and request IDs.
 Ingestion and adaptation do not invoke AI, create workflows or actions, send
 notifications, enable schedules, or call external services. Unknown source/kind
 pairs remain inert and deferred.
+
+Typed state is also deduplicated across later snapshots. Adapters prefer native
+identity plus the source modification timestamp, then native identity plus the
+canonical content hash, and finally canonical content hash when Apple exposes
+no stable identity. Every daily raw record remains immutable; duplicate adapter
+provenance points to the already-derived canonical typed row. Historical typed
+duplicates created before this registry was introduced are retained rather than
+destructively removed.
