@@ -1,5 +1,5 @@
 begin;
-select plan(49);
+select plan(51);
 
 insert into public.apple_bridge_devices(id, user_id, label, token_hash, token_prefix)
 values ('00000000-0000-4000-8000-000000000301',
@@ -64,6 +64,40 @@ select is((select reported_value from public.mobile_health_sample_items), '"1234
 select ok((select normalized_value=1234 and normalized_unit='count' and status='normalized'
   from public.mobile_health_sample_normalizations),
   'health:v1 applies only an explicit type-and-unit normalisation');
+
+insert into public.mobile_ingestion_records(snapshot_internal_id, user_id, record_id, source, kind,
+  canonical_hash, payload, raw_record, ingest_status)
+select id, user_id, '31000000-0000-4000-8000-000000000006', 'health', 'health_sample',
+  repeat('9', 64),
+  '{"type":"Active Calories","value":"250.5","unit":"kcal","start_at":"2026-08-20T08:00:00+01:00","end_at":"2026-08-20T12:00:00+01:00","duration":"4 hours","source_name":"Synthetic iPhone","name":"Active Calories"}'::jsonb,
+  '{"fixture":"active calories"}'::jsonb, 'accepted'
+from public.mobile_snapshots
+where snapshot_id='30000000-0000-4000-8000-000000000001';
+insert into public.mobile_health_sample_items(user_id, raw_record_id, adapter_version,
+  reported_type, reported_value, reported_unit, start_at, end_at, reported_duration,
+  source_name, sample_name)
+select user_id, id, 'v1', payload->>'type', payload->'value', payload->>'unit',
+  (payload->>'start_at')::timestamptz, (payload->>'end_at')::timestamptz,
+  payload->>'duration', payload->>'source_name', payload->>'name'
+from public.mobile_ingestion_records
+where record_id='31000000-0000-4000-8000-000000000006';
+insert into public.mobile_health_sample_normalizations(user_id, health_sample_id,
+  normalizer_version, status)
+select user_id, id, 'v1', 'deferred_unknown_type'
+from public.mobile_health_sample_items
+where raw_record_id=(select id from public.mobile_ingestion_records
+  where record_id='31000000-0000-4000-8000-000000000006');
+select is((select canonical_metric from public.mobile_health_sample_normalizations
+  where health_sample_id=(select id from public.mobile_health_sample_items
+    where raw_record_id=(select id from public.mobile_ingestion_records
+      where record_id='31000000-0000-4000-8000-000000000006'))),
+  'active_energy', 'Apple Active Calories maps to the canonical active-energy metric');
+select ok((select normalized_value=250.5 and normalized_unit='kcal' and status='normalized'
+  from public.mobile_health_sample_normalizations
+  where health_sample_id=(select id from public.mobile_health_sample_items
+    where raw_record_id=(select id from public.mobile_ingestion_records
+      where record_id='31000000-0000-4000-8000-000000000006'))),
+  'Apple Active Calories preserves kcal values during normalization');
 select is((select count(*) from public.mobile_location_observation_items), 1::bigint,
   'location:v1 creates one typed observation');
 select ok((select latitude=54.9783 and longitude=-1.6178 and altitude=42
@@ -90,8 +124,8 @@ select is((select count(*) from public.mobile_reminder_items)
   +(select count(*) from public.mobile_calendar_event_items)
   +(select count(*) from public.mobile_health_sample_items)
   +(select count(*) from public.mobile_location_observation_items)
-  +(select count(*) from public.mobile_screen_time_activity_items), 5::bigint,
-  'Idempotent reprocessing creates no duplicate typed rows');
+  +(select count(*) from public.mobile_screen_time_activity_items), 6::bigint,
+  'Idempotent reprocessing creates no duplicate typed rows beyond the alias fixture');
 
 select is(public.mobile_typed_deduplication_key(
   'native-1', '2026-08-20T12:00:00+01:00'::timestamptz, repeat('a', 64)),
@@ -139,12 +173,12 @@ select is((select count(*) from public.mobile_reminder_items)
   +(select count(*) from public.mobile_calendar_event_items)
   +(select count(*) from public.mobile_health_sample_items)
   +(select count(*) from public.mobile_location_observation_items)
-  +(select count(*) from public.mobile_screen_time_activity_items), 5::bigint,
-  'Cross-snapshot deduplication creates no repeated typed state');
+  +(select count(*) from public.mobile_screen_time_activity_items), 6::bigint,
+  'Cross-snapshot deduplication creates no repeated typed state beyond the alias fixture');
 select is((select count(*) from public.mobile_ingestion_records
   where snapshot_internal_id in (select id from public.mobile_snapshots
     where snapshot_id in ('30000000-0000-4000-8000-000000000001',
-      '30000000-0000-4000-8000-000000000021'))), 10::bigint,
+      '30000000-0000-4000-8000-000000000021'))), 11::bigint,
   'Cross-snapshot deduplication never deletes raw receipts');
 
 select is(public.ingest_mobile_snapshot(
