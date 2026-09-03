@@ -13,8 +13,15 @@ select ok(not exists(
       'mobile_location_observation_items','mobile_screen_time_activity_items')
     and not relrowsecurity
 ), 'Every typed mobile adapter table has RLS enabled');
-select ok(not has_table_privilege('authenticated', 'public.mobile_reminder_items', 'INSERT'),
-  'Browser sessions cannot insert typed mobile state');
+select ok(not exists(
+  select 1
+  from unnest(array[
+    'public.mobile_reminder_items', 'public.mobile_calendar_event_items',
+    'public.mobile_health_sample_items', 'public.mobile_health_sample_normalizations',
+    'public.mobile_location_observation_items', 'public.mobile_screen_time_activity_items'
+  ]) as typed_table(name)
+  where has_table_privilege('authenticated', typed_table.name, 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+), 'Browser sessions cannot mutate typed mobile state');
 
 create temp table mobile_side_effect_baseline as
 select (select count(*) from public.workflow_runs) workflows,
