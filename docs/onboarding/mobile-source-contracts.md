@@ -33,7 +33,9 @@ normalisation records a canonical value only for an explicit recognised
 type/unit pair. Unknown types, units, and non-numeric Sleep categories remain
 safely deferred; they are never guessed. The initial collection types are Steps,
 Heart Rate, Resting Heart Rate, Heart Rate Variability (SDNN), Sleep, Active
-Energy, Walking + Running Distance, Exercise Minutes, and Weight.
+Calories (canonicalised as active energy), Walking + Running Distance, Exercise
+Minutes, and Weight. Resting Heart Rate is optional on days when Apple Health
+does not produce a sample.
 
 Location accepts latitude, longitude, and altitude as JSON numbers or strict
 decimal strings produced by iOS Shortcuts, normalises them to database numeric
