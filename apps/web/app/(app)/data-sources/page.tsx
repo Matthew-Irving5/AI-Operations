@@ -1,52 +1,37 @@
-import { connectionsData } from '../../../lib/platform-data';
+import { sourcePermissionsData } from '../../../lib/platform-data';
 import { AppleBridgeSetup } from './apple-bridge-setup';
-import { GoogleConnect } from './google-connect';
+import { SourceSummary } from './source-permission-card';
 
 export default async function DataSourcesPage() {
-  const connections = await connectionsData();
-  const google = connections.data.filter((connection) => connection.provider === 'google');
+  const { connections, freshness, appleDevices } = await sourcePermissionsData();
+  const error = connections.error ?? freshness.error ?? appleDevices.error;
   return (
     <>
       <h1>Data Sources</h1>
       <p className="notice">
         Connections use server-side credentials. The browser never receives refresh tokens or Apple
-        Shortcut device tokens after their one-time setup display.
+        Shortcut device tokens after their one-time setup display. Revoke actions require fresh MFA.
       </p>
-      {connections.error ? (
+      {error ? (
         <p role="alert" className="notice">
-          {connections.error}
+          {error} Refresh the page and retry. Existing retained data is not changed by a read error.
         </p>
       ) : null}
-      <h2>Google</h2>
-      {google.map((connection) => (
-        <article className="card" key={connection.id}>
-          <div className="label">Google · {connection.status}</div>
-          <h3>{connection.account_label}</h3>
+      <SourceSummary
+        connections={connections.data}
+        appleDevices={appleDevices.data}
+        freshness={freshness.data}
+      />
+      <section aria-labelledby="apple-setup-heading">
+        <h2 id="apple-setup-heading">Set up Apple Shortcut bridge</h2>
+        <div className="card">
           <p>
-            Scopes: {connection.scopes.length ? connection.scopes.join(', ') : 'none recorded'}.
+            Create a device token from the secure bridge setup, paste it into the Shortcut once, and
+            send Calendar and mapped Reminder snapshots. A revoked token cannot be used again.
           </p>
-          <p>
-            Freshness is recorded after each successful incremental sync. Reconnect if this
-            connection requires reauthentication.
-          </p>
-          <GoogleConnect label="Reconnect Google" />
-        </article>
-      ))}
-      {!google.length ? (
-        <p className="card">
-          No Google account is connected. Start secure OAuth after configuring the server-side
-          Google client.
-          <br />
-          <br />
-          <GoogleConnect />
-        </p>
-      ) : null}
-      <h2>Apple Shortcut bridge</h2>
-      <div className="card">
-        Create a device token from the secure bridge setup, paste it into the Shortcut once, and
-        send Calendar and mapped Reminder snapshots. A revoked token cannot be used again.
-        <AppleBridgeSetup />
-      </div>
+          <AppleBridgeSetup />
+        </div>
+      </section>
     </>
   );
 }

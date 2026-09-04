@@ -80,8 +80,9 @@ const steps = [
     code: 'source_permissions',
     label: 'Source app permissions',
     instructions: [
-      'Review every connected source in Data Sources. Keep scopes read-only where possible and revoke anything unnecessary.',
-      'Confirm freshness and failure recovery for each source before enabling schedules.',
+      'Review every connected source in Data Sources, including the account, exact scope, human reason, affected workflows, last successful sync/snapshot, expected cadence, and freshness state.',
+      'Google Gmail, Calendar, and Drive access is read-only except gmail.send, which is needed only for configured notifications. In Data Sources, select the calendars and Drive files to ingest and save that selection; an empty saved selection means ingest none. Google Sync now never marks mail read, archives it, or changes calendar data.',
+      'For Apple, confirm the device label, Calendar and selected Reminder lists, last-seen time, freshness, and the fresh-MFA revoke path. If a source is stale, denied, or needs reauthentication, recover it and verify a fresh successful sync before completing this item.',
     ],
   },
   {
@@ -145,7 +146,8 @@ const steps = [
 export function OnboardingForm({
   completedCodes,
   accepted,
-}: Readonly<{ completedCodes: string[]; accepted: boolean }>) {
+  sourcePermissionsReady,
+}: Readonly<{ completedCodes: string[]; accepted: boolean; sourcePermissionsReady: boolean }>) {
   const [completed, setCompleted] = useState(() => new Set(completedCodes));
   const [status, setStatus] = useState(accepted ? 'Production onboarding accepted.' : '');
   const [testStatus, setTestStatus] = useState('');
@@ -234,7 +236,11 @@ export function OnboardingForm({
               <input
                 type="checkbox"
                 checked={completed.has(code)}
-                disabled={code === 'production_acceptance' || accepted}
+                disabled={
+                  code === 'production_acceptance' ||
+                  accepted ||
+                  (code === 'source_permissions' && !sourcePermissionsReady)
+                }
                 onChange={(event) => void toggle(code, event.target.checked)}
               />{' '}
               Complete
@@ -245,6 +251,15 @@ export function OnboardingForm({
                 {instructions.map((instruction) => (
                   <p key={instruction}>{instruction}</p>
                 ))}
+                {code === 'source_permissions' &&
+                !sourcePermissionsReady &&
+                !completed.has(code) ? (
+                  <p role="status">
+                    This item is locked until Data Sources shows at least one active source with a
+                    fresh successful sync or snapshot. Review that evidence before marking it
+                    complete.
+                  </p>
+                ) : null}
                 {code === 'gmail_test' && (
                   <div className="stack">
                     <button type="button" onClick={startGmailTest}>

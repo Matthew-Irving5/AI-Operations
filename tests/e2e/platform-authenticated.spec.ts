@@ -103,6 +103,13 @@ test('Personal Operations and connection empty states remain available to an AAL
   await page.goto('/data-sources');
   await expect(page.getByRole('heading', { name: 'Data Sources' })).toBeVisible();
   await expect(page.getByText('No Google account is connected.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Apple Shortcut bridge' })).toBeVisible();
+  await expect(page.getByText('No Apple Shortcut bridge device is registered.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Connect Google' })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(
+    page.evaluate(() => document.documentElement.scrollWidth),
+  ).resolves.toBeLessThanOrEqual(390);
 });
 
 test('Health and Finance AAL2 surfaces make safe empty states explicit', async ({ page }) => {
@@ -159,6 +166,10 @@ test('Systems, device, and onboarding surfaces are reachable and preserve produc
   await expect(supabaseInstructions).toBeVisible();
   await supabaseInstructions.click();
   await expect(page.getByText(/PRODUCTION_SUPABASE_ACCESS_TOKEN/)).toBeVisible();
+  const sourcePermissionInstructions = page.getByText('Source app permissions');
+  await sourcePermissionInstructions.click();
+  await expect(page.getByText(/empty saved selection means ingest none/i)).toBeVisible();
+  await expect(page.getByText(/without selection controls/i)).toHaveCount(0);
   await expect(
     page.getByRole('button', { name: 'Record final production acceptance' }),
   ).toBeDisabled();

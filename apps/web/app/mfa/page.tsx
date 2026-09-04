@@ -16,7 +16,12 @@ export default async function MfaPage({
       : '/overview';
   const requestedJob = (await searchParams).job;
   const job =
-    requestedJob === 'apple_bridge' || requestedJob === 'gmail_test' ? requestedJob : undefined;
+    requestedJob === 'apple_bridge' ||
+    requestedJob === 'gmail_test' ||
+    requestedJob === 'connection_revoke' ||
+    requestedJob === 'connection_scope_change'
+      ? requestedJob
+      : undefined;
   return (
     <main style={{ maxWidth: 480, paddingTop: '12vh' }}>
       <h1>Verify your identity</h1>

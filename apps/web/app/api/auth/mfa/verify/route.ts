@@ -9,7 +9,9 @@ import { requireSameOrigin } from '../../../../../lib/request-security';
 const bodySchema = z.object({
   factorId: z.string().uuid(),
   code: z.string().regex(/^\d{6}$/),
-  job: z.enum(['apple_bridge', 'gmail_test']).optional(),
+  job: z
+    .enum(['apple_bridge', 'gmail_test', 'connection_revoke', 'connection_scope_change'])
+    .optional(),
 });
 
 export async function POST(request: Request) {
@@ -57,7 +59,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ code: 'reauthentication_record_failed' }, { status: 500 });
     if (parsed.data.job) {
       const actionKey =
-        parsed.data.job === 'apple_bridge' ? 'apple_bridge_create' : 'gmail_test_notification';
+        parsed.data.job === 'apple_bridge'
+          ? 'apple_bridge_create'
+          : parsed.data.job === 'gmail_test'
+            ? 'gmail_test_notification'
+            : parsed.data.job === 'connection_revoke'
+              ? 'connection_revoke'
+              : 'connection_scope_change';
       const { data: mfaGateId, error: gateError } = await elevated.rpc('create_mfa_action_gate', {
         p_action_key: actionKey,
       });
