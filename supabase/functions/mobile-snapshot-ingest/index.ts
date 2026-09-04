@@ -117,7 +117,9 @@ function validationReason(
 ): string {
   if (
     encoder.encode(JSON.stringify(value)).byteLength > MOBILE_LIMITS.recordBytes
-  ) return "record_too_large";
+  ) {
+    return "record_too_large";
+  }
   if (jsonDepth(value) > MOBILE_LIMITS.nestingDepth) return "record_too_deep";
   const path = result.error.issues[0]?.path.join("_") || "shape";
   return `invalid_${path}`.slice(0, 128);
@@ -150,8 +152,10 @@ Deno.serve(async (request) => {
     );
   }
 
-  const token = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)
-    ?.[1]?.trim();
+  const token = request.headers
+    .get("authorization")
+    ?.match(/^Bearer\s+(.+)$/i)?.[1]
+    ?.trim();
   if (!token) {
     return errorResponse(
       diagnosticId,
@@ -217,15 +221,17 @@ Deno.serve(async (request) => {
     changes: compatibility.changes,
   };
   if (compatibility.changes.length > 0) {
-    console.info(JSON.stringify({
-      diagnostic_id: diagnosticId,
-      stage: "shortcut_compatibility_normalization",
-      normalized_field_count: compatibility.changes.length,
-      normalizations: compatibility.changes.map((change) => ({
-        path: change.path,
-        normalization: change.normalization,
-      })),
-    }));
+    console.info(
+      JSON.stringify({
+        diagnostic_id: diagnosticId,
+        stage: "shortcut_compatibility_normalization",
+        normalized_field_count: compatibility.changes.length,
+        normalizations: compatibility.changes.map((change) => ({
+          path: change.path,
+          normalization: change.normalization,
+        })),
+      }),
+    );
   }
 
   const parsed = mobileEnvelopeSchema.safeParse(compatibility.value);
@@ -274,7 +280,7 @@ Deno.serve(async (request) => {
         jsonDepth(rawRecord) > MOBILE_LIMITS.nestingDepth
       ) {
         const candidate = typeof rawRecord === "object" && rawRecord !== null
-          ? rawRecord as Record<string, unknown>
+          ? (rawRecord as Record<string, unknown>)
           : {};
         return {
           record_id: typeof candidate.record_id === "string" &&
@@ -297,9 +303,9 @@ Deno.serve(async (request) => {
           raw_record: rawRecord,
           ingest_status: "rejected",
           reject_reason: result.success
-            ? (jsonDepth(rawRecord) > MOBILE_LIMITS.nestingDepth
+            ? jsonDepth(rawRecord) > MOBILE_LIMITS.nestingDepth
               ? "record_too_deep"
-              : "record_too_large")
+              : "record_too_large"
             : validationReason(rawRecord, result),
         };
       }
@@ -339,11 +345,13 @@ Deno.serve(async (request) => {
   });
   const rejectedRecords = normalizedRecords.flatMap((record, index) =>
     record.ingest_status === "rejected"
-      ? [{
-        index,
-        record_id: record.record_id,
-        reason: record.reject_reason,
-      }]
+      ? [
+        {
+          index,
+          record_id: record.record_id,
+          reason: record.reject_reason,
+        },
+      ]
       : []
   );
 
@@ -467,6 +475,42 @@ Deno.serve(async (request) => {
       { raw_snapshot_persisted: true, retry_with_same_identifiers: true },
     );
   }
+  const { data: healthData, error: healthError } = await bridge.rpc(
+    "promote_mobile_health_snapshot",
+    { p_token_hash: tokenHash, p_snapshot_id: envelope.snapshot_id },
+  );
+  if (healthError || !healthData) {
+    return errorResponse(
+      diagnosticId,
+      500,
+      "mobile_health_promotion_failed",
+      "canonical_health_promotion",
+      "The raw snapshot and typed adapters completed, but canonical Health processing did not. Retry with the same snapshot_id and request_id.",
+      {
+        raw_snapshot_persisted: true,
+        retry_with_same_identifiers: true,
+        provider_code: healthError?.code ?? "missing_health_result",
+        provider_message: healthError?.message?.slice(0, 300) ??
+          "The Health promotion returned no result.",
+      },
+    );
+  }
+  const health = healthData as {
+    code?: string;
+    status?: string;
+    promoted?: number;
+    summary_days?: number;
+  };
+  if (health.code) {
+    return errorResponse(
+      diagnosticId,
+      500,
+      health.code,
+      "canonical_health_promotion",
+      "The authenticated snapshot could not be promoted into the canonical Health domain.",
+      { raw_snapshot_persisted: true, retry_with_same_identifiers: true },
+    );
+  }
   return json(
     {
       ...outcome,
@@ -476,6 +520,7 @@ Deno.serve(async (request) => {
         deferred: adaptation.deferred,
       },
       adaptation,
+      health,
       diagnostic_id: diagnosticId,
       ...(rejectedRecords.length > 0
         ? { rejected_records: rejectedRecords }
