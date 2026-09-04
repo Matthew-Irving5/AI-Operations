@@ -70,10 +70,10 @@ const steps = [
   },
   {
     code: 'health_export',
-    label: 'Health exporter and historical backfill',
+    label: 'Health exporter and initial history',
     instructions: [
-      'Configure the supported Health export route and archive gateway using production-only secrets.',
-      'Import a controlled historical export, review rejected records and completeness, and confirm the Health page shows summaries.',
+      'Run the supported Apple Shortcut and confirm its immutable raw snapshot is retained before canonical Health processing.',
+      'Open Health and confirm imports, canonical samples, freshness, rejected-record count, and daily completeness summaries are visible. Existing retained mobile samples may serve as the initial history when a separate historical export is intentionally waived.',
     ],
   },
   {

@@ -1,5 +1,5 @@
 begin;
-select plan(51);
+select plan(58);
 
 insert into public.apple_bridge_devices(id, user_id, label, token_hash, token_prefix)
 values ('00000000-0000-4000-8000-000000000301',
@@ -71,6 +71,24 @@ select is((select reported_value from public.mobile_health_sample_items), '"1234
 select ok((select normalized_value=1234 and normalized_unit='count' and status='normalized'
   from public.mobile_health_sample_normalizations),
   'health:v1 applies only an explicit type-and-unit normalisation');
+select is(public.promote_mobile_health_snapshot(repeat('3', 64),
+  '30000000-0000-4000-8000-000000000001')->>'status', 'processed',
+  'Authenticated mobile Health records are promoted into the canonical domain');
+select is((select count(*) from public.health_imports where source='apple_health'), 1::bigint,
+  'Mobile snapshot creates one processed Apple Health import');
+select is((select count(*) from public.health_samples where source='apple_health'), 1::bigint,
+  'Only normalized mobile measurements become canonical Health samples');
+select is((select metrics->>'steps' from public.health_daily_summaries
+  where summary_date='2026-08-20'), '1234.000000',
+  'Promotion calculates the affected London-date summary deterministically');
+select is((select state from public.data_freshness where source='apple_health'), 'fresh',
+  'A newly received snapshot records current Apple Health collection freshness');
+select is(public.promote_mobile_health_snapshot(repeat('3', 64),
+  '30000000-0000-4000-8000-000000000001')->>'promoted', '0',
+  'Canonical Health promotion is idempotent');
+select is(public.promote_mobile_health_snapshot(repeat('8', 64),
+  '30000000-0000-4000-8000-000000000001')->>'code', 'snapshot_unknown',
+  'A different device token cannot promote another device snapshot');
 
 insert into public.mobile_ingestion_records(snapshot_internal_id, user_id, record_id, source, kind,
   canonical_hash, payload, raw_record, ingest_status)

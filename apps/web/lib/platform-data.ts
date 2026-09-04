@@ -104,6 +104,11 @@ const healthSummarySchema = z.object({
   data_confidence: z.string(),
   completeness: z.coerce.number(),
 });
+const healthFreshnessSchema = z.object({
+  last_source_at: z.string().nullable(),
+  last_success_at: z.string().nullable(),
+  state: z.string(),
+});
 const financeCloseSchema = z.object({
   id: z.string().uuid(),
   period_start: z.string(),
@@ -378,16 +383,26 @@ export async function healthData(): Promise<
   Readonly<{
     summaries: PageData<z.infer<typeof healthSummarySchema>[]>;
     importCount: PageData<number>;
+    sampleCount: PageData<number>;
+    rejectedCount: PageData<number>;
+    freshness: PageData<z.infer<typeof healthFreshnessSchema> | null>;
   }>
 > {
   const client = await createSupabaseServerClient();
-  const [summaries, imports] = await Promise.all([
+  const [summaries, imports, samples, rejected, freshness] = await Promise.all([
     client
       .from('health_daily_summaries')
       .select('summary_date,metrics,data_confidence,completeness')
       .order('summary_date', { ascending: false })
       .limit(30),
     client.from('health_imports').select('*', { count: 'exact', head: true }),
+    client.from('health_samples').select('*', { count: 'exact', head: true }),
+    client.from('health_rejected_records').select('*', { count: 'exact', head: true }),
+    client
+      .from('data_freshness')
+      .select('last_source_at,last_success_at,state')
+      .eq('source', 'apple_health')
+      .maybeSingle(),
   ]);
   return {
     summaries: summaries.error
@@ -396,6 +411,18 @@ export async function healthData(): Promise<
     importCount: imports.error
       ? { data: 0, error: 'Health source status could not be loaded.' }
       : { data: imports.count ?? 0, error: null },
+    sampleCount: samples.error
+      ? { data: 0, error: 'Health sample count could not be loaded.' }
+      : { data: samples.count ?? 0, error: null },
+    rejectedCount: rejected.error
+      ? { data: 0, error: 'Health rejection count could not be loaded.' }
+      : { data: rejected.count ?? 0, error: null },
+    freshness: freshness.error
+      ? { data: null, error: 'Health freshness could not be loaded.' }
+      : {
+          data: freshness.data ? healthFreshnessSchema.parse(freshness.data) : null,
+          error: null,
+        },
   };
 }
 
