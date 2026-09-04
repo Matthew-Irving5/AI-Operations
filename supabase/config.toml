@@ -46,6 +46,15 @@ verify_jwt = false
 [functions.google-sync]
 verify_jwt = false
 
+[functions.google-connection-sync]
+verify_jwt = true
+
+[functions.google-connection-revoke]
+verify_jwt = true
+
+[functions.google-connection-sources]
+verify_jwt = true
+
 [functions.health-ingest]
 verify_jwt = false
 

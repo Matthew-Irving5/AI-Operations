@@ -1,4 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
+import {
+  APPROVED_GOOGLE_SCOPES,
+  hasExactGoogleScopes,
+} from "../_shared/google-sync.ts";
 const service = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
@@ -116,16 +120,41 @@ Deno.serve(async (request) => {
   if (!tokenResponse.ok || !tokens.refresh_token || !tokens.access_token) {
     return json({ code: "token_exchange_failed" }, 422);
   }
+  const grantedScopes = tokens.scope?.split(/\s+/).filter(Boolean) ?? [];
+  if (!hasExactGoogleScopes(grantedScopes)) {
+    await fetch("https://oauth2.googleapis.com/revoke", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token: tokens.access_token }),
+    }).catch(() => undefined);
+    return json({ code: "google_scopes_invalid" }, 422);
+  }
   const account = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
     headers: { authorization: `Bearer ${tokens.access_token}` },
   });
-  const profile = await account.json().catch(() => ({})) as { email?: string };
+  const profile = await account.json().catch(() => ({})) as {
+    email?: string;
+    verified_email?: boolean;
+  };
+  if (
+    !account.ok ||
+    profile.email?.toLowerCase() !== "matthewirving99@gmail.com" ||
+    profile.verified_email !== true
+  ) {
+    await fetch("https://oauth2.googleapis.com/revoke", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token: tokens.access_token }),
+    }).catch(() => undefined);
+    return json({ code: "google_account_not_allowed" }, 403);
+  }
   const connection = await service.from("connections").upsert({
     user_id: result.data.user_id,
     provider: "google",
     account_label: profile.email ?? "Google account",
     status: "connected",
-    scopes: tokens.scope?.split(" ") ?? result.data.requested_scopes,
+    sync_enabled: true,
+    scopes: [...APPROVED_GOOGLE_SCOPES],
     encrypted_credential_reference: "connection_credentials",
   }, { onConflict: "user_id,provider" }).select("id").single();
   if (connection.error || !connection.data) {
@@ -139,7 +168,10 @@ Deno.serve(async (request) => {
       : null,
   }, { onConflict: "connection_id" }).select("connection_id").single();
   if (credential.error || !credential.data) {
-    await service.from("connections").update({ status: "disconnected" })
+    await service.from("connections").update({
+      status: "disconnected",
+      sync_enabled: false,
+    })
       .eq("id", connection.data.id);
     return json({ code: "credential_store_failed" }, 500);
   }

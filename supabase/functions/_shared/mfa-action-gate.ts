@@ -3,7 +3,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 export async function consumeMfaActionGate(
   gateId: string | undefined,
   accessToken: string,
-  actionKey: "apple_bridge_create" | "gmail_test_notification",
+  actionKey:
+    | "apple_bridge_create"
+    | "apple_bridge_revoke"
+    | "gmail_test_notification"
+    | "connection_revoke"
+    | "connection_scope_change",
 ): Promise<boolean> {
   if (
     !gateId ||

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
+import { hasExactGoogleScopes } from "../_shared/google-sync.ts";
 
 const service = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
@@ -68,13 +69,11 @@ Deno.serve(async (request) => {
   if (!identity.user || identity.user.email?.toLowerCase() !== allowedEmail) {
     return json({ code: "forbidden" }, 403);
   }
+  const { data: aal2 } = await caller.rpc("is_allowed_aal2");
+  if (aal2 !== true || !hasExactGoogleScopes(scopes)) {
+    return json({ code: "aal2_required" }, 403);
+  }
 
-  // The dashboard route is already protected by the authenticated AAL2 app
-  // layout. This function only needs to verify that the relayed Supabase
-  // session is still valid and belongs to the sole production identity. A
-  // five-minute reauthentication lookup here is incorrect: the session can
-  // remain valid while the short-lived MFA event expires, and OAuth start is
-  // then rejected even though the user is actively signed in.
   const clientId = env("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_CLOUD_CLIENT_ID"),
     redirectUri = env("GOOGLE_OAUTH_REDIRECT_URI", "GOOGLE_CLOUD_REDIRECT_URI");
   if (!clientId || !redirectUri) {

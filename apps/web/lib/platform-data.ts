@@ -97,6 +97,23 @@ const connectionSchema = z.object({
   status: z.string(),
   scopes: z.array(z.string()),
   created_at: z.string(),
+  configuration: z.record(z.string(), z.unknown()).default({}),
+});
+const sourceFreshnessSchema = z.object({
+  source: z.string(),
+  last_source_at: z.string().nullable(),
+  last_success_at: z.string().nullable(),
+  expected_cadence: z.string().nullable(),
+  state: z.string(),
+  stale_reason: z.string().nullable().optional(),
+});
+const appleBridgeDeviceSchema = z.object({
+  id: z.string().uuid(),
+  label: z.string(),
+  enabled_lists: z.array(z.string()),
+  revoked_at: z.string().nullable(),
+  last_seen_at: z.string().nullable(),
+  created_at: z.string(),
 });
 const healthSummarySchema = z.object({
   summary_date: z.string(),
@@ -372,11 +389,71 @@ export async function connectionsData(): Promise<PageData<z.infer<typeof connect
   const client = await createSupabaseServerClient();
   const { data, error } = await client
     .from('connections')
-    .select('id,provider,account_label,status,scopes,created_at')
+    .select('id,provider,account_label,status,scopes,created_at,configuration')
     .order('created_at', { ascending: false });
   return error
     ? { data: [], error: 'Connections could not be loaded.' }
     : parsedRows(data, z.array(connectionSchema));
+}
+
+export async function sourcePermissionsData(): Promise<
+  Readonly<{
+    connections: PageData<z.infer<typeof connectionSchema>[]>;
+    freshness: PageData<z.infer<typeof sourceFreshnessSchema>[]>;
+    appleDevices: PageData<z.infer<typeof appleBridgeDeviceSchema>[]>;
+  }>
+> {
+  const client = await createSupabaseServerClient();
+  const freshnessSources = [
+    'google',
+    'google_gmail',
+    'google_calendar',
+    'google_drive',
+    'apple',
+    'apple_bridge',
+    'apple_health',
+    'apple_calendar',
+    'apple_reminders',
+    'apple_location',
+    'apple_screen_time',
+  ];
+  const freshnessQuery = await client
+    .from('data_freshness')
+    .select('source,last_source_at,last_success_at,expected_cadence,state,stale_reason')
+    .in('source', freshnessSources);
+  const freshnessResult = freshnessQuery.error
+    ? await client
+        .from('data_freshness')
+        .select('source,last_source_at,last_success_at,expected_cadence,state')
+        .in('source', freshnessSources)
+    : freshnessQuery;
+  const connectionsQuery = await client
+    .from('connections')
+    .select('id,provider,account_label,status,scopes,created_at,configuration')
+    .order('created_at', { ascending: false });
+  const connections = connectionsQuery.error
+    ? await client
+        .from('connections')
+        .select('id,provider,account_label,status,scopes,created_at')
+        .order('created_at', { ascending: false })
+    : connectionsQuery;
+  const [appleDevices] = await Promise.all([
+    client
+      .from('apple_bridge_devices')
+      .select('id,label,enabled_lists,revoked_at,last_seen_at,created_at')
+      .order('created_at', { ascending: false }),
+  ]);
+  return {
+    connections: connections.error
+      ? { data: [], error: 'Connections could not be loaded.' }
+      : parsedRows(connections.data, z.array(connectionSchema)),
+    freshness: freshnessResult.error
+      ? { data: [], error: 'Source freshness could not be loaded.' }
+      : parsedRows(freshnessResult.data, z.array(sourceFreshnessSchema)),
+    appleDevices: appleDevices.error
+      ? { data: [], error: 'Apple bridge devices could not be loaded.' }
+      : parsedRows(appleDevices.data, z.array(appleBridgeDeviceSchema)),
+  };
 }
 
 export async function healthData(): Promise<

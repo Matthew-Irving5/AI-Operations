@@ -5,6 +5,11 @@ const service = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
 );
 const allowedEmail = "matthewirving99@gmail.com";
+const allowedLists = new Set([
+  "Fitness Plan",
+  "Household & Personal",
+  "AI Actions",
+]);
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -56,7 +61,9 @@ Deno.serve(async (request) => {
       body.label.length > 80 ||
       !Array.isArray(body.enabledLists) ||
       !body.enabledLists.length ||
-      body.enabledLists.some((list) => !/^[\w &-]{1,80}$/.test(list))
+      body.enabledLists.some((list) =>
+        typeof list !== "string" || !allowedLists.has(list)
+      )
     ) {
       return json({ code: "invalid_device" }, 400);
     }
@@ -90,20 +97,35 @@ Deno.serve(async (request) => {
     return json({ device, token: rawToken }, 201);
   }
   if (request.method === "DELETE") {
-    const id = new URL(request.url).searchParams.get("id");
+    const params = new URL(request.url).searchParams;
+    const id = params.get("id");
+    const gateId = params.get("mfaGateId");
     if (!id) return json({ code: "device_id_required" }, 400);
-    const revoked = await service
-      .from("apple_bridge_devices")
-      .update({
-        revoked_at: new Date().toISOString(),
-      })
-      .eq("id", id)
-      .eq("user_id", user.id)
-      .is("revoked_at", null)
-      .select("id")
-      .maybeSingle();
-    if (revoked.error || !revoked.data) {
+    if (!gateId) return json({ code: "fresh_mfa_required" }, 403);
+    const revoked = await caller.database.rpc("revoke_apple_bridge_device", {
+      p_device_id: id,
+      p_gate_id: gateId,
+    });
+    if (revoked.error) {
+      return json({ code: "apple_revoke_transaction_failed" }, 500);
+    }
+    const outcome = Array.isArray(revoked.data)
+      ? revoked.data[0]
+      : revoked.data;
+    const gateCode = outcome?.code as string | undefined;
+    if (gateCode === "fresh_mfa_required") return json({ code: gateCode }, 403);
+    if (gateCode === "invalid_mfa_gate") return json({ code: gateCode }, 400);
+    if (
+      gateCode === "mfa_gate_wrong_user" ||
+      gateCode === "mfa_gate_invalid_action" ||
+      gateCode === "mfa_gate_expired" ||
+      gateCode === "mfa_gate_replayed"
+    ) return json({ code: gateCode }, 403);
+    if (outcome?.code === "device_not_found") {
       return json({ code: "device_not_found" }, 404);
+    }
+    if (outcome?.status !== "revoked") {
+      return json({ code: "apple_revoke_transaction_failed" }, 500);
     }
     return new Response(null, { status: 204 });
   }

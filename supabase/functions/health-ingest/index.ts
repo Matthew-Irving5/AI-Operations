@@ -158,14 +158,23 @@ Deno.serve(async (request) => {
     "id",
     imported.data.id,
   );
-  await service.from("data_freshness").upsert({
-    user_id: user.data.id,
-    source: "apple_health",
-    last_source_at: body.collectedTo,
-    last_success_at: new Date().toISOString(),
-    expected_cadence: "24 hours",
-    state: "fresh",
-  }, { onConflict: "user_id,source" });
+  const freshness = await service.rpc("record_source_freshness", {
+    p_user_id: user.data.id,
+    p_source: "apple_health",
+    p_last_source_at: body.collectedTo,
+    p_last_success_at: new Date().toISOString(),
+    p_expected_cadence: "24 hours",
+    p_state: "fresh",
+    p_stale_reason: null,
+    p_evidence: {
+      transport: "health_ingest",
+      import_id: imported.data.id,
+      persisted_count: rows.length,
+    },
+  });
+  if (freshness.error) {
+    return json({ code: "freshness_persistence_failed" }, 500);
+  }
   return json({
     imported: true,
     importId: imported.data.id,
