@@ -7,6 +7,12 @@ values ('00000000-0000-0000-0000-000000000000',
   '00000000-0000-0000-0000-000000000101', 'authenticated', 'authenticated',
   'matthewirving99@gmail.com', crypt('synthetic-only', gen_salt('bf')), now(),
   '{}'::jsonb, '{}'::jsonb, now(), now()) on conflict (id) do nothing;
+insert into auth.users (instance_id, id, aud, role, email, encrypted_password,
+  email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+values ('00000000-0000-0000-0000-000000000000',
+  '00000000-0000-0000-0000-000000000102', 'authenticated', 'authenticated',
+  'synthetic-secondary@example.invalid', crypt('synthetic-only', gen_salt('bf')), now(),
+  '{}'::jsonb, '{}'::jsonb, now(), now()) on conflict (id) do nothing;
 insert into public.app_users(id, email, is_allowed)
 values ('00000000-0000-0000-0000-000000000101', 'matthewirving99@gmail.com', true)
 on conflict (id) do update set is_allowed = true;
