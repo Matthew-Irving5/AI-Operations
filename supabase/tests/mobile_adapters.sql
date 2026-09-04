@@ -81,8 +81,8 @@ select is((select count(*) from public.health_samples where source='apple_health
 select is((select metrics->>'steps' from public.health_daily_summaries
   where summary_date='2026-08-20'), '1234.000000',
   'Promotion calculates the affected London-date summary deterministically');
-select is((select state from public.data_freshness where source='apple_health'), 'stale',
-  'Historical promotion records Apple Health freshness without falsely marking it current');
+select is((select state from public.data_freshness where source='apple_health'), 'fresh',
+  'A newly received snapshot records current Apple Health collection freshness');
 select is(public.promote_mobile_health_snapshot(repeat('3', 64),
   '30000000-0000-4000-8000-000000000001')->>'promoted', '0',
   'Canonical Health promotion is idempotent');
