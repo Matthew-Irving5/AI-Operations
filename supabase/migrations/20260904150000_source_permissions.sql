@@ -123,6 +123,7 @@ alter table public.google_drive_files
   add column if not exists deleted_at timestamptz;
 alter table public.google_messages
   add column if not exists deleted_at timestamptz;
+revoke all on public.connection_credentials from public, anon, authenticated;
 
 create table public.google_sync_requests (
   id uuid primary key default gen_random_uuid(),
