@@ -10,6 +10,10 @@ values ('00000000-0000-0000-0000-000000000000',
 insert into public.app_users(id, email, is_allowed)
 values ('00000000-0000-0000-0000-000000000101', 'matthewirving99@gmail.com', true)
 on conflict (id) do update set is_allowed = true;
+-- The production constraint intentionally permits only the locked account. This
+-- transaction-local relaxation creates a second synthetic owner solely to prove
+-- that one-time action gates cannot cross users; rollback restores the constraint.
+alter table public.app_users drop constraint app_users_email_check;
 insert into public.app_users(id, email, is_allowed)
 values ('00000000-0000-0000-0000-000000000102', 'synthetic-secondary@example.invalid', true)
 on conflict (id) do update set is_allowed = true;
