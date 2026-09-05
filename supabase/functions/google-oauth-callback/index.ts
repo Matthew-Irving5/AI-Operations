@@ -8,6 +8,10 @@ import {
   makeGoogleOAuthFailure,
   safeGoogleProviderCode,
 } from "../_shared/google-oauth-diagnostics.ts";
+import {
+  GMAIL_PROFILE_ENDPOINT,
+  gmailProfileEmail,
+} from "../_shared/google-oauth-profile.ts";
 
 const service = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
@@ -462,7 +466,7 @@ Deno.serve(async (request) => {
     }
     let account: Response;
     try {
-      account = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+      account = await fetch(GMAIL_PROFILE_ENDPOINT, {
         headers: { authorization: `Bearer ${tokens.access_token}` },
       });
     } catch {
@@ -480,8 +484,7 @@ Deno.serve(async (request) => {
       );
     }
     const profileBody = (await account.json().catch(() => ({}))) as {
-      email?: unknown;
-      verified_email?: unknown;
+      emailAddress?: unknown;
       error?: unknown;
     };
     const providerProfileError = safeGoogleProviderCode(profileBody.error);
@@ -504,9 +507,7 @@ Deno.serve(async (request) => {
         context,
       );
     }
-    const profileEmail = typeof profileBody.email === "string"
-      ? profileBody.email.toLowerCase()
-      : null;
+    const profileEmail = gmailProfileEmail(profileBody);
     if (!profileEmail) {
       await revokeAccessToken(tokens.access_token!);
       return respondFailure(
@@ -515,21 +516,8 @@ Deno.serve(async (request) => {
           stage: "google_account_validation",
           reason: "email_missing",
           details: {
-            profile_verified_email: profileBody.verified_email === true,
+            profile_identity_source: "gmail_profile",
           },
-        }),
-        403,
-        context,
-      );
-    }
-    if (profileBody.verified_email !== true) {
-      await revokeAccessToken(tokens.access_token!);
-      return respondFailure(
-        failure(correlationId, {
-          code: "google_account_not_verified",
-          stage: "google_account_validation",
-          reason: "email_unverified",
-          details: { profile_verified_email: false },
         }),
         403,
         context,
@@ -543,7 +531,7 @@ Deno.serve(async (request) => {
           stage: "google_account_validation",
           reason: "account_mismatch",
           details: {
-            profile_verified_email: true,
+            profile_identity_source: "gmail_profile",
             allowlisted_account_match: false,
           },
         }),
