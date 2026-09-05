@@ -1,3 +1,4 @@
+import React from 'react';
 import { googleOAuthErrorView } from './google-oauth-error';
 
 export function GoogleOAuthStatus(
@@ -14,6 +15,10 @@ export function GoogleOAuthStatus(
       className="notice source-oauth-error"
       role="alert"
       aria-labelledby="google-oauth-error-title"
+      aria-live="assertive"
+      data-error-code={view.code}
+      data-testid="google-oauth-error"
+      tabIndex={-1}
     >
       <h2 id="google-oauth-error-title">{view.title}</h2>
       <p>{view.message}</p>

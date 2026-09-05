@@ -288,13 +288,25 @@ button:disabled {
   opacity: 0.5;
 }
 .source-oauth-error {
-  border-left-color: #e7a85c;
+  border: 2px solid #e7a85c;
+  border-left-width: 6px;
+  color: #fff4df;
   display: grid;
   gap: 8px;
+  margin: 0 0 18px;
+  padding: 16px;
 }
 .source-oauth-error h2,
 .source-oauth-error p {
   margin: 0;
+}
+.source-oauth-error h2 {
+  color: #ffd49a;
+  font-size: 20px;
+}
+.source-oauth-error:focus {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
 }
 .source-error-meta {
   border-top: 1px solid var(--line);

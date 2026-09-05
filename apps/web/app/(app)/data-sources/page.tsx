@@ -19,6 +19,9 @@ export default async function DataSourcesPage({
   return (
     <>
       <h1>Data Sources</h1>
+      {params.google === 'error' ? (
+        <GoogleOAuthStatus code={params.code} detail={params.detail} requestId={params.requestId} />
+      ) : null}
       <p className="notice">
         Connections use server-side credentials. The browser never receives refresh tokens or Apple
         Shortcut device tokens after their one-time setup display. Revoke actions require fresh MFA.
@@ -27,9 +30,6 @@ export default async function DataSourcesPage({
         <p role="alert" className="notice">
           {error} Refresh the page and retry. Existing retained data is not changed by a read error.
         </p>
-      ) : null}
-      {params.google === 'error' ? (
-        <GoogleOAuthStatus code={params.code} detail={params.detail} requestId={params.requestId} />
       ) : null}
       <SourceSummary
         connections={connections.data}
