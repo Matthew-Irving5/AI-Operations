@@ -287,6 +287,30 @@ button:disabled {
   height: 180px;
   opacity: 0.5;
 }
+.source-oauth-error {
+  border-left-color: #e7a85c;
+  display: grid;
+  gap: 8px;
+}
+.source-oauth-error h2,
+.source-oauth-error p {
+  margin: 0;
+}
+.source-error-meta {
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  margin: 4px 0 0;
+  padding-top: 10px;
+}
+.source-error-meta dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.source-error-meta dd {
+  margin: 2px 0 0;
+}
 .label {
   color: var(--muted);
   font-size: 14px;

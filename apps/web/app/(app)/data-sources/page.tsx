@@ -1,10 +1,21 @@
 import { sourcePermissionsData } from '../../../lib/platform-data';
 import { AppleBridgeSetup } from './apple-bridge-setup';
+import { GoogleOAuthStatus } from './google-oauth-status';
 import { SourceSummary } from './source-permission-card';
 
-export default async function DataSourcesPage() {
+type DataSourcesSearchParams = Readonly<{
+  google?: string;
+  code?: string;
+  detail?: string;
+  requestId?: string;
+}>;
+
+export default async function DataSourcesPage({
+  searchParams,
+}: Readonly<{ searchParams?: Promise<DataSourcesSearchParams> }>) {
   const { connections, freshness, appleDevices } = await sourcePermissionsData();
   const error = connections.error ?? freshness.error ?? appleDevices.error;
+  const params = (await searchParams) ?? {};
   return (
     <>
       <h1>Data Sources</h1>
@@ -16,6 +27,9 @@ export default async function DataSourcesPage() {
         <p role="alert" className="notice">
           {error} Refresh the page and retry. Existing retained data is not changed by a read error.
         </p>
+      ) : null}
+      {params.google === 'error' ? (
+        <GoogleOAuthStatus code={params.code} detail={params.detail} requestId={params.requestId} />
       ) : null}
       <SourceSummary
         connections={connections.data}
