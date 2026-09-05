@@ -20,8 +20,6 @@ async function accessTokenOrResponse() {
 }
 
 export async function GET(request: Request) {
-  const rejected = requireSameOrigin(request);
-  if (rejected) return rejected;
   const connectionId = new URL(request.url).searchParams.get('connectionId');
   const parsed = connectionIdSchema.safeParse(connectionId);
   if (!parsed.success) return NextResponse.json({ code: 'invalid_request' }, { status: 400 });
@@ -36,9 +34,16 @@ export async function GET(request: Request) {
     headers: { authorization: `Bearer ${auth.accessToken}`, accept: 'application/json' },
     cache: 'no-store',
   });
+  const requestId = response.headers.get('x-request-id');
   return NextResponse.json(
     await response.json().catch(() => ({ code: 'provider_empty_response' })),
-    { status: response.status, headers: { 'cache-control': 'no-store' } },
+    {
+      status: response.status,
+      headers: {
+        'cache-control': 'no-store',
+        ...(requestId ? { 'x-request-id': requestId } : {}),
+      },
+    },
   );
 }
 

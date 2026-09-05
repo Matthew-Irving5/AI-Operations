@@ -28,14 +28,73 @@ const inputSchema = z.object({
   selected_calendar_ids: selection,
   selected_drive_file_ids: selection,
 }).strict();
-const json = (body: unknown, status = 200) =>
+const json = (body: unknown, status = 200, requestId?: string) =>
   new Response(JSON.stringify(body), {
     status,
     headers: {
       "content-type": "application/json",
       "cache-control": "no-store",
+      ...(requestId ? { "x-request-id": requestId } : {}),
     },
   });
+
+function diagnostic(error: unknown) {
+  if (!isGoogleSyncError(error)) {
+    return {
+      code: "source_discovery_failed",
+      stage: "source_discovery",
+      reason: "unexpected_internal_error",
+      retryable: true,
+      status: 502,
+      details: {},
+    };
+  }
+  const providerStatus = error.status;
+  const isConnectionUnavailable = error.message === "connection_unavailable";
+  return {
+    code: error.message,
+    stage: error.stage,
+    reason: error.providerError ?? error.message,
+    retryable: !isConnectionUnavailable &&
+      (providerStatus === undefined || providerStatus >= 500),
+    status: isConnectionUnavailable ? 404 : 502,
+    details: {
+      ...(providerStatus === undefined
+        ? {}
+        : { provider_status: providerStatus }),
+      ...(error.providerError ? { provider_error: error.providerError } : {}),
+    },
+  };
+}
+
+async function recordDiscoveryFailure(
+  userId: string,
+  connectionId: string,
+  requestId: string,
+  failure: ReturnType<typeof diagnostic>,
+) {
+  try {
+    await service.from("audit_events").insert({
+      user_id: userId,
+      actor_type: "user",
+      action_type: "google_source_discovery_failed",
+      target_type: "connection",
+      target_id: connectionId,
+      aal: "aal2",
+      correlation_id: requestId,
+      result: "failure",
+      redacted_after: {
+        code: failure.code,
+        stage: failure.stage,
+        reason: failure.reason,
+        retryable: failure.retryable,
+        details: failure.details,
+      },
+    });
+  } catch {
+    // Keep the original diagnostic visible even if audit persistence is unavailable.
+  }
+}
 
 async function authenticate(request: Request) {
   const authorization = request.headers.get("authorization");
@@ -70,6 +129,7 @@ async function ownedConnection(connectionId: string, userId: string) {
 }
 
 Deno.serve(async (request) => {
+  const requestId = crypto.randomUUID();
   if (request.method !== "GET" && request.method !== "POST") {
     return json({ code: "method_not_allowed" }, 405);
   }
@@ -107,18 +167,33 @@ Deno.serve(async (request) => {
             value,
           ): value is string => typeof value === "string")
           : [];
-      return json({
-        connectionId,
-        calendars: discovered.calendars,
-        driveFiles: discovered.driveFiles,
-        selected_calendar_ids: selectedCalendarIds,
-        selected_drive_file_ids: selectedDriveFileIds,
-      });
+      return json(
+        {
+          connectionId,
+          requestId,
+          calendars: discovered.calendars,
+          driveFiles: discovered.driveFiles,
+          selected_calendar_ids: selectedCalendarIds,
+          selected_drive_file_ids: selectedDriveFileIds,
+        },
+        200,
+        requestId,
+      );
     } catch (error) {
-      const code = isGoogleSyncError(error)
-        ? error.message
-        : "source_discovery_failed";
-      return json({ code }, code === "connection_unavailable" ? 404 : 502);
+      const failure = diagnostic(error);
+      await recordDiscoveryFailure(user.id, connectionId, requestId, failure);
+      return json(
+        {
+          code: failure.code,
+          stage: failure.stage,
+          reason: failure.reason,
+          retryable: failure.retryable,
+          requestId,
+          details: failure.details,
+        },
+        failure.status,
+        requestId,
+      );
     }
   }
   const parsed = inputSchema.safeParse(requestBody);
