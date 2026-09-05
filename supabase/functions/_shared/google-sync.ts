@@ -173,14 +173,38 @@ async function writeCursor(
   if (result.error) throw new GoogleSyncError("persistence_failed");
 }
 
-class GoogleSyncError extends Error {
+function providerErrorCode(value: unknown): string | undefined {
+  const candidate = typeof value === "string"
+    ? value
+    : typeof value === "object" && value !== null
+    ? ["error", "status", "reason", "code"].map((key) =>
+      (value as Record<string, unknown>)[key]
+    ).find((item): item is string => typeof item === "string")
+    : undefined;
+  if (!candidate) return undefined;
+  const normalized = candidate.trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9._:-]{0,63}$/.test(normalized)
+    ? normalized
+    : undefined;
+}
+
+export class GoogleSyncError extends Error {
   readonly safeCode: string;
   readonly status?: number;
-  constructor(safeCode: string, status?: number) {
+  readonly stage: string;
+  readonly providerError?: string;
+  constructor(
+    safeCode: string,
+    status?: number,
+    stage = "google_sync",
+    providerError?: string,
+  ) {
     super(safeCode);
     this.name = "GoogleSyncError";
     this.safeCode = safeCode;
     this.status = status;
+    this.stage = stage;
+    this.providerError = providerError;
   }
 }
 
@@ -251,9 +275,15 @@ async function getAccessToken(refreshToken: string, fetchImpl: typeof fetch) {
   });
   const value = await response.json().catch(() => null) as {
     access_token?: string;
+    error?: unknown;
   } | null;
   if (!response.ok || !value?.access_token) {
-    throw new GoogleSyncError("token_refresh_failed", response.status);
+    throw new GoogleSyncError(
+      "token_refresh_failed",
+      response.status,
+      "token_refresh",
+      providerErrorCode(value),
+    );
   }
   return value.access_token;
 }
@@ -271,16 +301,28 @@ export async function discoverGoogleSources(
     result.error || !result.data || result.data.status !== "connected" ||
     !result.data.sync_enabled
   ) {
-    throw new GoogleSyncError("connection_unavailable");
+    throw new GoogleSyncError(
+      "connection_unavailable",
+      undefined,
+      "connection_lookup",
+    );
   }
   if (!hasExactGoogleScopes(result.data.scopes)) {
-    throw new GoogleSyncError("google_scopes_invalid");
+    throw new GoogleSyncError(
+      "google_scopes_invalid",
+      undefined,
+      "scope_validation",
+    );
   }
   const credential = await database.from("connection_credentials").select(
     "encrypted_refresh_token",
   ).eq("connection_id", connectionId).maybeSingle().returns<CredentialRow>();
   if (credential.error || !credential.data) {
-    throw new GoogleSyncError("credential_unavailable");
+    throw new GoogleSyncError(
+      "credential_unavailable",
+      undefined,
+      "credential_lookup",
+    );
   }
   const accessToken = await getAccessToken(
     await decryptRefreshToken(credential.data.encrypted_refresh_token),
@@ -302,7 +344,12 @@ export async function discoverGoogleSources(
       nextPageToken?: string;
     } | null;
     if (!response.ok || !payload) {
-      throw new GoogleSyncError("provider_request_failed");
+      throw new GoogleSyncError(
+        "provider_request_failed",
+        response.status,
+        "calendar_list",
+        providerErrorCode(payload),
+      );
     }
     for (const item of payload.items ?? []) {
       if (item.id) {
@@ -334,7 +381,12 @@ export async function discoverGoogleSources(
     );
     const payload = await readJson(response) as DrivePage | null;
     if (!response.ok || !payload) {
-      throw new GoogleSyncError("provider_request_failed");
+      throw new GoogleSyncError(
+        "provider_request_failed",
+        response.status,
+        "drive_files",
+        providerErrorCode(payload),
+      );
     }
     for (const file of payload.files ?? []) {
       if (file.id && file.name && file.mimeType) {
