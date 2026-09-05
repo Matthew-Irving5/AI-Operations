@@ -10,7 +10,7 @@ describe('Google OAuth callback error view', () => {
     });
     expect(view?.title).toMatch(/not approved/i);
     expect(view?.message).toMatch(/different from the approved/i);
-    expect(view?.action).toMatch(/approved account/i);
+    expect(view?.action).toContain('matthewirving99@gmail.com');
     expect(view?.requestId).toBe('oauth-20260905-abc123');
     expect(JSON.stringify(view)).not.toContain('private@example.com');
   });
@@ -19,6 +19,15 @@ describe('Google OAuth callback error view', () => {
     const view = googleOAuthErrorView({ code: 'google_scopes_invalid' });
     expect(view?.message).toMatch(/complete set of permissions/i);
     expect(view?.action).toMatch(/every requested permission/i);
+  });
+
+  it.each([
+    ['google_profile_request_failed', /account verification failed/i],
+    ['google_profile_incomplete', /incomplete account profile/i],
+    ['google_account_not_verified', /could not verify/i],
+    ['google_token_exchange_failed', /usable credential/i],
+  ])('explains the exact %s callback boundary', (code, title) => {
+    expect(googleOAuthErrorView({ code })?.title).toMatch(title);
   });
 
   it('does not render provider details or malformed references for unknown errors', () => {

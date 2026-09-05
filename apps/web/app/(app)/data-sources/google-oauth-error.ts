@@ -20,7 +20,27 @@ const knownMessages: Readonly<
     message:
       'Google authorised an account that is different from the approved AI Operations account.',
     action:
-      'Restart Google authorisation and choose the approved account. If more than one account is signed in, use a private browser window or sign out of the other Google accounts first.',
+      'Restart Google authorisation and choose matthewirving99@gmail.com. If more than one account is signed in, use a private browser window or sign out of the other Google accounts first.',
+  },
+  google_account_not_verified: {
+    title: 'Google could not verify the account email',
+    message:
+      'Google returned the selected account, but did not confirm that its email address is verified.',
+    action:
+      'Verify the email address in Google, then restart authorisation using matthewirving99@gmail.com.',
+  },
+  google_profile_incomplete: {
+    title: 'Google returned an incomplete account profile',
+    message:
+      'The account profile did not contain the email information required to validate the connection.',
+    action:
+      'Restart Google authorisation using matthewirving99@gmail.com. If it repeats, provide the reference below to support.',
+  },
+  google_profile_request_failed: {
+    title: 'Google account verification failed',
+    message:
+      'Google rejected or could not complete the request used to identify the authorised account.',
+    action: 'Retry once. If it fails again, provide the reference below to support.',
   },
   google_scopes_invalid: {
     title: 'Google permissions were incomplete',
@@ -28,7 +48,7 @@ const knownMessages: Readonly<
     action:
       'Restart Google authorisation and approve every requested permission. No Google credential was retained.',
   },
-  token_exchange_failed: {
+  google_token_exchange_failed: {
     title: 'Google did not issue a usable credential',
     message: 'Google accepted the consent step, but the authorization code could not be exchanged.',
     action:
@@ -48,6 +68,34 @@ const knownMessages: Readonly<
     title: 'Google authorisation is not configured',
     message: 'The server is missing the Google OAuth configuration required to connect an account.',
     action: 'Contact the system administrator and provide the reference below.',
+  },
+  token_encryption_unconfigured: {
+    title: 'Credential encryption is not configured',
+    message:
+      'AI Operations cannot safely store the Google credential because its encryption configuration is missing.',
+    action: 'Do not retry. Provide the reference below to support.',
+  },
+  token_encryption_key_invalid: {
+    title: 'Credential encryption configuration is invalid',
+    message:
+      'AI Operations refused to store the Google credential because its encryption key configuration failed validation.',
+    action: 'Do not retry. Provide the reference below to support.',
+  },
+  token_decryption_failed: {
+    title: 'The authorisation session could not be decrypted',
+    message:
+      'AI Operations could not read the protected one-time verifier for this authorisation attempt.',
+    action: 'Restart authorisation. If it repeats, provide the reference below to support.',
+  },
+  app_origin_unconfigured: {
+    title: 'The application return address is not configured',
+    message: 'Google completed its step, but AI Operations has no configured return destination.',
+    action: 'Do not retry. Provide the reference below to support.',
+  },
+  app_origin_invalid: {
+    title: 'The application return address was rejected',
+    message: 'AI Operations refused to redirect to an unapproved or invalid destination.',
+    action: 'Do not retry. Provide the reference below to support.',
   },
   connection_store_failed: {
     title: 'Google connected, but setup was not saved',

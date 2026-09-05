@@ -14,6 +14,14 @@ personal source contents into onboarding evidence.
    and the expected cadence. A partial provider failure must remain visible against that dataset.
 5. Confirm **Reconnect** is available for expired consent and that **Revoke** requires fresh MFA.
 
+OAuth callback failures return to **Data Sources** with an allowlisted explanation and a correlation
+reference. The page distinguishes expired state, incomplete scopes, Google profile lookup failure,
+missing or unverified profile email, the wrong authorised account, token exchange failure, and safe
+storage/configuration failures. Use the displayed recovery action first; use the reference to find
+the matching redacted `google_oauth_failed` audit event if diagnosis is still required. Callback
+URLs and audit records never contain the authorization code, access or refresh token, client secret,
+or the unexpected Google email address.
+
 ## Apple Shortcut
 
 Confirm the existing device is active, its last-seen time is current, and its Reminder permission
