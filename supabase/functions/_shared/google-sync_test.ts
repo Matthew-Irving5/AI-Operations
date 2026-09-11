@@ -4,6 +4,7 @@ import {
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   APPROVED_GOOGLE_SCOPES,
+  GoogleSyncError,
   hasExactGoogleScopes,
   shouldRecoverGmailHistoryCursor,
 } from "./google-sync.ts";
@@ -36,4 +37,17 @@ Deno.test("Gmail history recovery is bounded to one baseline", () => {
   assert(shouldRecoverGmailHistoryCursor(400, false));
   assertEquals(shouldRecoverGmailHistoryCursor(404, true), false);
   assertEquals(shouldRecoverGmailHistoryCursor(500, false), false);
+});
+
+Deno.test("Google sync errors retain safe stage and provider diagnostics", () => {
+  const error = new GoogleSyncError(
+    "provider_request_failed",
+    403,
+    "calendar_list",
+    "accessnotconfigured",
+  );
+  assertEquals(error.message, "provider_request_failed");
+  assertEquals(error.stage, "calendar_list");
+  assertEquals(error.status, 403);
+  assertEquals(error.providerError, "accessnotconfigured");
 });

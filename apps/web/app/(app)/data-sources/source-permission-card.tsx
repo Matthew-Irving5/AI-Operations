@@ -8,10 +8,13 @@ import {
   cadenceLabel,
   freshnessLabel,
   googleScopeDetail,
+  googleFreshnessLabel,
   latestFreshness,
+  parseGoogleSourceDiscoveryDiagnostic,
   parseGoogleSourceResources,
   sourceDate,
   type GoogleSourceResources,
+  type GoogleSourceDiscoveryDiagnostic,
   type SourceFreshness,
 } from './source-permissions';
 
@@ -165,9 +168,9 @@ export function GoogleSourceCard({
     Readonly<{
       status: 'loading' | 'ready' | 'error';
       data: GoogleSourceResources | null;
-      error: string;
+      error: GoogleSourceDiscoveryDiagnostic | null;
     }>
-  >({ status: 'loading', data: null, error: '' });
+  >({ status: 'loading', data: null, error: null });
   const [selectedCalendarIds, setSelectedCalendarIds] = useState<string[]>([]);
   const [selectedDriveFileIds, setSelectedDriveFileIds] = useState<string[]>([]);
   const [selectionSaved, setSelectionSaved] = useState(false);
@@ -180,7 +183,7 @@ export function GoogleSourceCard({
   const revokeFlow = useRevokeFlow(connection.id, 'google', completeRevoke, onRevokeStatus);
   const state = revoked ? 'revoked' : connection.status;
   const loadResources = useCallback(async () => {
-    setResourceState({ status: 'loading', data: null, error: '' });
+    setResourceState({ status: 'loading', data: null, error: null });
     try {
       const response = await fetch(
         `/api/connections/sources?connectionId=${encodeURIComponent(connection.id)}`,
@@ -189,29 +192,28 @@ export function GoogleSourceCard({
       const body: unknown = await response.json().catch(() => null);
       const resources = parseGoogleSourceResources(body);
       if (!response.ok || !resources) {
-        const code =
-          typeof body === 'object' &&
-          body !== null &&
-          'code' in body &&
-          typeof body.code === 'string'
-            ? body.code
-            : undefined;
         setResourceState({
           status: 'error',
           data: null,
-          error: actionMessage(code, 'Google calendars and Drive files could not be loaded.'),
+          error: parseGoogleSourceDiscoveryDiagnostic(body, response.status),
         });
         return;
       }
       setSelectedCalendarIds(resources.selectedCalendarIds);
       setSelectedDriveFileIds(resources.selectedDriveFileIds);
       setSelectionSaved(resources.selectionSaved);
-      setResourceState({ status: 'ready', data: resources, error: '' });
+      setResourceState({ status: 'ready', data: resources, error: null });
     } catch {
       setResourceState({
         status: 'error',
         data: null,
-        error: 'Google resources could not be loaded. Check your connection and try again.',
+        error: {
+          code: 'source_discovery_unavailable',
+          stage: 'browser_request',
+          reason: 'network_failure',
+          status: null,
+          requestId: null,
+        },
       });
     }
   }, [connection.id]);
@@ -315,7 +317,7 @@ export function GoogleSourceCard({
     'google_drive',
     'google',
   ]);
-  const freshnessState = freshnessLabel(overallFreshness);
+  const freshnessState = googleFreshnessLabel(overallFreshness);
   const datasets = [
     { label: 'Gmail', sources: ['google_gmail', 'google'] },
     { label: 'Google Calendar', sources: ['google_calendar'] },
@@ -387,7 +389,53 @@ export function GoogleSourceCard({
           <p aria-busy="true">Loading available calendars and Drive files…</p>
         ) : resourceState.status === 'error' ? (
           <div className="notice source-recovery" role="alert">
-            <p>{resourceState.error}</p>
+            <p>Google calendars and Drive files could not be loaded.</p>
+            <dl className="source-error-meta">
+              <div>
+                <dt>Error code</dt>
+                <dd>
+                  <code>{resourceState.error?.code}</code>
+                </dd>
+              </div>
+              {resourceState.error?.stage ? (
+                <div>
+                  <dt>Stage</dt>
+                  <dd>
+                    <code>{resourceState.error.stage}</code>
+                  </dd>
+                </div>
+              ) : null}
+              {resourceState.error?.reason ? (
+                <div>
+                  <dt>Reason</dt>
+                  <dd>
+                    <code>{resourceState.error.reason}</code>
+                  </dd>
+                </div>
+              ) : null}
+              {resourceState.error?.status ? (
+                <div>
+                  <dt>HTTP status</dt>
+                  <dd>
+                    <code>{resourceState.error.status}</code>
+                  </dd>
+                </div>
+              ) : null}
+              {resourceState.error?.requestId ? (
+                <div>
+                  <dt>Reference</dt>
+                  <dd>
+                    <code>{resourceState.error.requestId}</code>
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+            <p>
+              {actionMessage(
+                resourceState.error?.code,
+                'Retry resource discovery. If it fails again, provide the reference above to support.',
+              )}
+            </p>
             <button type="button" onClick={() => void loadResources()}>
               Retry resource discovery
             </button>

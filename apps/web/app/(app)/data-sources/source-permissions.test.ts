@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   actionMessage,
   cadenceLabel,
+  googleFreshnessLabel,
   freshnessLabel,
   googleScopeDetail,
   latestFreshness,
   parseGoogleSourceResources,
+  parseGoogleSourceDiscoveryDiagnostic,
 } from './source-permissions';
 
 describe('source permission explanations', () => {
@@ -38,6 +40,55 @@ describe('source permission explanations', () => {
     expect(freshnessLabel({ ...freshness, state: 'reauthentication_required' })).toBe(
       'Needs attention',
     );
+  });
+
+  it('distinguishes a connected OAuth account from a source with no sync yet', () => {
+    expect(googleFreshnessLabel(null)).toBe('Awaiting first sync');
+    expect(
+      googleFreshnessLabel({
+        source: 'google_gmail',
+        last_source_at: null,
+        last_success_at: null,
+        expected_cadence: '24 hours',
+        state: 'not_connected',
+      }),
+    ).toBe('Needs attention');
+  });
+
+  it('keeps discovery diagnostics bounded and safe for UI rendering', () => {
+    expect(
+      parseGoogleSourceDiscoveryDiagnostic({
+        code: 'google_profile_request_failed',
+        stage: 'google_source_discovery',
+        reason: 'provider_rejected_request',
+        status: 502,
+        requestId: 'req-123',
+        detail: 'access_token=must-not-render',
+      }),
+    ).toEqual({
+      code: 'google_profile_request_failed',
+      stage: 'google_source_discovery',
+      reason: 'provider_rejected_request',
+      status: 502,
+      requestId: 'req-123',
+    });
+    expect(
+      parseGoogleSourceDiscoveryDiagnostic(
+        {
+          code: 'unsafe\ncode',
+          stage: 'x'.repeat(101),
+          status: 999,
+          request_id: 'request-456',
+        },
+        502,
+      ),
+    ).toEqual({
+      code: 'source_discovery_failed',
+      stage: null,
+      reason: null,
+      status: 502,
+      requestId: 'request-456',
+    });
   });
 
   it('provides safe recovery wording for permission and session failures', () => {

@@ -29,6 +29,14 @@ export type GoogleSourceResources = {
   selectionSaved: boolean;
 };
 
+export type GoogleSourceDiscoveryDiagnostic = Readonly<{
+  code: string;
+  stage: string | null;
+  reason: string | null;
+  status: number | null;
+  requestId: string | null;
+}>;
+
 function recordValue(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
 }
@@ -39,6 +47,56 @@ function stringValue(value: unknown): string | null {
 
 function stringArray(value: unknown): string[] | null {
   return Array.isArray(value) && value.every((item) => typeof item === 'string') ? value : null;
+}
+
+function boundedDiagnosticString(value: unknown, maximum: number): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > maximum) return null;
+  if (
+    [...trimmed].some((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return code < 0x20 || code === 0x7f;
+    })
+  )
+    return null;
+  return trimmed;
+}
+
+function diagnosticStatus(value: unknown, fallback: number | null): number | null {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 100 || value > 599) {
+    return fallback;
+  }
+  return value;
+}
+
+export function parseGoogleSourceDiscoveryDiagnostic(
+  value: unknown,
+  fallbackStatus: number | null = null,
+): GoogleSourceDiscoveryDiagnostic {
+  const root = recordValue(value);
+  const nested = recordValue(root?.error);
+  const code =
+    boundedDiagnosticString(root?.code ?? nested?.code, 100) ?? 'source_discovery_failed';
+  return {
+    code,
+    stage: boundedDiagnosticString(root?.stage ?? nested?.stage, 100),
+    reason: boundedDiagnosticString(root?.reason ?? nested?.reason, 160),
+    status: diagnosticStatus(root?.status ?? nested?.status, fallbackStatus),
+    requestId: boundedDiagnosticString(
+      root?.requestId ?? root?.request_id ?? nested?.requestId ?? nested?.request_id,
+      128,
+    ),
+  };
+}
+
+export function googleFreshnessLabel(
+  freshness: SourceFreshness | null | undefined,
+  now = Date.now(),
+): 'Fresh' | 'Stale' | 'Needs attention' | 'Awaiting first sync' {
+  if (!freshness) return 'Awaiting first sync';
+  const label = freshnessLabel(freshness, now);
+  return label === 'Not connected' ? 'Awaiting first sync' : label;
 }
 
 export function parseGoogleSourceResources(value: unknown): GoogleSourceResources | null {
