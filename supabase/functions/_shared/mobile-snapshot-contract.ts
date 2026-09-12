@@ -20,7 +20,11 @@ export const mobileRecordSchema = z.object({
   // UUIDs (for example, title/date-derived identifiers). Preserve them as
   // opaque bounded identifiers; the database contract already stores text.
   record_id: z.string().min(1).max(64).refine(
-    (value) => !/[\u0000-\u001f\u007f]/.test(value),
+    (value) =>
+      [...value].every((character) => {
+        const codePoint = character.codePointAt(0) ?? 0;
+        return codePoint > 0x1f && codePoint !== 0x7f;
+      }),
     "record_id must not contain control characters",
   ),
   source: mobileIdentifier,
