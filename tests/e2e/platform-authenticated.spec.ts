@@ -158,7 +158,7 @@ test('Systems, device, and onboarding surfaces are reachable and preserve produc
   await expect(page.getByText('Approval-gated')).toBeVisible();
   await page.goto('/devices');
   await expect(page.getByRole('heading', { name: 'Devices' })).toBeVisible();
-  await expect(page.getByText('No registered device. Register a Windows worker')).toBeVisible();
+  await expect(page.getByText('No registered device yet.')).toBeVisible();
   await page.goto('/settings');
   await expect(
     page.getByRole('heading', { name: 'Settings & production onboarding' }),
