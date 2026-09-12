@@ -6,8 +6,8 @@ import {
   APPROVED_GOOGLE_SCOPES,
   GoogleSyncError,
   hasExactGoogleScopes,
-  shouldSeedGmailCursor,
   shouldRecoverGmailHistoryCursor,
+  shouldSeedGmailCursor,
 } from "./google-sync.ts";
 
 Deno.test("Google scope contract accepts exactly the four approved scopes", () => {
