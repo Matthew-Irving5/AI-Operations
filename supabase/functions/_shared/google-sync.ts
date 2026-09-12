@@ -23,6 +23,15 @@ export function shouldRecoverGmailHistoryCursor(
   return !alreadyRecovered && (status === 400 || status === 404);
 }
 
+/**
+ * A first sync must not enumerate an unbounded mailbox synchronously.  Seed
+ * the provider history cursor first; subsequent runs use the incremental
+ * history endpoint and remain bounded by the page guard.
+ */
+export function shouldSeedGmailCursor(previousCursor: string | null): boolean {
+  return previousCursor === null;
+}
+
 export type GoogleDataset = "google_gmail" | "google_calendar" | "google_drive";
 export type FreshnessState =
   | "fresh"
@@ -591,22 +600,31 @@ export async function syncGoogleConnection({
         }
         pageToken = history.nextPageToken;
       } else {
-        params.set("labelIds", "INBOX");
-        if (pageToken) params.set("pageToken", pageToken);
-        const response = await fetchImpl(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages?${params}`,
-          { headers },
-        );
-        const list = await readJson(response) as
-          | { messages?: GmailMessage[]; nextPageToken?: string }
-          | null;
-        if (!response.ok || !list) {
-          throw new GoogleSyncError("provider_request_failed");
+        if (shouldSeedGmailCursor(previousCursor)) {
+          // The first run only establishes the provider cursor.  Listing a
+          // large Inbox can require thousands of detail calls and would make
+          // the on-demand sync fail at the page guard before Calendar/Drive
+          // can be ingested.  Historical Gmail backfill is intentionally
+          // deferred to the bounded history path.
+          pageToken = undefined;
+        } else {
+          params.set("labelIds", "INBOX");
+          if (pageToken) params.set("pageToken", pageToken);
+          const response = await fetchImpl(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages?${params}`,
+            { headers },
+          );
+          const list = await readJson(response) as
+            | { messages?: GmailMessage[]; nextPageToken?: string }
+            | null;
+          if (!response.ok || !list) {
+            throw new GoogleSyncError("provider_request_failed");
+          }
+          for (const message of list.messages ?? []) {
+            if (message.id) messages.set(message.id, message);
+          }
+          pageToken = list.nextPageToken;
         }
-        for (const message of list.messages ?? []) {
-          if (message.id) messages.set(message.id, message);
-        }
-        pageToken = list.nextPageToken;
       }
       pageCount += 1;
       if (pageCount > MAX_PROVIDER_PAGES) {
@@ -675,6 +693,7 @@ export async function syncGoogleConnection({
         provider_status: profileResponse.status,
         persisted_count: count,
         cursor_type: "gmail_history_id",
+        baseline_cursor_seeded: shouldSeedGmailCursor(previousCursor),
       },
       currentTime,
     );

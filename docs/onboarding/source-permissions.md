@@ -12,6 +12,8 @@ personal source contents into onboarding evidence.
    Empty selections import nothing.
 4. Run **Sync now**. Confirm Gmail, Calendar, and Drive each show **Fresh**, a last-success time,
    and the expected cadence. A partial provider failure must remain visible against that dataset.
+   The first Gmail run seeds the provider history cursor rather than enumerating an unbounded Inbox;
+   later runs ingest changes incrementally.
 5. Confirm **Reconnect** is available for expired consent and that **Revoke** requires fresh MFA.
 
 OAuth callback failures return to **Data Sources** with an allowlisted explanation and a correlation
