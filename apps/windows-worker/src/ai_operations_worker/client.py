@@ -206,6 +206,6 @@ def main() -> None:
         os.environ.get("AI_OPERATIONS_WORKER_SECRET") or load_secret(Path(os.environ.get("AI_OPERATIONS_SECRET_PATH", "worker.secret.dpapi"))), os.environ["AI_OPERATIONS_DEVICE_ID"],
         Path(os.environ.get("AI_OPERATIONS_STATE_PATH", "worker-state.sqlite")),
         Path(os.environ.get("AI_OPERATIONS_KEY_PATH", "worker.key.dpapi")),
-        os.environ["AI_OPERATIONS_MANIFEST_PUBLIC_KEY_B64"], roots,
+        os.environ.get("AI_OPERATIONS_MANIFEST_PUBLIC_KEY_B64", ""), roots,
         Path(os.environ["AI_OPERATIONS_QUARANTINE_ROOT"]),
     )).run_forever()

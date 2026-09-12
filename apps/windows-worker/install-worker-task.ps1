@@ -5,7 +5,7 @@ param(
   [Parameter(Mandatory = $true)] [string]$KeyPath,
   [Parameter(Mandatory = $true)] [string]$SecretPath,
   [Parameter(Mandatory = $true)] [string]$StatePath,
-  [Parameter(Mandatory = $true)] [string]$ManifestPublicKeyB64,
+  [string]$ManifestPublicKeyB64 = '',
   [Parameter(Mandatory = $true)] [string]$AllowedRootsJson,
   [Parameter(Mandatory = $true)] [string]$QuarantineRoot,
   [string]$TaskName = 'AI Operations Windows Worker'

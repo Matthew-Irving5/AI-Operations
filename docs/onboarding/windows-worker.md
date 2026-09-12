@@ -15,10 +15,15 @@ The worker is outbound-only: it never opens a listener or accepts remote shell c
      -KeyPath 'C:\ProgramData\AI-Operations\worker.key.dpapi' `
      -SecretPath 'C:\ProgramData\AI-Operations\worker.secret.dpapi' `
      -StatePath 'C:\ProgramData\AI-Operations\worker-state.sqlite' `
-     -ManifestPublicKeyB64 '<approved-manifest-public-key>' `
      -AllowedRootsJson '["C:\\AI-Operations\\SyntheticSafe"]' `
      -QuarantineRoot 'C:\ProgramData\AI-Operations\quarantine'
    ```
+
+   `-ManifestPublicKeyB64` is optional for this checklist's read-only smoke
+   scan. Leave it unset until the server's manifest-signing public key has
+   been provisioned. If an action manifest is received while it is unset, the
+   worker rejects it and reports a signature failure; it never executes it.
+   Configure the approved public key before enabling any action-plan workflow.
 
    The task starts at Windows boot and retries bounded failures. Review the generated task and runner script before starting it. To remove it, run `Unregister-ScheduledTask -TaskName 'AI Operations Windows Worker'` and delete only the generated runner/configuration files after revocation.
 
