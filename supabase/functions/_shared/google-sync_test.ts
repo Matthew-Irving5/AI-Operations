@@ -6,6 +6,7 @@ import {
   APPROVED_GOOGLE_SCOPES,
   GoogleSyncError,
   hasExactGoogleScopes,
+  shouldSeedGmailCursor,
   shouldRecoverGmailHistoryCursor,
 } from "./google-sync.ts";
 
@@ -37,6 +38,11 @@ Deno.test("Gmail history recovery is bounded to one baseline", () => {
   assert(shouldRecoverGmailHistoryCursor(400, false));
   assertEquals(shouldRecoverGmailHistoryCursor(404, true), false);
   assertEquals(shouldRecoverGmailHistoryCursor(500, false), false);
+});
+
+Deno.test("Gmail first sync seeds a cursor instead of enumerating an unbounded Inbox", () => {
+  assert(shouldSeedGmailCursor(null));
+  assertEquals(shouldSeedGmailCursor("123456"), false);
 });
 
 Deno.test("Google sync errors retain safe stage and provider diagnostics", () => {
