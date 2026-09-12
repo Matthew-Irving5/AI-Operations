@@ -16,7 +16,13 @@ export const mobileSourceSchema = z.object({
   error: z.string().max(256).nullable(),
 }).strict();
 export const mobileRecordSchema = z.object({
-  record_id: z.string().uuid(),
+  // Apple Shortcuts can provide stable Calendar identifiers that are not
+  // UUIDs (for example, title/date-derived identifiers). Preserve them as
+  // opaque bounded identifiers; the database contract already stores text.
+  record_id: z.string().min(1).max(64).refine(
+    (value) => !/[\u0000-\u001f\u007f]/.test(value),
+    "record_id must not contain control characters",
+  ),
   source: mobileIdentifier,
   kind: mobileIdentifier,
   external_id: z.string().max(512).nullable().optional(),

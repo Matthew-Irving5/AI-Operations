@@ -125,6 +125,35 @@ function validationReason(
   return `invalid_${path}`.slice(0, 128);
 }
 
+async function fillMissingCalendarRecordId(value: unknown): Promise<unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return value;
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    record.source !== "calendar" ||
+    record.kind !== "calendar_event" ||
+    (typeof record.record_id === "string" && record.record_id.length > 0) ||
+    typeof record.payload !== "object" ||
+    record.payload === null ||
+    Array.isArray(record.payload)
+  ) {
+    return value;
+  }
+  const payloadHash = await sha256Hex(
+    canonicalJson({
+      source: record.source,
+      kind: record.kind,
+      payload: record.payload,
+    }),
+  );
+  return {
+    ...record,
+    // Keep the generated ID within the existing 64-character database limit.
+    record_id: `calendar-${payloadHash.slice(0, 55)}`,
+  };
+}
+
 Deno.serve(async (request) => {
   const diagnosticId = crypto.randomUUID();
   if (request.method !== "POST") {
@@ -271,7 +300,8 @@ Deno.serve(async (request) => {
 
   const parsedRecords = await Promise.all(
     envelope.records.map(async (rawRecord) => {
-      const result = mobileRecordSchema.safeParse(rawRecord);
+      const compatibilityRecord = await fillMissingCalendarRecordId(rawRecord);
+      const result = mobileRecordSchema.safeParse(compatibilityRecord);
       const rawHash = await sha256Hex(canonicalJson(rawRecord));
       if (
         !result.success ||
@@ -279,8 +309,9 @@ Deno.serve(async (request) => {
           MOBILE_LIMITS.recordBytes ||
         jsonDepth(rawRecord) > MOBILE_LIMITS.nestingDepth
       ) {
-        const candidate = typeof rawRecord === "object" && rawRecord !== null
-          ? (rawRecord as Record<string, unknown>)
+        const candidate = typeof compatibilityRecord === "object" &&
+            compatibilityRecord !== null
+          ? (compatibilityRecord as Record<string, unknown>)
           : {};
         return {
           record_id: typeof candidate.record_id === "string" &&
