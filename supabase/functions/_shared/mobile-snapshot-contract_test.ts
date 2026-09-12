@@ -19,6 +19,26 @@ Deno.test("mobile records do not require optional Apple identity timestamps", ()
   );
 });
 
+Deno.test("mobile records accept opaque Apple Calendar identifiers", () => {
+  assert(
+    mobileRecordSchema.safeParse({
+      record_id: "Meeting (Personal) — 12 Sept 2026",
+      source: "calendar",
+      kind: "calendar_event",
+      payload: {},
+    }).success,
+  );
+  assertEquals(
+    mobileRecordSchema.safeParse({
+      record_id: "invalid\u0000id",
+      source: "calendar",
+      kind: "calendar_event",
+      payload: {},
+    }).success,
+    false,
+  );
+});
+
 Deno.test("mobile transport limits support health collection windows", () => {
   assertEquals(MOBILE_LIMITS.requestBytes, 8_388_608);
   assert(MOBILE_LIMITS.records >= 2_000);

@@ -31,6 +31,10 @@ is restricted to `Fitness Plan`, `Household & Personal`, and `AI Actions`. Confi
 Calendar, Reminders, Location, and Screen Time each show current collection evidence. Missing
 Resting Heart Rate samples are acceptable, and no historical Health backfill is required.
 
+The bridge accepts Apple Calendar's opaque, non-UUID event identifiers. If a Calendar event is
+missing its identifier, the server derives a deterministic identifier from that event's payload;
+the signed Shortcut is unchanged.
+
 Do not alter the signed Shortcut for this checklist item. Revocation is an emergency recovery
 control and invalidates the existing device token after a single-use MFA gate.
 
