@@ -156,15 +156,21 @@ const watchSchema = z.object({
 });
 const digitalScanSchema = z.object({
   id: z.string().uuid(),
+  device_id: z.string().uuid(),
   scan_kind: z.string(),
   status: z.string(),
   progress: z.number(),
+  result_verified_at: z.string().nullable(),
+  completed_at: z.string().nullable(),
   created_at: z.string(),
 });
 const workerDeviceSchema = z.object({
   id: z.string().uuid(),
   label: z.string(),
   state: z.string(),
+  public_key_b64: z.string(),
+  paired_at: z.string().nullable(),
+  revoked_at: z.string().nullable(),
   last_heartbeat_at: z.string().nullable(),
 });
 const onboardingItemSchema = z.object({
@@ -598,12 +604,12 @@ export async function digitalEstateData(): Promise<
   const [scans, devices] = await Promise.all([
     client
       .from('digital_scans')
-      .select('id,scan_kind,status,progress,created_at')
+      .select('id,device_id,scan_kind,status,progress,result_verified_at,created_at,completed_at')
       .order('created_at', { ascending: false })
       .limit(25),
     client
       .from('worker_devices')
-      .select('id,label,state,last_heartbeat_at')
+      .select('id,label,state,public_key_b64,paired_at,revoked_at,last_heartbeat_at')
       .order('created_at', { ascending: false })
       .limit(25),
   ]);

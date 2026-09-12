@@ -1,11 +1,16 @@
-import { onboardingData, sourcePermissionsData } from '../../../lib/platform-data';
+import {
+  digitalEstateData,
+  onboardingData,
+  sourcePermissionsData,
+} from '../../../lib/platform-data';
 import { OnboardingForm } from './onboarding-form';
 import { freshnessLabel } from '../data-sources/source-permissions';
 
 export default async function SettingsPage() {
-  const [{ items, accepted }, sources] = await Promise.all([
+  const [{ items, accepted }, sources, digitalEstate] = await Promise.all([
     onboardingData(),
     sourcePermissionsData(),
+    digitalEstateData(),
   ]);
   const freshnessBySource = new Map(sources.freshness.data.map((item) => [item.source, item]));
   const googleConnections = sources.connections.data.filter(
@@ -44,6 +49,27 @@ export default async function SettingsPage() {
     (googleConnections.length > 0 || activeAppleDevices.length > 0) &&
     (googleConnections.length === 0 || googleReady) &&
     (activeAppleDevices.length === 0 || appleReady);
+  const heartbeatCutoff = new Date().getTime() - 30 * 60_000;
+  const pairedWorkerIds = new Set(
+    digitalEstate.devices.data
+      .filter(
+        (device) =>
+          device.state !== 'revoked' &&
+          !device.revoked_at &&
+          Boolean(device.paired_at) &&
+          Boolean(device.last_heartbeat_at) &&
+          Date.parse(device.last_heartbeat_at!) >= heartbeatCutoff,
+      )
+      .map((device) => device.id),
+  );
+  const windowsWorkerReady = digitalEstate.scans.data.some(
+    (scan) =>
+      pairedWorkerIds.has(scan.device_id) &&
+      scan.scan_kind === 'lightweight' &&
+      scan.status === 'complete' &&
+      Boolean(scan.completed_at) &&
+      Boolean(scan.result_verified_at),
+  );
   return (
     <>
       <h1>Settings &amp; production onboarding</h1>
@@ -55,19 +81,24 @@ export default async function SettingsPage() {
       accepted.error ??
       sources.connections.error ??
       sources.freshness.error ??
-      sources.appleDevices.error) ? (
+      sources.appleDevices.error ??
+      digitalEstate.devices.error ??
+      digitalEstate.scans.error) ? (
         <p className="notice" role="alert">
           {items.error ??
             accepted.error ??
             sources.connections.error ??
             sources.freshness.error ??
-            sources.appleDevices.error}
+            sources.appleDevices.error ??
+            digitalEstate.devices.error ??
+            digitalEstate.scans.error}
         </p>
       ) : null}
       <OnboardingForm
         completedCodes={items.data.filter((item) => item.completed_at).map((item) => item.code)}
         accepted={accepted.data}
         sourcePermissionsReady={sourcePermissionsReady}
+        windowsWorkerReady={windowsWorkerReady}
       />
     </>
   );
