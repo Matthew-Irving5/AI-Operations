@@ -1,9 +1,9 @@
 """Outbound-only polling worker. It never binds a local port or accepts remote commands."""
 from __future__ import annotations
 
+import argparse
 import json
 import os
-import argparse
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -14,7 +14,13 @@ from urllib.request import Request, urlopen
 
 from .config import WorkerEndpoint
 from .executor import execute
-from .identity import create_or_load_private_key, load_secret, protect_secret, public_key_b64, public_key_fingerprint
+from .identity import (
+    create_or_load_private_key,
+    load_secret,
+    protect_secret,
+    public_key_b64,
+    public_key_fingerprint,
+)
 from .inventory import collect
 from .manifest import verify_manifest
 from .results import sign_scan_result

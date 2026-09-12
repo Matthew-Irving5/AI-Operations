@@ -1,9 +1,10 @@
 import json
 from pathlib import Path
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 from ai_operations_worker.identity import public_key_fingerprint
 from ai_operations_worker.state import StateStore
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 
 def test_identity_fingerprint_is_stable_and_public_only() -> None:
