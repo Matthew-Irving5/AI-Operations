@@ -1,5 +1,5 @@
 begin;
-select plan(95);
+select plan(102);
 
 select ok(
   not exists (
@@ -98,6 +98,13 @@ select ok(exists(select 1 from public.workflow_definitions where code = 'digital
 select ok(exists(select 1 from public.workflow_definitions where code = 'digital-estate-deep-scan' and active), 'Digital Estate deep workflow is active');
 select ok(exists(select 1 from pg_constraint where conname = 'digital_scans_status_check'), 'Digital scan status is constrained');
 select ok(exists(select 1 from pg_constraint where conname = 'worker_devices_state_check'), 'Worker device state is constrained');
+select ok(exists(select 1 from information_schema.columns where table_schema='public' and table_name='worker_devices' and column_name='worker_secret_hash'), 'Worker devices store a per-device secret hash');
+select ok(not has_column_privilege('authenticated', 'public.worker_devices', 'worker_secret_hash', 'SELECT'), 'Authenticated sessions cannot read worker secret hashes');
+select ok(not has_table_privilege('authenticated', 'public.worker_devices', 'INSERT'), 'Authenticated sessions cannot insert worker devices directly');
+select ok(not has_table_privilege('authenticated', 'public.worker_devices', 'UPDATE'), 'Authenticated sessions cannot rotate worker credentials directly');
+select ok(exists(select 1 from pg_proc where proname = 'create_worker_device_from_mfa_gate'), 'Worker registration requires a database MFA gate');
+select ok(exists(select 1 from pg_proc where proname = 'revoke_worker_device_from_mfa_gate'), 'Worker revocation requires a database MFA gate');
+select ok(exists(select 1 from information_schema.columns where table_schema='public' and table_name='digital_scans' and column_name='result_verified_at'), 'Digital scans record server-verified result evidence');
 select ok((select relrowsecurity from pg_class where relname='worker_heartbeats' and relnamespace = 'public'::regnamespace), 'Worker heartbeat history has RLS enabled');
 select ok((select relrowsecurity from pg_class where relname='storage_forecasts' and relnamespace = 'public'::regnamespace), 'Storage forecasts have RLS enabled');
 select ok((select relrowsecurity from pg_class where relname='onboarding_checklist_items' and relnamespace = 'public'::regnamespace), 'Onboarding checklist has RLS enabled');

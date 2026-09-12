@@ -22,12 +22,21 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const requestId = crypto.randomUUID();
   const rejected = requireSameOrigin(request);
   if (rejected) return rejected;
   const body = bodySchema.safeParse(await request.json());
-  if (!body.success) return NextResponse.json({ code: 'invalid_scan_request' }, { status: 400 });
+  if (!body.success)
+    return NextResponse.json(
+      { code: 'invalid_scan_request', stage: 'scan_create', requestId },
+      { status: 400, headers: { 'x-request-id': requestId } },
+    );
   const accessToken = await getAuthenticatedServerAccessToken();
-  if (!accessToken) return NextResponse.json({ code: 'unauthorised' }, { status: 401 });
+  if (!accessToken)
+    return NextResponse.json(
+      { code: 'unauthorised', stage: 'scan_create', requestId },
+      { status: 401, headers: { 'x-request-id': requestId } },
+    );
   const response = await fetch(
     new URL('/functions/v1/digital-scan-create', process.env.NEXT_PUBLIC_SUPABASE_URL).toString(),
     {
@@ -35,9 +44,13 @@ export async function POST(request: Request) {
       headers: {
         authorization: `Bearer ${accessToken}`,
         'content-type': 'application/json',
+        'x-request-id': requestId,
       },
       body: JSON.stringify(body.data),
     },
   );
-  return NextResponse.json(await response.json(), { status: response.status });
+  return NextResponse.json(await response.json(), {
+    status: response.status,
+    headers: { 'x-request-id': requestId },
+  });
 }

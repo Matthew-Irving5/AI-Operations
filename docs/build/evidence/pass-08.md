@@ -39,6 +39,46 @@ operator acceptance record.
 - Local deterministic validation: `supabase db reset --local` applied every migration from an empty database; `pnpm test:db` passed all 79 pgTAP/RLS tests; `pnpm verify` passed; `pnpm test:e2e` passed all 22 Chromium and WebKit/iPhone browser checks including accessibility; Windows-worker pytest passed 9 tests; and `pnpm security` completed without a secret-scanning failure. The k6 login smoke completed 718 requests at up to 10 virtual users with 0% failures and 3.22 ms p95 response time (threshold under 1 second).
 - No provider call has been made.
 
+## Windows worker installation and pairing implementation
+
+- `20260912150424_worker_pairing_evidence.sql` adds the per-device secret hash,
+  server-verified scan timestamp, fresh-MFA registration/revocation RPCs, and
+  metadata-backed onboarding writes. Follow-up migrations
+  `20260912151214_worker_service_role_grants.sql`,
+  `20260912151304_worker_service_role_operational_grants.sql`, and
+  `20260912151405_worker_browser_device_write_lockdown.sql` grant the control
+  plane only the service-role access it needs and remove browser INSERT/UPDATE
+  access to worker credentials. Staging confirmed authenticated sessions cannot
+  read the secret hash, cannot write devices directly, and the service role can
+  read it for constant-time authentication.
+- The worker now generates an Ed25519 identity locally, protects its private key
+  and per-device secret with Windows DPAPI, pairs once with a ten-minute code,
+  queues failed submissions in SQLite, stops on revoked/invalid credentials, and
+  enforces HTTPS before startup. A signed-release workflow builds a PyInstaller
+  executable, requires production signing certificate secrets, verifies the
+  Authenticode signature, and publishes SHA-256 and provenance artifacts. The
+  scheduled-task installer contains no worker secret.
+- The Devices wizard keeps the public key and registration intent only long
+  enough to complete fresh MFA, displays the one-time pairing code only in live
+  component state, and exposes request IDs/stable stage codes for failures.
+  Settings disables the `windows_worker` checklist item until a paired,
+  non-revoked device has a heartbeat within 30 minutes and a verified lightweight
+  scan. The server repeats that evidence check and stores device, heartbeat,
+  scan, and verification IDs in checklist metadata, so a checkbox click cannot
+  bypass it.
+- Staging Edge Function verification: unauthenticated pairing returned HTTP 400
+  `invalid_pairing` with a correlation ID; missing worker credentials returned
+  HTTP 401 `unauthorised`; a synthetic paired device returned HTTP 200 heartbeat
+  and HTTP 200 empty poll; a wrong secret returned HTTP 401; after revocation,
+  the same secret returned HTTP 403 `device_revoked`. Synthetic rows were
+  removed immediately. No production worker, personal path, private key, or
+  worker secret was used.
+- Local validation for this change: `corepack pnpm format:check`,
+  `corepack pnpm typecheck`, Deno lint/check, `python -m ruff check`, and the
+  Windows-worker pytest suite (11 tests) pass. Local database reset remains
+  unavailable because Docker Desktop is not running; the migration was applied
+  and exercised on the healthy staging project instead.
+
 ## Universal mobile transport evidence
 
 - ADR 0007 freezes the passive, versioned snapshot contract and explicitly separates ingestion from execution.

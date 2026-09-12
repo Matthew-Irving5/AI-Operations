@@ -1,4 +1,5 @@
 import { digitalEstateData } from '../../../lib/platform-data';
+import { DeviceManager } from './device-manager';
 
 export default async function DevicesPage() {
   const { devices, scans } = await digitalEstateData();
@@ -14,28 +15,12 @@ export default async function DevicesPage() {
           {devices.error ?? scans.error}
         </p>
       ) : null}
-      {devices.data.length ? (
-        <section className="stack">
-          {devices.data.map((device) => (
-            <article className="card" key={device.id}>
-              <h2>{device.label}</h2>
-              <p>
-                {device.state}; last heartbeat{' '}
-                {device.last_heartbeat_at
-                  ? new Date(device.last_heartbeat_at).toLocaleString('en-GB', {
-                      timeZone: 'Europe/London',
-                    })
-                  : 'not received'}
-                .
-              </p>
-            </article>
-          ))}
-        </section>
-      ) : (
-        <p className="card">
-          No registered device. Register a Windows worker in Digital Estate after fresh MFA.
-        </p>
-      )}
+      {!devices.data.length && <p className="card">No registered device yet.</p>}
+      <DeviceManager
+        devices={devices.data}
+        scans={scans.data}
+        currentTimeMs={new Date().getTime()}
+      />
     </>
   );
 }

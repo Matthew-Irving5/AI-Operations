@@ -1,0 +1,72 @@
+name: Windows worker release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['worker-v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install worker and packaging tools
+        working-directory: apps/windows-worker
+        run: python -m pip install . pyinstaller==6.16.0
+      - name: Build executable
+        working-directory: apps/windows-worker
+        run: pyinstaller --clean --onefile --name ai-operations-worker src/ai_operations_worker/__main__.py
+      - name: Require signing credentials
+        shell: pwsh
+        env:
+          WORKER_SIGNING_CERT_B64: ${{ secrets.WINDOWS_WORKER_SIGNING_CERT_B64 }}
+          WORKER_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_WORKER_SIGNING_CERT_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WORKER_SIGNING_CERT_B64) -or [string]::IsNullOrWhiteSpace($env:WORKER_SIGNING_CERT_PASSWORD)) {
+            throw 'Missing production signing credentials: WINDOWS_WORKER_SIGNING_CERT_B64 and WINDOWS_WORKER_SIGNING_CERT_PASSWORD'
+          }
+          [IO.File]::WriteAllBytes('worker-signing.pfx', [Convert]::FromBase64String($env:WORKER_SIGNING_CERT_B64))
+      - name: Sign executable
+        shell: pwsh
+        env:
+          WORKER_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_WORKER_SIGNING_CERT_PASSWORD }}
+        run: |
+          $signtool = (Get-ChildItem "$env:ProgramFiles\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          & $signtool sign /fd SHA256 /f worker-signing.pfx /p $env:WORKER_SIGNING_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 apps/windows-worker/dist/ai-operations-worker.exe
+          & $signtool verify /pa /all apps/windows-worker/dist/ai-operations-worker.exe
+      - name: Create checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash apps/windows-worker/dist/ai-operations-worker.exe -Algorithm SHA256).Hash
+          $hash | Set-Content apps/windows-worker/dist/ai-operations-worker.exe.sha256
+          @{
+            artifact = 'ai-operations-worker.exe'
+            sha256 = $hash
+            commit = '${{ github.sha }}'
+            tag = '${{ github.ref_name }}'
+            signed = $true
+          } | ConvertTo-Json | Set-Content apps/windows-worker/dist/ai-operations-worker.provenance.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-operations-windows-worker-${{ github.sha }}
+          path: |
+            apps/windows-worker/dist/ai-operations-worker.exe
+            apps/windows-worker/dist/ai-operations-worker.exe.sha256
+            apps/windows-worker/dist/ai-operations-worker.provenance.json
+            apps/windows-worker/install-worker-task.ps1
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            apps/windows-worker/dist/ai-operations-worker.exe
+            apps/windows-worker/dist/ai-operations-worker.exe.sha256
+            apps/windows-worker/dist/ai-operations-worker.provenance.json
+            apps/windows-worker/install-worker-task.ps1

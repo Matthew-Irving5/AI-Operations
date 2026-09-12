@@ -3,26 +3,20 @@ import { z } from 'zod';
 import { requireSameOrigin } from '../../../../lib/request-security';
 import { getAuthenticatedServerAccessToken } from '../../../../lib/supabase-server';
 
-const schema = z.object({ code: z.string().min(1).max(64), complete: z.boolean() });
+const schema = z.object({ deviceId: z.string().uuid(), mfaGateId: z.string().uuid() });
 
 export async function POST(request: Request) {
-  const requestId = crypto.randomUUID();
   const rejected = requireSameOrigin(request);
   if (rejected) return rejected;
-  const body = schema.safeParse(await request.json());
-  if (!body.success)
-    return NextResponse.json(
-      { code: 'invalid_request', requestId },
-      { status: 400, headers: { 'x-request-id': requestId } },
-    );
+  const parsed = schema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success)
+    return NextResponse.json({ code: 'invalid_request', stage: 'revocation' }, { status: 400 });
   const accessToken = await getAuthenticatedServerAccessToken();
   if (!accessToken)
-    return NextResponse.json(
-      { code: 'unauthorised', requestId },
-      { status: 401, headers: { 'x-request-id': requestId } },
-    );
+    return NextResponse.json({ code: 'unauthorised', stage: 'revocation' }, { status: 401 });
+  const requestId = crypto.randomUUID();
   const response = await fetch(
-    new URL('/functions/v1/onboarding-update', process.env.NEXT_PUBLIC_SUPABASE_URL).toString(),
+    new URL('/functions/v1/device-revoke', process.env.NEXT_PUBLIC_SUPABASE_URL),
     {
       method: 'POST',
       headers: {
@@ -30,10 +24,11 @@ export async function POST(request: Request) {
         'content-type': 'application/json',
         'x-request-id': requestId,
       },
-      body: JSON.stringify(body.data),
+      body: JSON.stringify(parsed.data),
     },
   );
-  return NextResponse.json(await response.json(), {
+  const body = await response.json().catch(() => ({ code: 'revocation_response_invalid' }));
+  return NextResponse.json(body, {
     status: response.status,
     headers: { 'x-request-id': requestId },
   });

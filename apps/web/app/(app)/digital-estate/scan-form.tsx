@@ -3,7 +3,7 @@
 import { useState } from 'react';
 
 export function DigitalScanForm({ deviceId }: Readonly<{ deviceId: string }>) {
-  const [roots, setRoots] = useState('C:\\Users\\Matthew\\Documents');
+  const [roots, setRoots] = useState('');
   const [scanKind, setScanKind] = useState<'lightweight' | 'deep'>('lightweight');
   const [status, setStatus] = useState('');
   async function submit() {
@@ -23,10 +23,23 @@ export function DigitalScanForm({ deviceId }: Readonly<{ deviceId: string }>) {
         idempotencyKey: `digital-scan:${deviceId}:${Date.now()}`,
       }),
     });
+    const result = (await response.json().catch(() => null)) as {
+      code?: string;
+      requestId?: string;
+      replay?: boolean;
+    } | null;
+    if (response.ok) {
+      setStatus(
+        result?.replay
+          ? 'This scan request was already queued; no duplicate was created.'
+          : 'Scan queued. The worker will collect it when online.',
+      );
+      return;
+    }
     setStatus(
-      response.ok
-        ? 'Scan queued. The worker will collect it when online.'
-        : 'Scan request was rejected. Complete fresh MFA and review the selected roots.',
+      `Scan request failed (${result?.code ?? `http_${response.status}`}).${
+        result?.requestId ? ` Request ID: ${result.requestId}.` : ''
+      }`,
     );
   }
   return (
@@ -34,6 +47,9 @@ export function DigitalScanForm({ deviceId }: Readonly<{ deviceId: string }>) {
       <h2>Launch scan</h2>
       <label>
         Approved roots
+        <span className="label">
+          Use a safe synthetic onboarding folder; sensitive paths are excluded.
+        </span>
         <textarea value={roots} onChange={(event) => setRoots(event.target.value)} rows={3} />
       </label>
       <label>
@@ -46,7 +62,7 @@ export function DigitalScanForm({ deviceId }: Readonly<{ deviceId: string }>) {
           <option value="deep">Deep organisation analysis</option>
         </select>
       </label>
-      <button type="button" onClick={submit}>
+      <button type="button" disabled={!roots.trim()} onClick={submit}>
         Queue bounded scan
       </button>
       <p aria-live="polite">{status}</p>
