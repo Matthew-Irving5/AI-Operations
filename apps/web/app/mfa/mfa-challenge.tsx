@@ -9,7 +9,13 @@ export function MfaChallenge({
 }: {
   factorId?: string;
   returnTo?: string;
-  job?: 'apple_bridge' | 'gmail_test' | 'connection_revoke' | 'connection_scope_change';
+  job?:
+    | 'apple_bridge'
+    | 'gmail_test'
+    | 'connection_revoke'
+    | 'connection_scope_change'
+    | 'worker_device_register'
+    | 'worker_device_revoke';
 }) {
   const [code, setCode] = useState('');
   const [message, setMessage] = useState('');

@@ -147,7 +147,13 @@ export function OnboardingForm({
   completedCodes,
   accepted,
   sourcePermissionsReady,
-}: Readonly<{ completedCodes: string[]; accepted: boolean; sourcePermissionsReady: boolean }>) {
+  windowsWorkerReady,
+}: Readonly<{
+  completedCodes: string[];
+  accepted: boolean;
+  sourcePermissionsReady: boolean;
+  windowsWorkerReady: boolean;
+}>) {
   const [completed, setCompleted] = useState(() => new Set(completedCodes));
   const [status, setStatus] = useState(accepted ? 'Production onboarding accepted.' : '');
   const [testStatus, setTestStatus] = useState('');
@@ -239,7 +245,8 @@ export function OnboardingForm({
                 disabled={
                   code === 'production_acceptance' ||
                   accepted ||
-                  (code === 'source_permissions' && !sourcePermissionsReady)
+                  (code === 'source_permissions' && !sourcePermissionsReady) ||
+                  (code === 'windows_worker' && !windowsWorkerReady)
                 }
                 onChange={(event) => void toggle(code, event.target.checked)}
               />{' '}
@@ -258,6 +265,12 @@ export function OnboardingForm({
                     This item is locked until Data Sources shows at least one active source with a
                     fresh successful sync or snapshot. Review that evidence before marking it
                     complete.
+                  </p>
+                ) : null}
+                {code === 'windows_worker' && !windowsWorkerReady && !completed.has(code) ? (
+                  <p role="status">
+                    This item is locked until Devices shows a recent heartbeat and a verified
+                    lightweight smoke scan. The server will reject an unaudited completion.
                   </p>
                 ) : null}
                 {code === 'gmail_test' && (

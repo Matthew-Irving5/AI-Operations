@@ -1,20 +1,31 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
+import { authenticateWorker, workerService } from "../_shared/worker-auth.ts";
 
-const service = createClient(
-  Deno.env.get("SUPABASE_URL") ?? "",
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-);
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
+const service = workerService;
+const json = (
+  body: unknown,
+  status = 200,
+  requestId: string = crypto.randomUUID(),
+) =>
+  new Response(
+    JSON.stringify({ ...(body as Record<string, unknown>), requestId }),
+    {
+      status,
+      headers: {
+        "content-type": "application/json",
+        "x-request-id": requestId,
+      },
+    },
+  );
 
 Deno.serve(async (request) => {
-  if (
-    request.method !== "POST" ||
-    request.headers.get("x-worker-secret") !== Deno.env.get("WORKER_SECRET")
-  ) return json({ code: "unauthorised" }, 401);
+  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+  if (request.method !== "POST") {
+    return json(
+      { code: "method_not_allowed", stage: "action_result" },
+      405,
+      requestId,
+    );
+  }
   const body = await request.json().catch(() => null) as
     | {
       deviceId?: string;
@@ -26,7 +37,21 @@ Deno.serve(async (request) => {
   if (
     !body?.deviceId || !body.manifestId || typeof body.success !== "boolean" ||
     (body.detail !== undefined && typeof body.detail !== "string")
-  ) return json({ code: "invalid_action_result" }, 400);
+  ) {
+    return json(
+      { code: "invalid_action_result", stage: "action_result" },
+      400,
+      requestId,
+    );
+  }
+  const auth = await authenticateWorker(request, body.deviceId);
+  if ("code" in auth) {
+    return json(
+      { code: auth.code, stage: "action_result" },
+      auth.code === "device_revoked" ? 403 : 401,
+      requestId,
+    );
+  }
   const result = await service.from("worker_action_manifests").update({
     consumed_at: new Date().toISOString(),
     execution_result: { success: body.success, detail: body.detail ?? null },
@@ -35,7 +60,11 @@ Deno.serve(async (request) => {
     null,
   ).gt("expires_at", new Date().toISOString()).select("plan_id").maybeSingle();
   if (result.error || !result.data) {
-    return json({ code: "manifest_unavailable" }, 409);
+    return json(
+      { code: "manifest_unavailable", stage: "action_result" },
+      409,
+      requestId,
+    );
   }
   if (!body.success) {
     await service.from("digital_plans").update({ status: "expired" }).eq(
@@ -43,5 +72,5 @@ Deno.serve(async (request) => {
       result.data.plan_id,
     ).eq("status", "approved");
   }
-  return json({ accepted: true });
+  return json({ accepted: true, stage: "action_result" }, 200, requestId);
 });

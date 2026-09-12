@@ -1,44 +1,73 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
-const service = createClient(
-  Deno.env.get("SUPABASE_URL") ?? "",
-  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-);
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
-const hash = async (value: string) =>
+import { createWorkerSecret, workerService } from "../_shared/worker-auth.ts";
+
+const json = (
+  body: unknown,
+  status = 200,
+  requestId: string = crypto.randomUUID(),
+) =>
+  new Response(
+    JSON.stringify({ ...(body as Record<string, unknown>), requestId }),
+    {
+      status,
+      headers: {
+        "content-type": "application/json",
+        "x-request-id": requestId,
+      },
+    },
+  );
+const digest = async (value: string) =>
   Array.from(
     new Uint8Array(
       await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
     ),
     (byte) => byte.toString(16).padStart(2, "0"),
   ).join("");
+
 Deno.serve(async (request) => {
-  if (
-    request.method !== "POST" ||
-    request.headers.get("x-worker-secret") !== Deno.env.get("WORKER_SECRET")
-  ) return json({ code: "unauthorised" }, 401);
+  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+  if (request.method !== "POST") {
+    return json(
+      { code: "method_not_allowed", stage: "pairing" },
+      405,
+      requestId,
+    );
+  }
   const body = await request.json().catch(() => null) as {
     deviceId?: string;
     pairingCode?: string;
   } | null;
-  const pairingCode = body?.pairingCode;
-  if (!body?.deviceId || !pairingCode || !/^[a-f0-9]{32}$/i.test(pairingCode)) {
-    return json({ code: "invalid_pairing" }, 400);
+  if (
+    !body?.deviceId || !body.pairingCode ||
+    !/^[a-f0-9]{32}$/i.test(body.pairingCode)
+  ) {
+    return json({ code: "invalid_pairing", stage: "pairing" }, 400, requestId);
   }
-  const { data, error } = await service.from("worker_devices").update({
+  const secret = await createWorkerSecret();
+  const { data, error } = await workerService.from("worker_devices").update({
     state: "paired",
     paired_at: new Date().toISOString(),
     pairing_hash: null,
     pairing_expires_at: null,
-  }).eq("id", body.deviceId).eq("state", "pending").eq(
+    worker_secret_hash: secret.hash,
+  }).eq("id", body.deviceId).eq("state", "pending").is(
+    "worker_secret_hash",
+    null,
+  ).eq(
     "pairing_hash",
-    await hash(pairingCode),
+    await digest(body.pairingCode),
   ).gt("pairing_expires_at", new Date().toISOString()).select("id")
     .maybeSingle();
-  return error || !data
-    ? json({ code: "pairing_rejected" }, 422)
-    : json({ paired: true });
+  if (error || !data) {
+    return json({ code: "pairing_rejected", stage: "pairing" }, 422, requestId);
+  }
+  return json(
+    {
+      paired: true,
+      deviceId: data.id,
+      workerSecret: secret.raw,
+      stage: "paired",
+    },
+    200,
+    requestId,
+  );
 });

@@ -10,7 +10,14 @@ const bodySchema = z.object({
   factorId: z.string().uuid(),
   code: z.string().regex(/^\d{6}$/),
   job: z
-    .enum(['apple_bridge', 'gmail_test', 'connection_revoke', 'connection_scope_change'])
+    .enum([
+      'apple_bridge',
+      'gmail_test',
+      'connection_revoke',
+      'connection_scope_change',
+      'worker_device_register',
+      'worker_device_revoke',
+    ])
     .optional(),
 });
 
@@ -65,7 +72,9 @@ export async function POST(request: Request) {
             ? 'gmail_test_notification'
             : parsed.data.job === 'connection_revoke'
               ? 'connection_revoke'
-              : 'connection_scope_change';
+              : parsed.data.job === 'connection_scope_change'
+                ? 'connection_scope_change'
+                : parsed.data.job;
       const { data: mfaGateId, error: gateError } = await elevated.rpc('create_mfa_action_gate', {
         p_action_key: actionKey,
       });

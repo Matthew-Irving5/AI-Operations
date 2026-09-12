@@ -19,7 +19,9 @@ export default async function MfaPage({
     requestedJob === 'apple_bridge' ||
     requestedJob === 'gmail_test' ||
     requestedJob === 'connection_revoke' ||
-    requestedJob === 'connection_scope_change'
+    requestedJob === 'connection_scope_change' ||
+    requestedJob === 'worker_device_register' ||
+    requestedJob === 'worker_device_revoke'
       ? requestedJob
       : undefined;
   return (

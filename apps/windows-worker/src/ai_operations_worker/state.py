@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,9 @@ class StateStore:
         )
         self._connection.execute(
             "create table if not exists completed_manifests (manifest_id text primary key, completed_at text not null)",
+        )
+        self._connection.execute(
+            "create table if not exists pending_results (id integer primary key autoincrement, payload text not null)",
         )
         self._connection.commit()
 
@@ -45,3 +49,20 @@ class StateStore:
         except sqlite3.IntegrityError:
             return False
         return True
+
+    def queue_result(self, payload: dict[str, object]) -> None:
+        self._connection.execute(
+            "insert into pending_results(payload) values (?)",
+            (json.dumps(payload, separators=(",", ":")),),
+        )
+        self._connection.commit()
+
+    def pending_results(self) -> list[tuple[int, dict[str, object]]]:
+        rows = self._connection.execute(
+            "select id, payload from pending_results order by id",
+        ).fetchall()
+        return [(int(row[0]), json.loads(row[1])) for row in rows]
+
+    def delete_result(self, result_id: int) -> None:
+        self._connection.execute("delete from pending_results where id = ?", (result_id,))
+        self._connection.commit()
