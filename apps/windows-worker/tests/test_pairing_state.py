@@ -3,6 +3,8 @@ from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from ai_operations_worker.client import ControlPlaneClient, WorkerConfiguration
+from ai_operations_worker.config import WorkerEndpoint
 from ai_operations_worker.identity import public_key_fingerprint
 from ai_operations_worker.state import StateStore
 
@@ -28,3 +30,17 @@ def test_offline_result_outbox_round_trip(tmp_path: Path) -> None:
     assert pending[0][1] == json.loads(json.dumps(payload))
     store.delete_result(pending[0][0])
     assert store.pending_results() == []
+
+
+def test_read_only_worker_can_start_without_action_manifest_key(tmp_path: Path) -> None:
+    client = ControlPlaneClient(WorkerConfiguration(
+        endpoint=WorkerEndpoint("https://example.supabase.co/functions/v1"),
+        worker_secret="secret",
+        device_id="device-1",
+        state_path=tmp_path / "state.sqlite",
+        key_path=tmp_path / "worker.key.dpapi",
+        manifest_public_key_b64="",
+        allowed_roots=(tmp_path,),
+        quarantine_root=tmp_path / "quarantine",
+    ))
+    assert client.config.manifest_public_key_b64 == ""
