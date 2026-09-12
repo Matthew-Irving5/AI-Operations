@@ -1,5 +1,5 @@
 begin;
-select plan(30);
+select plan(36);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password,
   email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -53,6 +53,18 @@ select ok((select relrowsecurity from pg_class where relname = 'google_sync_requ
   'manual Google sync requests have RLS');
 select ok(not has_table_privilege('authenticated', 'public.google_sync_requests', 'INSERT'),
   'manual Google sync idempotency rows are not directly writable by the browser');
+select ok(has_table_privilege('service_role', 'public.google_sync_requests', 'INSERT'),
+  'service role can claim manual Google sync requests');
+select ok(has_table_privilege('service_role', 'public.google_sync_requests', 'UPDATE'),
+  'service role can settle manual Google sync requests');
+select ok(has_table_privilege('service_role', 'public.integration_cursors', 'UPDATE'),
+  'service role can persist Google sync cursors');
+select ok(has_table_privilege('service_role', 'public.google_messages', 'INSERT'),
+  'service role can persist Gmail records');
+select ok(has_table_privilege('service_role', 'public.calendar_events', 'INSERT'),
+  'service role can persist Calendar records');
+select ok(has_table_privilege('service_role', 'public.google_drive_files', 'INSERT'),
+  'service role can persist Drive records');
 select ok(not has_table_privilege('authenticated', 'public.connection_credentials', 'SELECT'),
   'encrypted Google credentials are never readable by the browser');
 
