@@ -6,6 +6,16 @@ const remediationByCode: Record<string, string> = {
   method_not_allowed: "Call the device-register function with POST.",
   unauthorised:
     "Provide the authenticated AAL2 bearer session from the web registration flow.",
+  auth_user_lookup_failed:
+    "Sign in again so the registration request carries a valid Supabase access token.",
+  authenticated_identity_missing:
+    "Sign in again and complete fresh MFA before returning to Devices.",
+  account_not_allowed:
+    "Sign in as the allowlisted production account before registering a worker.",
+  assurance_lookup_failed:
+    "Refresh the session and complete fresh MFA again; the server could not inspect assurance.",
+  assurance_not_aal2:
+    "Complete fresh MFA in this same browser session, then return to Devices immediately.",
   fresh_mfa_required:
     "Complete fresh MFA immediately before registering the worker.",
   invalid_device:
@@ -63,6 +73,20 @@ const json = (
     },
   );
 };
+const authErrorMetadata = (error: unknown) => {
+  if (!error || typeof error !== "object") {
+    return { providerStatus: "unknown", providerCode: "unknown" };
+  }
+  const record = error as Record<string, unknown>;
+  const providerStatus = typeof record.status === "number"
+    ? String(record.status)
+    : "unknown";
+  const rawCode = typeof record.code === "string" ? record.code : "unknown";
+  const providerCode = /^[A-Za-z0-9_-]{1,80}$/.test(rawCode)
+    ? rawCode
+    : "unknown";
+  return { providerStatus, providerCode };
+};
 const digest = async (value: string) =>
   Array.from(
     new Uint8Array(
@@ -91,21 +115,69 @@ Deno.serve(async (request) => {
   const caller = createClient(url, Deno.env.get("SUPABASE_ANON_KEY") ?? "", {
     global: { headers: { Authorization: token } },
   });
-  const [{ data: identity }, { data: assurance }] = await Promise.all([
-    caller.auth.getUser(),
-    caller.auth.mfa.getAuthenticatorAssuranceLevel(),
-  ]);
-  if (
-    !identity.user ||
-    identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com" ||
-    assurance?.currentLevel !== "aal2"
-  ) {
+  const { data: identity, error: identityError } = await caller.auth.getUser();
+  if (identityError) {
+    const { providerStatus, providerCode } = authErrorMetadata(identityError);
     return json(
       {
-        code: "fresh_mfa_required",
+        code: "auth_user_lookup_failed",
+        stage: "auth_user_lookup",
+        detail:
+          `Supabase Auth rejected the worker registration bearer (provider_status=${providerStatus}, provider_code=${providerCode}).`,
+      },
+      401,
+      requestId,
+    );
+  }
+  if (!identity.user) {
+    return json(
+      {
+        code: "authenticated_identity_missing",
+        stage: "auth_user_lookup",
+        detail:
+          "Supabase Auth accepted the request shape but returned no authenticated user.",
+      },
+      401,
+      requestId,
+    );
+  }
+  if (identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com") {
+    return json(
+      {
+        code: "account_not_allowed",
+        stage: "allowlist_authorization",
+        detail:
+          "The authenticated identity is not the allowlisted production application account.",
+      },
+      403,
+      requestId,
+    );
+  }
+  const { data: assurance, error: assuranceError } = await caller.auth.mfa
+    .getAuthenticatorAssuranceLevel();
+  if (assuranceError) {
+    const { providerStatus, providerCode } = authErrorMetadata(assuranceError);
+    return json(
+      {
+        code: "assurance_lookup_failed",
+        stage: "aal2_lookup",
+        detail:
+          `Supabase Auth could not inspect MFA assurance (provider_status=${providerStatus}, provider_code=${providerCode}).`,
+      },
+      502,
+      requestId,
+    );
+  }
+  if (assurance?.currentLevel !== "aal2") {
+    const currentLevel = assurance?.currentLevel === "aal1"
+      ? "aal1"
+      : "unknown";
+    return json(
+      {
+        code: "assurance_not_aal2",
         stage: "aal2_authorization",
         detail:
-          "The bearer token was absent, not allowlisted, or did not contain AAL2 assurance.",
+          `The authenticated token has current assurance ${currentLevel}; aal2 is required for worker registration.`,
       },
       403,
       requestId,
