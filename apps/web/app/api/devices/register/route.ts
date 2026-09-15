@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireSameOrigin } from '../../../../lib/request-security';
-import { getAuthenticatedServerAccessToken } from '../../../../lib/supabase-server';
+import { getFreshAuthenticatedServerAccessToken } from '../../../../lib/supabase-server';
 
 const schema = z.object({
   label: z.string().trim().min(1).max(100),
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
       'request_validation',
       'The registration payload did not match the required label, public key, and MFA gate shape.',
     );
-  const accessToken = await getAuthenticatedServerAccessToken();
+  const accessToken = await getFreshAuthenticatedServerAccessToken();
   if (!accessToken)
     return errorResponse(
       requestId,
