@@ -45,7 +45,12 @@ pairing, revocation, heartbeat, and signed-result verification remain required.
    Set-Content 'C:\AI-Operations\SyntheticSafe\smoke-test.txt' 'AI Operations smoke test'
    ```
 
-7. Copy the executable to:
+7. Create its installation directory and copy the executable to:
+
+   ```powershell
+   New-Item -ItemType Directory -Force 'C:\Program Files\AI Operations'
+   Copy-Item '.\ai-operations-worker.exe' 'C:\Program Files\AI Operations\ai-operations-worker.exe'
+   ```
 
    ```text
    C:\Program Files\AI Operations\ai-operations-worker.exe
