@@ -40,15 +40,13 @@ export async function POST(request: Request) {
       body: JSON.stringify(parsed.data),
     },
   );
-  const body = (await response.json().catch(() => ({ code: 'registration_response_invalid' }))) as
-    | Record<string, unknown>
-    | null;
+  const body = (await response
+    .json()
+    .catch(() => ({ code: 'registration_response_invalid' }))) as Record<string, unknown> | null;
   const responseBody = {
     ...(body ?? { code: 'registration_response_invalid' }),
     requestId:
-      typeof body?.requestId === 'string' && body.requestId.length > 0
-        ? body.requestId
-        : requestId,
+      typeof body?.requestId === 'string' && body.requestId.length > 0 ? body.requestId : requestId,
   };
   return NextResponse.json(responseBody, {
     status: response.status,
