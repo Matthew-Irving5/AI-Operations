@@ -2,6 +2,32 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 
+const mfaGateStorageKey = 'mfa_job_gate';
+
+/**
+ * The MFA page and the resumed operation can be rendered in different tabs by
+ * mobile Safari/embedded browsers. Keep the one-time gate in both stores so a
+ * tab switch cannot silently drop a successfully-created server gate. The
+ * gate is short-lived and is still consumed and authorised server-side.
+ */
+function storeMfaGate(value: string) {
+  const stores: Storage[] = [];
+  for (const name of ['sessionStorage', 'localStorage'] as const) {
+    try {
+      stores.push(window[name]);
+    } catch {
+      // A storage backend can be unavailable in privacy/sandbox contexts.
+    }
+  }
+  for (const storage of stores) {
+    try {
+      storage.setItem(mfaGateStorageKey, value);
+    } catch {
+      // The resumed page reports this as a structured handoff failure.
+    }
+  }
+}
+
 export function MfaChallenge({
   factorId,
   returnTo = '/overview',
@@ -59,7 +85,7 @@ export function MfaChallenge({
       );
     }
     if (job && result?.mfaGateId) {
-      sessionStorage.setItem('mfa_job_gate', JSON.stringify({ job, id: result.mfaGateId }));
+      storeMfaGate(JSON.stringify({ job, id: result.mfaGateId }));
     }
     window.location.assign(returnTo);
   }

@@ -29,6 +29,52 @@ type ApiResult = {
 
 const registerKey = 'worker_device_register_intent';
 const revokeKey = 'worker_device_revoke_intent';
+const gateKey = 'mfa_job_gate';
+
+function storageStores(): Storage[] {
+  const stores: Storage[] = [];
+  for (const name of ['sessionStorage', 'localStorage'] as const) {
+    try {
+      stores.push(window[name]);
+    } catch {
+      // Try the other storage backend.
+    }
+  }
+  return stores;
+}
+
+function setHandoff(key: string, value: string) {
+  for (const storage of storageStores()) {
+    try {
+      storage.setItem(key, value);
+    } catch {
+      // The resumed page below reports a precise handoff error if storage is
+      // unavailable. Never put the pairing code or private key in storage.
+    }
+  }
+}
+
+function readHandoff(key: string): string | null {
+  for (const storage of storageStores()) {
+    try {
+      const value = storage.getItem(key);
+      if (value) return value;
+    } catch {
+      // Try the other storage backend.
+    }
+  }
+  return null;
+}
+
+function clearHandoff(key: string) {
+  for (const storage of storageStores()) {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // Best-effort cleanup only.
+    }
+  }
+}
 
 function errorText(body: ApiResult | null, status: number, stage: string) {
   const code = body?.code ?? `http_${status}`;
@@ -73,16 +119,15 @@ export function DeviceManager({
     const params = new URLSearchParams(window.location.search);
     const resume = params.get('resume');
     if (resume !== 'worker_register' && resume !== 'worker_revoke') return;
-    const rawGate = sessionStorage.getItem('mfa_job_gate');
-    sessionStorage.removeItem('mfa_job_gate');
-    const rawIntent = sessionStorage.getItem(
-      resume === 'worker_register' ? registerKey : revokeKey,
-    );
-    sessionStorage.removeItem(resume === 'worker_register' ? registerKey : revokeKey);
+    const intentKey = resume === 'worker_register' ? registerKey : revokeKey;
+    const rawGate = readHandoff(gateKey);
+    const rawIntent = readHandoff(intentKey);
     if (!rawGate || !rawIntent) {
       window.setTimeout(
         () =>
-          setMessage('MFA did not create a valid one-time device gate. Start the operation again.'),
+          setMessage(
+            `MFA succeeded, but the ${!rawGate ? 'one-time gate' : 'device registration intent'} was not available when Devices resumed (handoff_missing). The registration request was not sent. Start registration again in this same browser.`,
+          ),
         0,
       );
       return;
@@ -104,34 +149,48 @@ export function DeviceManager({
           resume === 'worker_register'
             ? { label: intent.label, publicKeyB64: intent.publicKeyB64, mfaGateId: gate.id }
             : { deviceId: intent.deviceId, mfaGateId: gate.id };
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        const result = (await response.json().catch(() => null)) as ApiResult | null;
-        if (!response.ok) {
-          setMessage(
-            errorText(
-              result,
-              response.status,
-              resume === 'worker_register' ? 'Registration' : 'Revocation',
-            ),
-          );
-          return;
-        }
-        if (resume === 'worker_register' && result?.device && result.pairingCode) {
-          setPairing({
-            deviceId: result.device.id,
-            code: result.pairingCode,
-            expiresAt: result.device.pairingExpiresAt,
+        const clientRequestId = crypto.randomUUID();
+        try {
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'x-client-request-id': clientRequestId,
+            },
+            body: JSON.stringify(body),
           });
+          const result = (await response.json().catch(() => null)) as ApiResult | null;
+          if (!response.ok) {
+            const requestId =
+              result?.requestId ?? response.headers.get('x-request-id') ?? undefined;
+            setMessage(
+              errorText(
+                requestId ? { ...(result ?? {}), requestId } : result,
+                response.status,
+                resume === 'worker_register' ? 'Registration' : 'Revocation',
+              ),
+            );
+            return;
+          }
+          clearHandoff(gateKey);
+          clearHandoff(intentKey);
+          if (resume === 'worker_register' && result?.device && result.pairingCode) {
+            setPairing({
+              deviceId: result.device.id,
+              code: result.pairingCode,
+              expiresAt: result.device.pairingExpiresAt,
+            });
+            setMessage(
+              'Registration succeeded. Pair the worker locally before the code expires, then refresh this page.',
+            );
+          } else {
+            setMessage('Device revoked. The worker will be rejected on its next request.');
+            router.refresh();
+          }
+        } catch {
           setMessage(
-            'Registration succeeded. Pair the worker locally before the code expires, then refresh this page.',
+            `${resume === 'worker_register' ? 'Registration' : 'Revocation'} request failed (network_error). Request ID: ${clientRequestId}. The one-time gate was preserved; refresh this page once to retry.`,
           );
-        } else {
-          setMessage('Device revoked. The worker will be rejected on its next request.');
-          router.refresh();
         }
       })();
     } catch {
@@ -144,14 +203,14 @@ export function DeviceManager({
 
   function startRegistration() {
     if (!label.trim() || !publicKey.trim()) return;
-    sessionStorage.setItem(registerKey, JSON.stringify({ label, publicKeyB64: publicKey.trim() }));
+    setHandoff(registerKey, JSON.stringify({ label, publicKeyB64: publicKey.trim() }));
     window.location.assign(
       '/mfa?returnTo=%2Fdevices%3Fresume%3Dworker_register&job=worker_device_register',
     );
   }
 
   function startRevoke(deviceId: string) {
-    sessionStorage.setItem(revokeKey, JSON.stringify({ deviceId }));
+    setHandoff(revokeKey, JSON.stringify({ deviceId }));
     window.location.assign(
       '/mfa?returnTo=%2Fdevices%3Fresume%3Dworker_revoke&job=worker_device_revoke',
     );
