@@ -65,6 +65,12 @@ export function MfaChallenge({
   }, [factorId]);
 
   const activeFactorId = factorId ?? enrolment?.factorId;
+  const workerReturnTo =
+    job === 'worker_device_register'
+      ? '/devices?resume=worker_register'
+      : job === 'worker_device_revoke'
+        ? '/devices?resume=worker_revoke'
+        : undefined;
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!activeFactorId) return;
@@ -87,7 +93,7 @@ export function MfaChallenge({
     if (job && result?.mfaGateId) {
       storeMfaGate(JSON.stringify({ job, id: result.mfaGateId }));
     }
-    window.location.assign(returnTo);
+    window.location.assign(workerReturnTo ?? returnTo);
   }
   return (
     <form className="card" onSubmit={submit}>

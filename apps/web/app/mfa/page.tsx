@@ -9,12 +9,8 @@ export default async function MfaPage({
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase.auth.mfa.listFactors();
   const verifiedFactor = data?.totp?.find((factor) => factor.status === 'verified');
-  const requestedReturnTo = (await searchParams).returnTo;
-  const returnTo =
-    requestedReturnTo?.startsWith('/') && !requestedReturnTo.startsWith('//')
-      ? requestedReturnTo
-      : '/overview';
-  const requestedJob = (await searchParams).job;
+  const params = await searchParams;
+  const requestedJob = params.job;
   const job =
     requestedJob === 'apple_bridge' ||
     requestedJob === 'gmail_test' ||
@@ -24,6 +20,18 @@ export default async function MfaPage({
     requestedJob === 'worker_device_revoke'
       ? requestedJob
       : undefined;
+  const requestedReturnTo = params.returnTo;
+  const workerReturnTo =
+    job === 'worker_device_register'
+      ? '/devices?resume=worker_register'
+      : job === 'worker_device_revoke'
+        ? '/devices?resume=worker_revoke'
+        : undefined;
+  const returnTo =
+    workerReturnTo ??
+    (requestedReturnTo?.startsWith('/') && !requestedReturnTo.startsWith('//')
+      ? requestedReturnTo
+      : '/overview');
   return (
     <main style={{ maxWidth: 480, paddingTop: '12vh' }}>
       <h1>Verify your identity</h1>
