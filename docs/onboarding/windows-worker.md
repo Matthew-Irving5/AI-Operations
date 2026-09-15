@@ -56,7 +56,11 @@ pairing, revocation, heartbeat, and signed-result verification remain required.
    C:\Program Files\AI Operations\ai-operations-worker.exe
    ```
 
-8. Generate the local identity:
+8. Run the identity, pairing, and task-install commands as the same Windows
+   user account. The key and secret are protected with user-scoped DPAPI;
+   do not run the worker as `SYSTEM` or switch accounts after pairing.
+
+   Generate the local identity:
 
    ```powershell
    & 'C:\Program Files\AI Operations\ai-operations-worker.exe' identity `
