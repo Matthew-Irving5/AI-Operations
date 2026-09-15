@@ -54,10 +54,11 @@ operator acceptance record.
 - The worker now generates an Ed25519 identity locally, protects its private key
   and per-device secret with Windows DPAPI, pairs once with a ten-minute code,
   queues failed submissions in SQLite, stops on revoked/invalid credentials, and
-  enforces HTTPS before startup. A signed-release workflow builds a PyInstaller
-  executable, requires production signing certificate secrets, verifies the
-  Authenticode signature, and publishes SHA-256 and provenance artifacts. The
-  scheduled-task installer contains no worker secret.
+  enforces HTTPS before startup. A release workflow builds a PyInstaller
+  executable and publishes SHA-256 and provenance artifacts. The provenance
+  records the commit and explicitly records `signed: false`; the private
+  deployment intentionally does not require a paid Authenticode certificate.
+  The scheduled-task installer contains no worker secret.
 - The Devices wizard keeps the public key and registration intent only long
   enough to complete fresh MFA, displays the one-time pairing code only in live
   component state, and exposes request IDs/stable stage codes for failures.
