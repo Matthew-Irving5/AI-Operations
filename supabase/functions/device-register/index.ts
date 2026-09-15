@@ -1,13 +1,59 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 
 const url = Deno.env.get("SUPABASE_URL") ?? "";
+const route = "/functions/v1/device-register";
+const remediationByCode: Record<string, string> = {
+  method_not_allowed: "Call the device-register function with POST.",
+  unauthorised:
+    "Provide the authenticated AAL2 bearer session from the web registration flow.",
+  fresh_mfa_required:
+    "Complete fresh MFA immediately before registering the worker.",
+  invalid_device:
+    "Provide a non-empty label, a base64 Ed25519 public key, and a valid MFA gate.",
+  invalid_mfa_gate:
+    "Start a new worker registration; the previous one-time gate is not usable.",
+  mfa_gate_wrong_user:
+    "Start registration while signed in as the allowlisted production user.",
+  mfa_gate_invalid_action:
+    "Start a new Windows worker registration from Devices.",
+  mfa_gate_expired:
+    "Start a new worker registration and submit it before the gate expires.",
+  mfa_gate_replayed:
+    "Start a new worker registration; one-time gates cannot be reused.",
+  device_registration_conflict:
+    "A worker with this identity already exists; use Devices to inspect or revoke it.",
+};
 const json = (
   body: unknown,
   status = 200,
   requestId: string = crypto.randomUUID(),
-) =>
-  new Response(
-    JSON.stringify({ ...(body as Record<string, unknown>), requestId }),
+) => {
+  const payload = body as Record<string, unknown>;
+  const code = typeof payload.code === "string" ? payload.code : undefined;
+  const stage = typeof payload.stage === "string"
+    ? payload.stage
+    : "device_registration";
+  const diagnostic = payload.diagnostic ??
+    (code
+      ? {
+        code,
+        stage,
+        httpStatus: status,
+        requestId,
+        route,
+        method: "POST",
+        detail:
+          "The device-register control-plane boundary rejected the request.",
+        remediation: remediationByCode[code] ??
+          "Use the request ID to inspect the device-register control-plane logs before retrying.",
+      }
+      : undefined);
+  return new Response(
+    JSON.stringify({
+      ...payload,
+      requestId,
+      ...(diagnostic ? { diagnostic } : {}),
+    }),
     {
       status,
       headers: {
@@ -16,6 +62,7 @@ const json = (
       },
     },
   );
+};
 const digest = async (value: string) =>
   Array.from(
     new Uint8Array(
@@ -31,7 +78,15 @@ Deno.serve(async (request) => {
   }
   const token = request.headers.get("authorization");
   if (!token?.startsWith("Bearer ")) {
-    return json({ code: "unauthorised" }, 401, requestId);
+    return json(
+      {
+        code: "unauthorised",
+        stage: "authorization",
+        detail: "The device-register function did not receive a bearer token.",
+      },
+      401,
+      requestId,
+    );
   }
   const caller = createClient(url, Deno.env.get("SUPABASE_ANON_KEY") ?? "", {
     global: { headers: { Authorization: token } },
@@ -46,7 +101,12 @@ Deno.serve(async (request) => {
     assurance?.currentLevel !== "aal2"
   ) {
     return json(
-      { code: "fresh_mfa_required", stage: "registration" },
+      {
+        code: "fresh_mfa_required",
+        stage: "aal2_authorization",
+        detail:
+          "The bearer token was absent, not allowlisted, or did not contain AAL2 assurance.",
+      },
       403,
       requestId,
     );
@@ -61,7 +121,12 @@ Deno.serve(async (request) => {
     !/^[A-Za-z0-9+/=]{40,100}$/.test(body.publicKeyB64 ?? "")
   ) {
     return json(
-      { code: "invalid_device", stage: "registration" },
+      {
+        code: "invalid_device",
+        stage: "request_validation",
+        detail:
+          "The label, public key, or MFA gate did not match the device registration contract.",
+      },
       400,
       requestId,
     );
@@ -93,7 +158,12 @@ Deno.serve(async (request) => {
     ].find((candidate) => message.includes(candidate)) ??
       "device_registration_failed";
     return json(
-      { code, stage: "registration" },
+      {
+        code,
+        stage: "database_gate_consume",
+        detail:
+          "The create_worker_device_from_mfa_gate database boundary rejected the one-time registration gate.",
+      },
       code === "fresh_mfa_required" ? 403 : 422,
       requestId,
     );
