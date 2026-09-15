@@ -22,7 +22,16 @@ type Scan = {
 
 type ApiResult = {
   code?: string;
+  stage?: string;
   requestId?: string;
+  diagnostic?: {
+    code?: string;
+    stage?: string;
+    httpStatus?: number;
+    requestId?: string;
+    detail?: string;
+    remediation?: string;
+  };
   device?: { id: string; pairingExpiresAt: string };
   pairingCode?: string;
 };
@@ -77,9 +86,20 @@ function clearHandoff(key: string) {
 }
 
 function errorText(body: ApiResult | null, status: number, stage: string) {
-  const code = body?.code ?? `http_${status}`;
-  const request = body?.requestId ? ` Request ID: ${body.requestId}.` : '';
-  return `${stage} failed (${code}).${request}`;
+  const diagnostic = body?.diagnostic;
+  const code = diagnostic?.code ?? body?.code ?? `http_${status}`;
+  const boundary = diagnostic?.stage ?? body?.stage ?? stage.toLowerCase();
+  const requestId = diagnostic?.requestId ?? body?.requestId ?? 'unavailable';
+  return [
+    `${stage} failed: ${code}`,
+    `stage=${boundary}`,
+    `status=${diagnostic?.httpStatus ?? status}`,
+    `requestId=${requestId}`,
+    diagnostic?.detail,
+    diagnostic?.remediation,
+  ]
+    .filter(Boolean)
+    .join(' | ');
 }
 
 export function DeviceManager({

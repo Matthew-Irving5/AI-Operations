@@ -82,12 +82,28 @@ export function MfaChallenge({
     const result = (await response.json().catch(() => null)) as {
       code?: string;
       mfaGateId?: string;
+      diagnostic?: {
+        code?: string;
+        stage?: string;
+        httpStatus?: number;
+        requestId?: string;
+        detail?: string;
+        remediation?: string;
+      };
     } | null;
     if (!response.ok) {
+      const diagnostic = result?.diagnostic;
       return setMessage(
-        result?.code === 'verification_failed'
-          ? 'Verification failed. Check the current code and try again.'
-          : `MFA request failed (${result?.code ?? `http_${response.status}`}).`,
+        [
+          `MFA failed: ${diagnostic?.code ?? result?.code ?? `http_${response.status}`}`,
+          diagnostic?.stage ? `stage=${diagnostic.stage}` : undefined,
+          `status=${diagnostic?.httpStatus ?? response.status}`,
+          `requestId=${diagnostic?.requestId ?? response.headers.get('x-request-id') ?? 'unavailable'}`,
+          diagnostic?.detail,
+          diagnostic?.remediation,
+        ]
+          .filter(Boolean)
+          .join(' | '),
       );
     }
     if (job && result?.mfaGateId) {
