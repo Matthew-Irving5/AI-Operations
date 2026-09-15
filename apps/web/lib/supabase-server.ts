@@ -53,3 +53,20 @@ export async function getAuthenticatedServerAccessToken(): Promise<string | null
   } = await client.auth.getSession();
   return session?.access_token ?? null;
 }
+
+/**
+ * Obtain a current access token for an operation that has just elevated MFA.
+ * A valid, older aal1 JWT can remain in an SSR cookie while the Auth session
+ * has already been upgraded to aal2. Refreshing here makes the token sent to
+ * the control plane reflect the current Auth session rather than that stale
+ * claim. If refresh is unavailable, retain the normal authenticated-session
+ * fallback so the caller still receives its structured authorization error.
+ */
+export async function getFreshAuthenticatedServerAccessToken(): Promise<string | null> {
+  const client = await createSupabaseServerClient();
+  const { data, error } = await client.auth.refreshSession();
+  if (!error && data.session?.access_token) {
+    return data.session.access_token;
+  }
+  return getAuthenticatedServerAccessToken();
+}
