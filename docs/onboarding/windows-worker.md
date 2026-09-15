@@ -1,36 +1,134 @@
-# Windows worker
+# Windows worker installation and pairing
 
-The worker is outbound-only: it never opens a listener or accepts remote shell commands. Install it from the signed `ai-operations-worker.exe` release artifact and verify its SHA-256 checksum and Authenticode signature before running it.
+This is a private, no-cost deployment. The executable is intentionally
+unsigned, so Windows may show “Unknown publisher”. Verify the SHA-256 checksum
+and provenance before running it. The provenance must contain the expected
+commit SHA and `signed: false`.
 
-1. Run `ai-operations-worker.exe identity --key-path <protected-path>`. The command creates the Ed25519 key in Windows DPAPI-protected storage and prints only the base64 public key and SHA-256 fingerprint.
-2. In Devices, click Register Windows worker, enter a label and the public key, then complete the fresh Microsoft Authenticator MFA flow. The site displays a one-time pairing code and device ID for ten minutes; it does not store the code in browser storage.
-3. Run `ai-operations-worker.exe pair --control-plane-url https://<project-ref>.supabase.co/functions/v1 --device-id <device-id> --pairing-code <one-time-code>`. Pairing returns a per-device worker secret and stores it with Windows DPAPI; it is never printed.
-4. From an elevated PowerShell prompt, install a scheduled background task. The repository helper writes only non-secret configuration and points the worker at the DPAPI secret file; it never puts the worker secret in a command line:
+The worker's security does not depend on Authenticode: its Ed25519 identity,
+DPAPI-protected private key, per-device secret, HTTPS-only transport, server
+pairing, revocation, heartbeat, and signed-result verification remain required.
+
+## Release and checksum
+
+1. Merge the release workflow change to `main`.
+2. Create and push a worker release tag, for example:
 
    ```powershell
-   .\install-worker-task.ps1 `
-     -WorkerPath 'C:\Program Files\AI Operations\ai-operations-worker.exe' `
-     -ControlPlaneUrl 'https://<project-ref>.supabase.co/functions/v1' `
-     -DeviceId '<device-id>' `
-     -KeyPath 'C:\ProgramData\AI-Operations\worker.key.dpapi' `
-     -SecretPath 'C:\ProgramData\AI-Operations\worker.secret.dpapi' `
-     -StatePath 'C:\ProgramData\AI-Operations\worker-state.sqlite' `
-     -AllowedRootsJson '["C:\\AI-Operations\\SyntheticSafe"]' `
-     -QuarantineRoot 'C:\ProgramData\AI-Operations\quarantine'
+   git tag worker-v0.2.0
+   git push origin worker-v0.2.0
    ```
 
-   `-ManifestPublicKeyB64` is optional for this checklist's read-only smoke
-   scan. Leave it unset until the server's manifest-signing public key has
-   been provisioned. If an action manifest is received while it is unset, the
-   worker rejects it and reports a signature failure; it never executes it.
-   Configure the approved public key before enabling any action-plan workflow.
+3. Open the resulting GitHub release and download:
+   - `ai-operations-worker.exe`;
+   - `ai-operations-worker.exe.sha256`;
+   - `ai-operations-worker.provenance.json`;
+   - `install-worker-task.ps1`.
+4. In PowerShell, from the download directory, calculate the checksum:
 
-   The task starts at Windows boot and retries bounded failures. Review the generated task and runner script before starting it. To remove it, run `Unregister-ScheduledTask -TaskName 'AI Operations Windows Worker'` and delete only the generated runner/configuration files after revocation.
+   ```powershell
+   (Get-FileHash '.\ai-operations-worker.exe' -Algorithm SHA256).Hash
+   ```
 
-5. Start the task and refresh Devices. The worker must show `online` with a recent heartbeat before a smoke scan is requested.
+   Compare it with the contents of `ai-operations-worker.exe.sha256`.
 
-State is held in local SQLite and the private Ed25519 key and worker secret are DPAPI-protected. Select only folders that are safe to inventory; cache, credential, browser, dependency, and virtual-environment paths are excluded by the worker even when nested in an allowed root.
+5. Open the provenance JSON and verify that `commit` is the release commit and
+   `signed` is `false`. Stop if either check fails.
 
-The worker can scan while connected, returns signed results, and leaves a requested scan waiting while offline. Results that cannot be submitted are retained in the local SQLite outbox for bounded retry. It executes only dashboard-approved, short-lived signed manifests. Every action checks its original hash and modified timestamp. Quarantine is reversible and retained for at least 30 days; ordinary deletion is never available.
+## Pair the PC
 
-For onboarding, use a synthetic safe folder and request one lightweight scan. The checklist item remains locked until the server has verified a paired device, a heartbeat received within 30 minutes, a completed lightweight scan, and a valid signed result. If pairing expires or the device is revoked, register a new public key; never reuse a pairing code.
+6. Create the protected worker directory and synthetic safe folder:
+
+   ```powershell
+   New-Item -ItemType Directory -Force 'C:\ProgramData\AI-Operations'
+   New-Item -ItemType Directory -Force 'C:\AI-Operations\SyntheticSafe'
+   Set-Content 'C:\AI-Operations\SyntheticSafe\smoke-test.txt' 'AI Operations smoke test'
+   ```
+
+7. Copy the executable to:
+
+   ```text
+   C:\Program Files\AI Operations\ai-operations-worker.exe
+   ```
+
+8. Generate the local identity:
+
+   ```powershell
+   & 'C:\Program Files\AI Operations\ai-operations-worker.exe' identity `
+     --key-path 'C:\ProgramData\AI-Operations\worker.key.dpapi'
+   ```
+
+   Keep only the displayed `publicKeyB64` value. Never share the private key
+   file. Success is JSON containing `publicKeyB64` and `fingerprintSha256`
+   without any private-key material.
+
+9. Log in to the AI Operations website and open **Devices**. If the session has
+   expired, sign in again before continuing.
+10. Click **Register Windows worker**.
+11. Enter `Windows PC` as the label and paste only `publicKeyB64`.
+12. Complete the fresh Microsoft Authenticator MFA challenge.
+13. Copy the displayed device ID and one-time pairing code. The code expires
+    after ten minutes and must not be reused.
+14. Pair immediately:
+
+```powershell
+& 'C:\Program Files\AI Operations\ai-operations-worker.exe' pair `
+  --control-plane-url 'https://epmgvknrydadzitzupzx.supabase.co/functions/v1' `
+  --device-id '<DEVICE_ID>' `
+  --pairing-code '<PAIRING_CODE>' `
+  --key-path 'C:\ProgramData\AI-Operations\worker.key.dpapi' `
+  --secret-path 'C:\ProgramData\AI-Operations\worker.secret.dpapi'
+```
+
+Success is `paired: true`. The worker secret must not be printed.
+
+## Install and start the scheduled task
+
+15. Open PowerShell as Administrator in the directory containing
+    `install-worker-task.ps1` and run:
+
+```powershell
+& '.\install-worker-task.ps1' `
+  -WorkerPath 'C:\Program Files\AI Operations\ai-operations-worker.exe' `
+  -ControlPlaneUrl 'https://epmgvknrydadzitzupzx.supabase.co/functions/v1' `
+  -DeviceId '<DEVICE_ID>' `
+  -KeyPath 'C:\ProgramData\AI-Operations\worker.key.dpapi' `
+  -SecretPath 'C:\ProgramData\AI-Operations\worker.secret.dpapi' `
+  -StatePath 'C:\ProgramData\AI-Operations\worker-state.sqlite' `
+  -AllowedRootsJson '["C:\\AI-Operations\\SyntheticSafe"]' `
+  -QuarantineRoot 'C:\ProgramData\AI-Operations\quarantine'
+```
+
+`-ManifestPublicKeyB64` is intentionally omitted for this read-only smoke
+scan. If an action manifest arrives without that key, the worker rejects it
+and never executes it. Configure the approved key before enabling action
+plans.
+
+16. Start the task:
+
+```powershell
+Start-ScheduledTask -TaskName 'AI Operations Windows Worker'
+```
+
+17. Return to **Devices** and refresh. Success requires `online`, a heartbeat
+    received within 30 minutes, and no secret or private key visible in the UI.
+
+## Smoke scan and checklist
+
+18. Open **Digital Estate** and request one lightweight read-only scan of:
+
+```text
+C:\AI-Operations\SyntheticSafe
+```
+
+19. Wait for progress to reach `100%` and status `complete`.
+20. Confirm the result is accepted and contains no absolute local paths.
+21. Open **Settings**. Click the Windows worker checklist item only after it
+    becomes enabled.
+
+The server unlocks the checklist only after verifying a non-revoked paired
+device, `paired_at`, a recent heartbeat, a completed lightweight scan, a valid
+Ed25519-signed result, inventory persistence, and evidence metadata. Invalid or
+expired pairing, wrong secrets, revocation, offline operation, malformed
+results, and invalid signatures remain fail-closed with a request ID and
+structured error.

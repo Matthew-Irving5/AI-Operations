@@ -23,24 +23,6 @@ jobs:
       - name: Build executable
         working-directory: apps/windows-worker
         run: pyinstaller --clean --onefile --name ai-operations-worker src/ai_operations_worker/__main__.py
-      - name: Require signing credentials
-        shell: pwsh
-        env:
-          WORKER_SIGNING_CERT_B64: ${{ secrets.WINDOWS_WORKER_SIGNING_CERT_B64 }}
-          WORKER_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_WORKER_SIGNING_CERT_PASSWORD }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:WORKER_SIGNING_CERT_B64) -or [string]::IsNullOrWhiteSpace($env:WORKER_SIGNING_CERT_PASSWORD)) {
-            throw 'Missing production signing credentials: WINDOWS_WORKER_SIGNING_CERT_B64 and WINDOWS_WORKER_SIGNING_CERT_PASSWORD'
-          }
-          [IO.File]::WriteAllBytes('worker-signing.pfx', [Convert]::FromBase64String($env:WORKER_SIGNING_CERT_B64))
-      - name: Sign executable
-        shell: pwsh
-        env:
-          WORKER_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_WORKER_SIGNING_CERT_PASSWORD }}
-        run: |
-          $signtool = (Get-ChildItem "$env:ProgramFiles\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1).FullName
-          & $signtool sign /fd SHA256 /f worker-signing.pfx /p $env:WORKER_SIGNING_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 apps/windows-worker/dist/ai-operations-worker.exe
-          & $signtool verify /pa /all apps/windows-worker/dist/ai-operations-worker.exe
       - name: Create checksum
         shell: pwsh
         run: |
@@ -51,8 +33,12 @@ jobs:
             sha256 = $hash
             commit = '${{ github.sha }}'
             tag = '${{ github.ref_name }}'
-            signed = $true
+            signed = $false
+            signing = 'unsigned_private_deployment'
           } | ConvertTo-Json | Set-Content apps/windows-worker/dist/ai-operations-worker.provenance.json
+          $provenance = Get-Content apps/windows-worker/dist/ai-operations-worker.provenance.json | ConvertFrom-Json
+          if ($provenance.signed -ne $false) { throw 'Unsigned release provenance must contain signed: false' }
+          if ($provenance.commit -ne '${{ github.sha }}') { throw 'Release provenance commit does not match the build commit' }
       - uses: actions/upload-artifact@v4
         with:
           name: ai-operations-windows-worker-${{ github.sha }}
