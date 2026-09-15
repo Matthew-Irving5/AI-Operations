@@ -83,7 +83,11 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.device-register]
-verify_jwt = true
+# The function validates the bearer with Supabase Auth and enforces AAL2
+# itself. Keeping gateway JWT verification off ensures malformed or missing
+# credentials receive the function's structured diagnostic envelope instead
+# of an opaque gateway response.
+verify_jwt = false
 
 [functions.device-revoke]
 verify_jwt = true
