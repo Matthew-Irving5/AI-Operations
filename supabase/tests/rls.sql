@@ -1,5 +1,5 @@
 begin;
-select plan(106);
+select plan(107);
 
 select ok(
   not exists (
@@ -131,6 +131,7 @@ select ok(has_table_privilege('service_role', 'public.oauth_states', 'INSERT'), 
 select ok(has_table_privilege('service_role', 'public.oauth_states', 'UPDATE'), 'OAuth callback can consume state through the service role');
 select ok(has_table_privilege('service_role', 'public.connection_credentials', 'INSERT'), 'OAuth callback can persist encrypted credentials through the service role');
 select ok(has_table_privilege('service_role', 'public.audit_events', 'INSERT'), 'OAuth callback can record its audit event through the service role');
+select ok(has_table_privilege('service_role', 'public.workflow_definitions', 'SELECT'), 'Digital scan workflow lookup is available to the service role');
 select is(public.production_onboarding_complete('00000000-0000-0000-0000-000000000101'), false, 'Schedules remain gated until the preliminary onboarding steps are recorded');
 select ok((select relrowsecurity from pg_class where relname='edge_request_windows' and relnamespace = 'public'::regnamespace), 'Edge rate windows have RLS enabled');
 select is(public.consume_edge_request_quota('00000000-0000-0000-0000-000000000101', 'test_quota', 1), true, 'First rate-limited request is accepted');

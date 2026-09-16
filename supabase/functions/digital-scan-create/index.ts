@@ -161,15 +161,24 @@ Deno.serve(async (request) => {
       requestId,
     );
   }
+  const workflowCode = body.scanKind === "deep"
+    ? "digital-estate-deep-scan"
+    : "digital-estate-lightweight";
   const workflow = await service.from("workflow_definitions").select("id").eq(
     "code",
-    body.scanKind === "deep"
-      ? "digital-estate-deep-scan"
-      : "digital-estate-lightweight",
+    workflowCode,
   ).single();
   if (workflow.error || !workflow.data?.id) {
     return json(
-      { code: "workflow_definition_missing", stage: "workflow_lookup" },
+      {
+        code: "workflow_definition_missing",
+        stage: "workflow_lookup",
+        detail: workflow.error
+          ? `Database lookup for workflow definition "${workflowCode}" failed (${
+            workflow.error.code ?? "unknown"
+          }).`
+          : `No workflow definition named "${workflowCode}" exists in the control plane.`,
+      },
       500,
       requestId,
     );
