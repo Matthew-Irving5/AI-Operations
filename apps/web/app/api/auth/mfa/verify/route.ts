@@ -17,6 +17,7 @@ const bodySchema = z.object({
       'connection_scope_change',
       'worker_device_register',
       'worker_device_revoke',
+      'digital_scan_create',
     ])
     .optional(),
 });

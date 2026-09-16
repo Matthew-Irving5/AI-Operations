@@ -124,7 +124,9 @@ Start-ScheduledTask -TaskName 'AI Operations Windows Worker'
 
 ## Smoke scan and checklist
 
-18. Open **Digital Estate** and request one lightweight read-only scan of:
+18. Open **Digital Estate**, enter the synthetic root, and request one
+    lightweight read-only scan. The site will require a fresh Microsoft
+    Authenticator check before it queues the scan. Use:
 
 ```text
 C:\AI-Operations\SyntheticSafe

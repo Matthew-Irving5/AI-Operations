@@ -1,5 +1,5 @@
 begin;
-select plan(105);
+select plan(106);
 
 select ok(
   not exists (
@@ -107,6 +107,10 @@ select ok(exists(select 1 from pg_proc where proname = 'revoke_worker_device_fro
 select ok(
   position('is_allowed_aal2' in pg_get_functiondef('public.create_mfa_action_gate(text)'::regprocedure)) > 0,
   'MFA action gates can only be created from an AAL2 session'
+);
+select ok(
+  position('digital_scan_create' in pg_get_functiondef('public.create_mfa_action_gate(text)'::regprocedure)) > 0,
+  'Read-only Digital Estate scans have a named one-time MFA gate'
 );
 select ok(
   position('is_allowed_aal2' in pg_get_functiondef('public.create_worker_device_from_mfa_gate(uuid,text,text,text,timestamptz)'::regprocedure)) = 0,

@@ -19,6 +19,7 @@ const bodySchema = z.object({
   hardCapUsd: z.number().positive().max(1000),
   searchCeiling: z.number().int().min(0).max(20),
   idempotencyKey: z.string().regex(/^[a-z0-9][a-z0-9:_-]{7,127}$/i),
+  mfaGateId: z.string().uuid(),
 });
 
 export async function POST(request: Request) {
@@ -37,19 +38,57 @@ export async function POST(request: Request) {
       { code: 'unauthorised', stage: 'scan_create', requestId },
       { status: 401, headers: { 'x-request-id': requestId } },
     );
-  const response = await fetch(
-    new URL('/functions/v1/digital-scan-create', process.env.NEXT_PUBLIC_SUPABASE_URL).toString(),
-    {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${accessToken}`,
-        'content-type': 'application/json',
-        'x-request-id': requestId,
+  let response: Response;
+  try {
+    response = await fetch(
+      new URL('/functions/v1/digital-scan-create', process.env.NEXT_PUBLIC_SUPABASE_URL).toString(),
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          'content-type': 'application/json',
+          'x-request-id': requestId,
+        },
+        body: JSON.stringify(body.data),
       },
-      body: JSON.stringify(body.data),
+    );
+  } catch {
+    return NextResponse.json(
+      {
+        code: 'scan_control_plane_unreachable',
+        stage: 'control_plane_fetch',
+        requestId,
+        diagnostic: {
+          code: 'scan_control_plane_unreachable',
+          stage: 'control_plane_fetch',
+          httpStatus: 502,
+          requestId,
+          route: '/api/digital-estate/scans',
+          method: 'POST',
+          detail: 'The web route could not reach the Supabase digital-scan-create function.',
+          remediation:
+            'Retry once; if it persists, use the request ID to inspect deployment health.',
+        },
+      },
+      { status: 502, headers: { 'x-request-id': requestId } },
+    );
+  }
+  const payload = await response.json().catch(() => ({
+    code: 'scan_control_plane_invalid_response',
+    stage: 'control_plane_response',
+    requestId,
+    diagnostic: {
+      code: 'scan_control_plane_invalid_response',
+      stage: 'control_plane_response',
+      httpStatus: response.status,
+      requestId,
+      route: '/api/digital-estate/scans',
+      method: 'POST',
+      detail: 'The Supabase digital-scan-create function returned a non-JSON response.',
+      remediation: 'Use the request ID to inspect the Edge Function deployment logs.',
     },
-  );
-  return NextResponse.json(await response.json(), {
+  }));
+  return NextResponse.json(payload, {
     status: response.status,
     headers: { 'x-request-id': requestId },
   });
