@@ -104,6 +104,18 @@ select ok(not has_table_privilege('authenticated', 'public.worker_devices', 'INS
 select ok(not has_table_privilege('authenticated', 'public.worker_devices', 'UPDATE'), 'Authenticated sessions cannot rotate worker credentials directly');
 select ok(exists(select 1 from pg_proc where proname = 'create_worker_device_from_mfa_gate'), 'Worker registration requires a database MFA gate');
 select ok(exists(select 1 from pg_proc where proname = 'revoke_worker_device_from_mfa_gate'), 'Worker revocation requires a database MFA gate');
+select ok(
+  position('is_allowed_aal2' in pg_get_functiondef('public.create_mfa_action_gate(text)'::regprocedure)) > 0,
+  'MFA action gates can only be created from an AAL2 session'
+);
+select ok(
+  position('is_allowed_aal2' in pg_get_functiondef('public.create_worker_device_from_mfa_gate(uuid,text,text,text,timestamptz)'::regprocedure)) = 0,
+  'Worker registration consumes the user-bound one-time gate after browser redirect'
+);
+select ok(
+  position('is_allowed_aal2' in pg_get_functiondef('public.revoke_worker_device_from_mfa_gate(uuid,uuid)'::regprocedure)) = 0,
+  'Worker revocation consumes the user-bound one-time gate after browser redirect'
+);
 select ok(exists(select 1 from information_schema.columns where table_schema='public' and table_name='digital_scans' and column_name='result_verified_at'), 'Digital scans record server-verified result evidence');
 select ok((select relrowsecurity from pg_class where relname='worker_heartbeats' and relnamespace = 'public'::regnamespace), 'Worker heartbeat history has RLS enabled');
 select ok((select relrowsecurity from pg_class where relname='storage_forecasts' and relnamespace = 'public'::regnamespace), 'Storage forecasts have RLS enabled');

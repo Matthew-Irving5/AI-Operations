@@ -33,22 +33,18 @@ Deno.serve(async (request) => {
   const caller = createClient(url, Deno.env.get("SUPABASE_ANON_KEY") ?? "", {
     global: { headers: { Authorization: token } },
   });
-  const [{ data: identity }, { data: assurance }] = await Promise.all([
-    caller.auth.getUser(),
-    caller.auth.mfa.getAuthenticatorAssuranceLevel(),
-  ]);
+  const { data: identity } = await caller.auth.getUser();
   if (
     !identity.user ||
-    identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com" ||
-    assurance?.currentLevel !== "aal2"
+    identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com"
   ) {
     return json(
-      { code: "fresh_mfa_required", stage: "revocation" },
-      403,
+      { code: "unauthorised", stage: "authenticated_identity" },
+      401,
       requestId,
     );
   }
-  const body = await request.json().catch(() => null) as {
+  const body = (await request.json().catch(() => null)) as {
     deviceId?: string;
     mfaGateId?: string;
   } | null;

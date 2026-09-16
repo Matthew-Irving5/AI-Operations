@@ -5,17 +5,13 @@ const route = "/functions/v1/device-register";
 const remediationByCode: Record<string, string> = {
   method_not_allowed: "Call the device-register function with POST.",
   unauthorised:
-    "Provide the authenticated AAL2 bearer session from the web registration flow.",
+    "Sign in as the allowlisted account and resume the registration flow in the same browser session.",
   auth_user_lookup_failed:
     "Sign in again so the registration request carries a valid Supabase access token.",
   authenticated_identity_missing:
     "Sign in again and complete fresh MFA before returning to Devices.",
   account_not_allowed:
     "Sign in as the allowlisted production account before registering a worker.",
-  assurance_lookup_failed:
-    "Refresh the session and complete fresh MFA again; the server could not inspect assurance.",
-  assurance_not_aal2:
-    "Complete fresh MFA in this same browser session, then return to Devices immediately.",
   fresh_mfa_required:
     "Complete fresh MFA immediately before registering the worker.",
   invalid_device:
@@ -153,43 +149,18 @@ Deno.serve(async (request) => {
       requestId,
     );
   }
-  const { data: assurance, error: assuranceError } = await caller.auth.mfa
-    .getAuthenticatorAssuranceLevel();
-  if (assuranceError) {
-    const { providerStatus, providerCode } = authErrorMetadata(assuranceError);
-    return json(
-      {
-        code: "assurance_lookup_failed",
-        stage: "aal2_lookup",
-        detail:
-          `Supabase Auth could not inspect MFA assurance (provider_status=${providerStatus}, provider_code=${providerCode}).`,
-      },
-      502,
-      requestId,
-    );
-  }
-  if (assurance?.currentLevel !== "aal2") {
-    const currentLevel = assurance?.currentLevel === "aal1"
-      ? "aal1"
-      : "unknown";
-    return json(
-      {
-        code: "assurance_not_aal2",
-        stage: "aal2_authorization",
-        detail:
-          `The authenticated token has current assurance ${currentLevel}; aal2 is required for worker registration.`,
-      },
-      403,
-      requestId,
-    );
-  }
-  const body = await request.json().catch(() => null) as {
+  // The one-time MFA gate is the elevation proof for the resumed request.
+  // The browser may legitimately present the pre-MFA AAL1 cookie after the
+  // redirect; the database RPC binds and consumes the gate against auth.uid().
+  const body = (await request.json().catch(() => null)) as {
     label?: string;
     publicKeyB64?: string;
     mfaGateId?: string;
   } | null;
   if (
-    !body?.label || body.label.trim().length > 100 || !body.mfaGateId ||
+    !body?.label ||
+    body.label.trim().length > 100 ||
+    !body.mfaGateId ||
     !/^[A-Za-z0-9+/=]{40,100}$/.test(body.publicKeyB64 ?? "")
   ) {
     return json(
