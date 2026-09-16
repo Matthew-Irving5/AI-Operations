@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { removeScanResumeParam } from './scan-form-utils';
 
 const intentKey = 'digital_scan_create_intent';
 const gateKey = 'mfa_job_gate';
@@ -107,6 +108,10 @@ export function DigitalScanForm({ deviceId }: Readonly<{ deviceId: string }>) {
       if (response.ok) {
         clearHandoff(intentKey);
         clearHandoff(gateKey);
+        // The resume marker is only for the one-time MFA return. Leaving it in
+        // the URL makes a later normal refresh replay the handoff and report a
+        // false missing-intent error after the request has already succeeded.
+        window.history.replaceState(null, '', removeScanResumeParam(window.location.href));
         setStatus(
           result?.replay
             ? 'This scan request was already queued; no duplicate was created.'
