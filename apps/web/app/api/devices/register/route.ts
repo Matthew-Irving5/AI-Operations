@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireSameOrigin } from '../../../../lib/request-security';
-import { getFreshAuthenticatedServerAccessToken } from '../../../../lib/supabase-server';
+import { getAuthenticatedServerAccessToken } from '../../../../lib/supabase-server';
 
 const schema = z.object({
   label: z.string().trim().min(1).max(100),
@@ -64,14 +64,14 @@ export async function POST(request: Request) {
       'request_validation',
       'The registration payload did not match the required label, public key, and MFA gate shape.',
     );
-  const accessToken = await getFreshAuthenticatedServerAccessToken();
+  const accessToken = await getAuthenticatedServerAccessToken();
   if (!accessToken)
     return errorResponse(
       requestId,
       'unauthorised',
       401,
       'authenticated_session',
-      'The registration route could not obtain an authenticated AAL2 session from the browser cookies.',
+      'The registration route could not obtain an authenticated browser session.',
     );
   let response: Response;
   try {
