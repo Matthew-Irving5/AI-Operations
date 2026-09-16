@@ -17,7 +17,8 @@ export default async function MfaPage({
     requestedJob === 'connection_revoke' ||
     requestedJob === 'connection_scope_change' ||
     requestedJob === 'worker_device_register' ||
-    requestedJob === 'worker_device_revoke'
+    requestedJob === 'worker_device_revoke' ||
+    requestedJob === 'digital_scan_create'
       ? requestedJob
       : undefined;
   const requestedReturnTo = params.returnTo;

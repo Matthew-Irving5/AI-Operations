@@ -41,7 +41,8 @@ export function MfaChallenge({
     | 'connection_revoke'
     | 'connection_scope_change'
     | 'worker_device_register'
-    | 'worker_device_revoke';
+    | 'worker_device_revoke'
+    | 'digital_scan_create';
 }) {
   const [code, setCode] = useState('');
   const [message, setMessage] = useState('');
@@ -71,6 +72,8 @@ export function MfaChallenge({
       : job === 'worker_device_revoke'
         ? '/devices?resume=worker_revoke'
         : undefined;
+  const scanReturnTo =
+    job === 'digital_scan_create' ? '/digital-estate?resume=scan_create' : undefined;
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!activeFactorId) return;
@@ -109,7 +112,7 @@ export function MfaChallenge({
     if (job && result?.mfaGateId) {
       storeMfaGate(JSON.stringify({ job, id: result.mfaGateId }));
     }
-    window.location.assign(workerReturnTo ?? returnTo);
+    window.location.assign(workerReturnTo ?? scanReturnTo ?? returnTo);
   }
   return (
     <form className="card" onSubmit={submit}>
