@@ -234,7 +234,13 @@ Deno.serve(async (request) => {
   }).eq("run_id", runId).eq("status", "queued");
   if (queueError) {
     return json(
-      { code: "scan_queue_initialisation_failed", stage: "queue" },
+      {
+        code: "scan_queue_initialisation_failed",
+        stage: "queue",
+        detail: `Database queue initialisation failed (${
+          queueError.code ?? "unknown"
+        }).`,
+      },
       500,
       requestId,
     );
