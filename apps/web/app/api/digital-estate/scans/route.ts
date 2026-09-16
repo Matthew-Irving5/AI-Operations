@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { z } from 'zod';
 import { requireSameOrigin } from '../../../../lib/request-security';
 import { getAuthenticatedServerAccessToken } from '../../../../lib/supabase-server';
+
+const digitalScanGateCookie = 'aiops_mfa_gate_digital_scan_create';
 
 const bodySchema = z.object({
   deviceId: z.string().uuid(),
@@ -19,7 +22,7 @@ const bodySchema = z.object({
   hardCapUsd: z.number().positive().max(1000),
   searchCeiling: z.number().int().min(0).max(20),
   idempotencyKey: z.string().regex(/^[a-z0-9][a-z0-9:_-]{7,127}$/i),
-  mfaGateId: z.string().uuid(),
+  mfaGateId: z.string().uuid().optional(),
 });
 
 export async function POST(request: Request) {
@@ -32,6 +35,29 @@ export async function POST(request: Request) {
       { code: 'invalid_scan_request', stage: 'scan_create', requestId },
       { status: 400, headers: { 'x-request-id': requestId } },
     );
+  const cookieStore = await cookies();
+  const cookieGateId = cookieStore.get(digitalScanGateCookie)?.value;
+  const mfaGateId = body.data.mfaGateId ?? cookieGateId;
+  if (!mfaGateId || !z.string().uuid().safeParse(mfaGateId).success) {
+    return NextResponse.json(
+      {
+        code: 'handoff_missing',
+        stage: 'mfa_handoff',
+        requestId,
+        diagnostic: {
+          code: 'handoff_missing',
+          stage: 'mfa_handoff',
+          httpStatus: 400,
+          requestId,
+          route: '/api/digital-estate/scans',
+          method: 'POST',
+          detail: 'The scan intent resumed without a valid one-time MFA gate.',
+          remediation: 'Start the scan again in this same browser and complete fresh MFA.',
+        },
+      },
+      { status: 400, headers: { 'x-request-id': requestId } },
+    );
+  }
   const accessToken = await getAuthenticatedServerAccessToken();
   if (!accessToken)
     return NextResponse.json(
@@ -49,7 +75,7 @@ export async function POST(request: Request) {
           'content-type': 'application/json',
           'x-request-id': requestId,
         },
-        body: JSON.stringify(body.data),
+        body: JSON.stringify({ ...body.data, mfaGateId }),
       },
     );
   } catch {
@@ -88,8 +114,10 @@ export async function POST(request: Request) {
       remediation: 'Use the request ID to inspect the Edge Function deployment logs.',
     },
   }));
-  return NextResponse.json(payload, {
+  const result = NextResponse.json(payload, {
     status: response.status,
     headers: { 'x-request-id': requestId },
   });
+  if (response.ok) result.cookies.delete(digitalScanGateCookie);
+  return result;
 }

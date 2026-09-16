@@ -112,6 +112,11 @@ export function MfaChallenge({
     if (job && result?.mfaGateId) {
       storeMfaGate(JSON.stringify({ job, id: result.mfaGateId }));
     }
+    if (job && !result?.mfaGateId) {
+      return setMessage(
+        'MFA succeeded, but the server did not return the one-time operation gate (mfa_gate_not_returned). Start the operation again in this browser; no operation was submitted.',
+      );
+    }
     window.location.assign(workerReturnTo ?? scanReturnTo ?? returnTo);
   }
   return (

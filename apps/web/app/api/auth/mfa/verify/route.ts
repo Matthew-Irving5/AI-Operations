@@ -23,6 +23,7 @@ const bodySchema = z.object({
 });
 
 const route = '/api/auth/mfa/verify';
+const digitalScanGateCookie = 'aiops_mfa_gate_digital_scan_create';
 
 function diagnosticResponse(
   requestId: string,
@@ -160,7 +161,7 @@ export async function POST(request: Request) {
           'MFA succeeded, but the one-time worker action gate was not created.',
           'Do not retry repeatedly; the server did not authorise the worker operation. Refresh and start a new registration once.',
         );
-      return NextResponse.json(
+      const response = NextResponse.json(
         {
           aal: 'aal2',
           mfaGateId,
@@ -178,6 +179,18 @@ export async function POST(request: Request) {
         },
         { headers: { 'x-request-id': requestId } },
       );
+      if (actionKey === 'digital_scan_create') {
+        response.cookies.set({
+          name: digitalScanGateCookie,
+          value: mfaGateId,
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: 5 * 60,
+          path: '/',
+        });
+      }
+      return response;
     }
 
     return NextResponse.json(

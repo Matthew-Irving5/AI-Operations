@@ -92,7 +92,7 @@ export function DigitalScanForm({ deviceId }: Readonly<{ deviceId: string }>) {
   const [scanKind, setScanKind] = useState<'lightweight' | 'deep'>('lightweight');
   const [status, setStatus] = useState('');
 
-  async function submitWithGate(intent: ScanIntent, mfaGateId: string) {
+  async function submitWithGate(intent: ScanIntent, mfaGateId?: string) {
     const requestId = crypto.randomUUID();
     try {
       const response = await fetch('/api/digital-estate/scans', {
@@ -101,7 +101,7 @@ export function DigitalScanForm({ deviceId }: Readonly<{ deviceId: string }>) {
           'content-type': 'application/json',
           'x-client-request-id': requestId,
         },
-        body: JSON.stringify({ ...intent, mfaGateId }),
+        body: JSON.stringify(mfaGateId ? { ...intent, mfaGateId } : intent),
       });
       const result = (await response.json().catch(() => null)) as ApiResult | null;
       if (response.ok) {
@@ -125,23 +125,27 @@ export function DigitalScanForm({ deviceId }: Readonly<{ deviceId: string }>) {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('resume') !== 'scan_create') return;
-    const rawGate = readHandoff(gateKey);
     const rawIntent = readHandoff(intentKey);
-    if (!rawGate || !rawIntent) {
+    if (!rawIntent) {
       window.setTimeout(
         () =>
           setStatus(
-            `Scan MFA succeeded, but the ${!rawGate ? 'one-time gate' : 'scan request'} was not available when Digital Estate resumed (handoff_missing). Start the scan again in this same browser.`,
+            'Scan MFA succeeded, but the scan request was not available when Digital Estate resumed (handoff_missing). Start the scan again in this same browser.',
           ),
         0,
       );
       return;
     }
     try {
-      const gate = JSON.parse(rawGate) as { job?: string; id?: string };
       const intent = JSON.parse(rawIntent) as ScanIntent;
-      if (gate.job !== 'digital_scan_create' || !gate.id) throw new Error('invalid_gate');
-      window.setTimeout(() => void submitWithGate(intent, gate.id!), 0);
+      const rawGate = readHandoff(gateKey);
+      let gateId: string | undefined;
+      if (rawGate) {
+        const gate = JSON.parse(rawGate) as { job?: string; id?: string };
+        if (gate.job !== 'digital_scan_create' || !gate.id) throw new Error('invalid_gate');
+        gateId = gate.id;
+      }
+      window.setTimeout(() => void submitWithGate(intent, gateId), 0);
     } catch {
       window.setTimeout(
         () => setStatus('The saved scan operation was invalid. Start the scan again.'),
