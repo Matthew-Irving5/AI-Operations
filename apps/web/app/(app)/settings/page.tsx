@@ -1,16 +1,18 @@
 import {
   digitalEstateData,
   onboardingData,
+  personalProfileReadinessData,
   sourcePermissionsData,
 } from '../../../lib/platform-data';
 import { OnboardingForm } from './onboarding-form';
 import { freshnessLabel } from '../data-sources/source-permissions';
 
 export default async function SettingsPage() {
-  const [{ items, accepted }, sources, digitalEstate] = await Promise.all([
+  const [{ items, accepted }, sources, digitalEstate, personalProfile] = await Promise.all([
     onboardingData(),
     sourcePermissionsData(),
     digitalEstateData(),
+    personalProfileReadinessData(),
   ]);
   const freshnessBySource = new Map(sources.freshness.data.map((item) => [item.source, item]));
   const googleConnections = sources.connections.data.filter(
@@ -91,7 +93,8 @@ export default async function SettingsPage() {
             sources.freshness.error ??
             sources.appleDevices.error ??
             digitalEstate.devices.error ??
-            digitalEstate.scans.error}
+            digitalEstate.scans.error ??
+            personalProfile.error}
         </p>
       ) : null}
       <OnboardingForm
@@ -99,6 +102,7 @@ export default async function SettingsPage() {
         accepted={accepted.data}
         sourcePermissionsReady={sourcePermissionsReady}
         windowsWorkerReady={windowsWorkerReady}
+        personalProfileReady={personalProfile.ready}
       />
     </>
   );

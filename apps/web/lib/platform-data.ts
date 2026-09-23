@@ -643,3 +643,38 @@ export async function onboardingData(): Promise<
       : { data: acceptance.data !== null, error: null },
   };
 }
+
+export async function personalProfileReadinessData(): Promise<
+  Readonly<{ ready: boolean; error: string | null }>
+> {
+  const client = await createSupabaseServerClient();
+  const [profile, locations, preferences] = await Promise.all([
+    client.from('personal_profiles').select('planning_preferences,updated_at').maybeSingle(),
+    client.from('personal_locations').select('id').limit(20),
+    client.from('time_preferences').select('weekday').limit(7),
+  ]);
+  const failed = profile.error ?? locations.error ?? preferences.error;
+  if (failed) return { ready: false, error: 'Personal profile readiness could not be verified.' };
+  const planning = (profile.data?.planning_preferences ?? {}) as Record<string, unknown>;
+  const required = [
+    'normalWorkStart',
+    'normalWorkEnd',
+    'quietStart',
+    'quietEnd',
+    'maximumFocusDurationMinutes',
+    'minimumUnscheduledBufferMinutes',
+    'minimumEveningBufferMinutes',
+    'preparationBufferMinutes',
+    'travelBufferMinutes',
+    'transportPreferences',
+  ];
+  const ready =
+    Boolean(profile.data?.updated_at) &&
+    (locations.data?.length ?? 0) > 0 &&
+    new Set((preferences.data ?? []).map((item) => item.weekday)).size === 7 &&
+    required.every(
+      (field) =>
+        planning[field] !== undefined && planning[field] !== null && planning[field] !== '',
+    );
+  return { ready, error: null };
+}

@@ -97,8 +97,10 @@ const steps = [
     code: 'personal_profile',
     label: 'Personal Operating Profile',
     instructions: [
-      'Configure timezone Europe/London, quiet hours, recurring commitments, travel buffers, planning preferences, and approved locations in the Personal page.',
-      'Review the resulting daily-plan context before enabling a schedule.',
+      'Open Personal and complete the Personal Operating Profile form: date of birth (optional), ambitions/projects, normal work hours, quiet hours, focus/exercise/busy windows for all seven days, buffers, transport preferences, approved locations, and any recurring commitments or routines.',
+      'Save successfully. The save response confirms the sections and timestamp; addresses are encrypted and are never returned to the browser. If anything fails, the page reports the stable error code, failing stage, HTTP status, request ID, detail, and safe remediation.',
+      'Return here and complete fresh MFA if requested. The checkbox remains locked until the server verifies Europe/London timezone, a profile update, at least one approved location, all required planning fields, and one preference row for every weekday. A rejected click lists the exact missing evidence.',
+      'After it is recorded, review the Personal page context before enabling any schedule.',
     ],
   },
   {
@@ -148,11 +150,13 @@ export function OnboardingForm({
   accepted,
   sourcePermissionsReady,
   windowsWorkerReady,
+  personalProfileReady,
 }: Readonly<{
   completedCodes: string[];
   accepted: boolean;
   sourcePermissionsReady: boolean;
   windowsWorkerReady: boolean;
+  personalProfileReady: boolean;
 }>) {
   const [completed, setCompleted] = useState(() => new Set(completedCodes));
   const [status, setStatus] = useState(accepted ? 'Production onboarding accepted.' : '');
@@ -169,11 +173,21 @@ export function OnboardingForm({
       const body = (await response.json().catch(() => null)) as {
         code?: string;
         reason?: string;
+        detail?: string;
+        remediation?: string;
+        diagnostic?: {
+          stage?: string;
+          httpStatus?: number;
+          requestId?: string;
+          detail?: string;
+          remediation?: string;
+        };
       } | null;
+      const diagnostic = body?.diagnostic;
       const reason =
         [body?.code, body?.reason].filter(Boolean).join(':') || `http_${response.status}`;
       return setStatus(
-        `Checklist update rejected (${reason}). Sign in again if your session has expired.`,
+        `Checklist update rejected (${reason}) · stage ${diagnostic?.stage ?? 'unknown'} · HTTP ${diagnostic?.httpStatus ?? response.status} · request ${diagnostic?.requestId ?? 'unknown'} — ${diagnostic?.detail ?? body?.detail ?? 'No detail supplied.'} ${diagnostic?.remediation ?? body?.remediation ?? 'Sign in again if your session has expired.'}`,
       );
     }
     setCompleted((current) => {
@@ -246,7 +260,8 @@ export function OnboardingForm({
                   code === 'production_acceptance' ||
                   accepted ||
                   (code === 'source_permissions' && !sourcePermissionsReady) ||
-                  (code === 'windows_worker' && !windowsWorkerReady)
+                  (code === 'windows_worker' && !windowsWorkerReady) ||
+                  (code === 'personal_profile' && !personalProfileReady)
                 }
                 onChange={(event) => void toggle(code, event.target.checked)}
               />{' '}
