@@ -45,7 +45,7 @@ const failure = (
         httpStatus,
         requestId,
         route,
-      method: "GET or PUT",
+        method: "GET or PUT",
         detail,
         remediation,
         ...(missing ? { missing } : {}),
