@@ -23,8 +23,10 @@ async function proxy(request: Request, method: 'GET' | 'PUT') {
           stage: 'authentication',
           httpStatus: 401,
           requestId,
-          detail: 'No authenticated session is available.',
-          remediation: 'Sign in again and retry.',
+          detail:
+            'Supabase could not validate the request cookie session and could not rotate it with the refresh token. The request stopped at the web server session boundary; it did not reach the Personal Profile Edge Function or database.',
+          remediation:
+            'Click Save once more to use the automatic server-side refresh. If this remains 401, the refresh token has expired or was revoked: open a new sign-in tab, complete MFA, then return to this page; the form draft is preserved in this tab.',
         },
       },
       { status: 401, headers: { 'x-request-id': requestId } },

@@ -142,6 +142,7 @@ export default function PersonalProfileForm() {
   const [success, setSuccess] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [activeDay, setActiveDay] = useState(0);
+  const [reauthRequired, setReauthRequired] = useState(false);
   const daysForForm = useMemo(
     () => (profile.timePreferences.length === 7 ? profile.timePreferences : emptyDays()),
     [profile.timePreferences],
@@ -229,6 +230,7 @@ export default function PersonalProfileForm() {
     setSaving(true);
     setError(null);
     setSuccess(null);
+    setReauthRequired(false);
     try {
       const response = await fetch('/api/personal/profile', {
         method: 'PUT',
@@ -237,6 +239,7 @@ export default function PersonalProfileForm() {
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
+        setReauthRequired(response.status === 401 && payload?.code === 'unauthorised');
         setError(prettyError(payload));
         return;
       }
@@ -273,6 +276,22 @@ export default function PersonalProfileForm() {
           <p role="alert" className="notice notice-error">
             {error}
           </p>
+        ) : null}
+        {reauthRequired ? (
+          <div className="source-actions" aria-label="Session recovery">
+            <p className="profile-helper">
+              Your filled form is still in this tab. Sign in in a separate tab, complete MFA, then
+              return here and click Save again; no page refresh is required.
+            </p>
+            <button
+              type="button"
+              onClick={() =>
+                window.open('/login?returnTo=/personal', '_blank', 'noopener,noreferrer')
+              }
+            >
+              Open sign-in in a new tab
+            </button>
+          </div>
         ) : null}
         {success ? (
           <p role="status" className="notice notice-success">
