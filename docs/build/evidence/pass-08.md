@@ -88,3 +88,21 @@ operator acceptance record.
 - Staging database lint completed with no schema warnings. A temporary synthetic staging device submitted an envelope containing empty `sources`, `records`, and `attachments`: the first request returned HTTP 202 with `status: accepted` and zero received records; an identical replay returned HTTP 200 with `replay: true`. The synthetic receipt, device, application identity, and Auth identity were removed immediately after validation.
 - An unauthenticated staging request returned HTTP 401 with `device_token_missing`. No personal payload, plaintext device token, AI call, notification, schedule, workflow, or external action was created.
 - Production Shortcut verification on 2026-09-03 confirmed that the corrected Health collector submitted Steps, Heart Rate, Sleep, Active Calories, Walking + Running Distance, and Weight with zero raw-record rejections. Migration `20260903195228_normalize_active_calories.sql` treats Apple's `Active Calories` label as canonical active energy for future records and safely reprocesses matching previously deferred normalizations without mutating raw receipts.
+
+## Personal Operating Profile implementation
+
+- Migration `20260923170000_personal_operating_profile.sql` adds profile identity
+  fields, encrypted-location travel/preparation buffers, and one RLS-protected
+  `time_preferences` row for each weekday. Browser writes to weekly preferences
+  are not granted; the control-plane function performs authenticated AAL2 writes.
+- `personal-profile` supports GET/PUT with bounded validation, AES-GCM address
+  encryption, idempotent UUID-based commitment/routine saves, redacted audit
+  events, and stage/code/status/request-ID/remediation diagnostics for every
+  failure boundary. Plaintext addresses are never returned or audited.
+- The Personal page now provides loading, empty, validation-error, partial-save,
+  and success states. Settings displays the exact checklist rejection boundary
+  and missing evidence. The server gates `personal_profile` completion on the
+  profile, Europe/London timezone, approved location, required planning fields,
+  and all seven weekday rows.
+- Local validation: Prettier, web TypeScript, Deno format/lint/check, full
+  workspace Vitest tests, and the Next production build pass.

@@ -109,6 +109,110 @@ Deno.serve(async (request) => {
       resultVerifiedAt: scan.data.result_verified_at,
     };
   }
+  if (body.code === "personal_profile" && body.complete) {
+    const profile = await service.from("personal_profiles").select(
+      "updated_at,planning_preferences,home_location_id,work_location_id",
+    ).eq("user_id", identity.user.id).maybeSingle();
+    if (profile.error) {
+      return json({
+        code: "personal_profile_evidence_check_failed",
+        stage: "checklist.profile_read",
+        httpStatus: 500,
+        detail: `The profile evidence query failed (${
+          profile.error.code ?? "database_error"
+        }).`,
+        remediation:
+          "Retry once; if it repeats, provide the request ID to support.",
+        requestId,
+      }, 500);
+    }
+    const locations = await service.from("personal_locations").select(
+      "id,location_kind,encrypted_address",
+    ).eq("user_id", identity.user.id);
+    const preferences = await service.from("time_preferences").select(
+      "weekday",
+    ).eq("user_id", identity.user.id);
+    const user = await service.from("app_users").select("timezone").eq(
+      "id",
+      identity.user.id,
+    ).single();
+    const failed = [locations, preferences, user].find((result) =>
+      result.error
+    );
+    if (failed?.error) {
+      return json({
+        code: "personal_profile_evidence_check_failed",
+        stage: "checklist.profile_dependencies",
+        httpStatus: 500,
+        detail: `A profile dependency query failed (${
+          failed.error.code ?? "database_error"
+        }).`,
+        remediation:
+          "Retry once; if it repeats, provide the request ID to support.",
+        requestId,
+      }, 500);
+    }
+    const planning = (profile.data?.planning_preferences ?? {}) as Record<
+      string,
+      unknown
+    >;
+    const missing: string[] = [];
+    if (!profile.data) missing.push("profile_record");
+    if (!user.data || user.data.timezone !== "Europe/London") {
+      missing.push("timezone_europe_london");
+    }
+    if (!locations.data?.length) missing.push("approved_location");
+    if (!profile.data?.updated_at) missing.push("profile_updated_at");
+    for (
+      const field of [
+        "normalWorkStart",
+        "normalWorkEnd",
+        "quietStart",
+        "quietEnd",
+        "maximumFocusDurationMinutes",
+        "minimumUnscheduledBufferMinutes",
+        "minimumEveningBufferMinutes",
+        "preparationBufferMinutes",
+        "travelBufferMinutes",
+        "transportPreferences",
+      ]
+    ) {
+      if (
+        planning[field] === undefined || planning[field] === null ||
+        planning[field] === ""
+      ) missing.push(`planning_preferences.${field}`);
+    }
+    const weekdays = new Set(
+      (preferences.data ?? []).map((item) => item.weekday),
+    );
+    if (weekdays.size !== 7) missing.push("seven_weekday_preferences");
+    if (missing.length) {
+      return json({
+        code: "personal_profile_evidence_required",
+        stage: "checklist.evidence",
+        httpStatus: 422,
+        reason: "profile_not_complete",
+        missing,
+        detail:
+          "The server cannot verify a complete Personal Operating Profile yet.",
+        remediation:
+          "Open Personal, complete the listed fields, save successfully, then retry the checklist item.",
+        requestId,
+      }, 422);
+    }
+    metadata = {
+      verifiedAt: completed_at,
+      profileUpdatedAt: profile.data?.updated_at,
+      locationCount: locations.data?.length ?? 0,
+      locationKinds: [
+        ...new Set(
+          (locations.data ?? []).map((location) => location.location_kind),
+        ),
+      ],
+      timePreferenceDays: weekdays.size,
+      evidence: "server_verified_personal_profile",
+    };
+  }
   const update = await service.rpc("update_onboarding_checklist_item", {
     p_user_id: identity.user.id,
     p_code: body.code,
