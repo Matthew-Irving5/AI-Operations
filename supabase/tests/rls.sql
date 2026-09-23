@@ -1,10 +1,15 @@
 begin;
-select plan(114);
+select plan(119);
 select ok(exists(select 1 from information_schema.columns where table_schema='public' and table_name='personal_profiles' and column_name='date_of_birth'), 'Personal profiles store date of birth');
 select ok(exists(select 1 from information_schema.columns where table_schema='public' and table_name='personal_locations' and column_name='default_travel_minutes'), 'Approved locations store travel buffers');
 select ok((select relrowsecurity from pg_class where relname='time_preferences' and relnamespace = 'public'::regnamespace), 'Weekly time preferences have RLS enabled');
 select ok(not has_table_privilege('authenticated', 'public.time_preferences', 'INSERT'), 'Browser cannot directly insert weekly time preferences');
 select ok(exists(select 1 from pg_policies where schemaname='public' and tablename='personal_profiles' and policyname='own_profiles' and qual::text like '%is_allowed_aal2%'), 'Personal profile writes require fresh MFA');
+select ok(exists(select 1 from information_schema.columns where table_schema='public' and table_name='time_preferences' and column_name='travel_buffer_percent'), 'Travel buffers support route percentages');
+select ok((select relrowsecurity from pg_class where relname='location_travel_rules' and relnamespace = 'public'::regnamespace), 'Route travel rules have RLS enabled');
+select ok((select relrowsecurity from pg_class where relname='location_preparation_rules' and relnamespace = 'public'::regnamespace), 'Location preparation rules have RLS enabled');
+select ok(not has_table_privilege('authenticated', 'public.location_travel_rules', 'INSERT'), 'Browser cannot directly insert route travel rules');
+select ok(not has_table_privilege('authenticated', 'public.location_preparation_rules', 'INSERT'), 'Browser cannot directly insert preparation rules');
 
 select ok(
   not exists (

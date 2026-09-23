@@ -665,7 +665,8 @@ export async function personalProfileReadinessData(): Promise<
     'minimumUnscheduledBufferMinutes',
     'minimumEveningBufferMinutes',
     'preparationBufferMinutes',
-    'travelBufferMinutes',
+    'travelBufferPercent',
+    'minimumTravelBufferMinutes',
     'transportPreferences',
   ];
   const ready =

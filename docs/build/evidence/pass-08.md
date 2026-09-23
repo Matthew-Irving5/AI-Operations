@@ -106,3 +106,23 @@ operator acceptance record.
   and all seven weekday rows.
 - Local validation: Prettier, web TypeScript, Deno format/lint/check, full
   workspace Vitest tests, and the Next production build pass.
+
+### Route-aware planning redesign (2026-09-23)
+
+- Migration `20260923190000_personal_profile_travel_rules.sql` adds explicit
+  RLS-protected route and preparation rule tables plus percentage/minimum travel
+  buffer columns. Legacy per-location minute columns remain for compatibility
+  but are no longer rendered or written by the browser flow.
+- The Personal form now separates global planning defaults, encrypted location
+  identity, preparation before leaving versus settling after arrival, and
+  origin/destination travel rules with normal/peak durations and a calculated
+  allowance preview. Weekly availability uses day tabs rather than seven dense
+  rows, and mobile layout has no fixed-width route grid.
+- The control-plane function validates every route/preparation boundary,
+  reconciles removed rules idempotently, returns safe stage/code/status/request
+  diagnostics, and includes route/preparation counts in redacted audit sections.
+- Staging migration verification confirmed both new tables and the new travel
+  buffer columns. Local `pnpm verify` passed (format, lint, typecheck, all
+  workspace tests, and production build). Edge `deno check` passed. Function
+  deployment is performed by the repository staging workflow because no local
+  Supabase access token is present in the operator environment.

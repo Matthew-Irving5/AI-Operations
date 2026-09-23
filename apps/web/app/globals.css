@@ -31,6 +31,90 @@ textarea {
   width: 100%;
   min-height: 80px;
 }
+.profile-hero {
+  border-top: 3px solid var(--accent);
+}
+.profile-hero h2 {
+  margin: 4px 0 8px;
+}
+.eyebrow {
+  color: var(--accent);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  margin: 0;
+  text-transform: uppercase;
+}
+.profile-section {
+  gap: 14px;
+}
+.profile-section legend {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+  padding: 0 6px;
+}
+.profile-helper {
+  color: var(--muted);
+  display: block;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.profile-row {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+}
+.profile-route-preview {
+  border-left: 3px solid var(--accent);
+  color: var(--muted);
+  margin: 0;
+  padding: 8px 12px;
+}
+.profile-day-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.profile-day-tabs button {
+  border-color: var(--line);
+  color: var(--muted);
+  min-width: 52px;
+}
+.profile-day-tabs button.active {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: var(--accent);
+  color: var(--text);
+}
+.profile-day-grid {
+  align-items: start;
+}
+.notice-error {
+  border-color: #a86e37;
+  color: #ffd49a;
+}
+.notice-success {
+  border-color: #397f6d;
+  color: #9cf1d5;
+}
+@media (max-width: 720px) {
+  main {
+    padding: 20px 14px;
+  }
+  .profile-section {
+    padding: 14px;
+  }
+  .profile-section legend {
+    font-size: 16px;
+  }
+  .profile-day-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 3px;
+  }
+  .profile-day-tabs button {
+    flex: 0 0 auto;
+  }
+}
 .shell {
   min-height: 100vh;
   display: grid;
