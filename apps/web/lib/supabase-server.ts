@@ -44,12 +44,15 @@ export function createSupabaseAccessTokenClient(accessToken: string) {
  */
 export async function getAuthenticatedServerAccessToken(): Promise<string | null> {
   const client = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await client.auth.getUser();
-  if (!user) return null;
-  const {
-    data: { session },
-  } = await client.auth.getSession();
-  return session?.access_token ?? null;
+  // `getUser()` validates the access token, but a long-lived tab can hold an
+  // expired access token while still having a valid refresh token cookie. Ask
+  // Auth to rotate that token before declaring the browser unauthorised. The
+  // server client writes the rotated cookies through its SSR cookie adapter.
+  const { data: userData } = await client.auth.getUser();
+  const { data: sessionData } = await client.auth.getSession();
+  if (userData.user && sessionData.session?.access_token) {
+    return sessionData.session.access_token;
+  }
+  const { data: refreshed } = await client.auth.refreshSession();
+  return refreshed.session?.access_token ?? null;
 }
