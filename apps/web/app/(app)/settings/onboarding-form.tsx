@@ -97,7 +97,8 @@ const steps = [
     code: 'personal_profile',
     label: 'Personal Operating Profile',
     instructions: [
-      'Open Personal and complete the Personal Operating Profile form: date of birth (optional), ambitions/projects, normal work hours, quiet hours, focus/exercise/busy windows for all seven days, buffers, transport preferences, approved locations, and any recurring commitments or routines.',
+      'Open Personal and complete the Personal Operating Profile form: date of birth (optional), ambitions/projects, normal work hours, quiet hours, focus/exercise/busy windows for all seven days, unscheduled/evening buffers, percentage and minimum travel buffers, transport preferences, approved locations, route-specific travel rules, location preparation rules, and any recurring commitments or routines.',
+      'Travel minutes are defined for a route (origin, destination, mode, normal and peak time), never as a property of a location. Preparation is explicit: time before leaving and time to settle in after arrival. The preview shows the buffered allowance the planner will use.',
       'Save successfully. The save response confirms the sections and timestamp; addresses are encrypted and are never returned to the browser. If anything fails, the page reports the stable error code, failing stage, HTTP status, request ID, detail, and safe remediation.',
       'Return here and complete fresh MFA if requested. The checkbox remains locked until the server verifies Europe/London timezone, a profile update, at least one approved location, all required planning fields, and one preference row for every weekday. A rejected click lists the exact missing evidence.',
       'After it is recorded, review the Personal page context before enabling any schedule.',

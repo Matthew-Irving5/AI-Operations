@@ -6,10 +6,15 @@ Personal planning configuration is saved through the authenticated
 `personal-profile` Edge Function, not directly from browser SQL. The function
 requires the approved account and a fresh AAL2 session, validates every field,
 encrypts approved location addresses with `APP_TOKEN_ENCRYPTION_KEY`, and
-returns only location metadata (`hasAddress`, label, type, and buffers).
+returns only location metadata (`hasAddress`, label, and type). Travel is
+represented by explicit origin/destination/mode rules with normal and peak
+durations, a percentage buffer, and a minimum buffer floor. Preparation is
+represented separately as time before departure and time to settle after
+arrival; it is never conflated with travel or attached to a location as one
+ambiguous duration.
 
 Weekly preferences are stored as one row per weekday. Profile, locations,
-commitments, and routines use stable UUIDs so retries are idempotent. Every
+route rules, preparation rules, commitments, and routines use stable UUIDs so retries are idempotent. Every
 successful save writes a redacted audit event; failures include a stable code,
 stage, HTTP status, request ID, safe detail, and remediation text.
 

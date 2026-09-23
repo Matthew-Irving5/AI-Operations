@@ -73,6 +73,9 @@ const boundedString = (value: unknown, max: number) =>
 const boundedNumber = (value: unknown, min: number, max: number) =>
   typeof value === "number" && Number.isInteger(value) && value >= min &&
   value <= max;
+const boundedDecimal = (value: unknown, min: number, max: number) =>
+  typeof value === "number" && Number.isFinite(value) && value >= min &&
+  value <= max;
 
 const bytesToBase64 = (bytes: Uint8Array) => {
   let binary = "";
@@ -113,18 +116,24 @@ const validate = (body: unknown): string[] => {
   if (!isRecord(body)) return ["body must be an object"];
   const errors: string[] = [];
   if (
-    body.dateOfBirth !== null && body.dateOfBirth !== undefined &&
+    body.dateOfBirth !== null &&
+    body.dateOfBirth !== undefined &&
     (typeof body.dateOfBirth !== "string" ||
       !/^\d{4}-\d{2}-\d{2}$/.test(body.dateOfBirth))
-  ) errors.push("dateOfBirth must be YYYY-MM-DD or null");
+  ) {
+    errors.push("dateOfBirth must be YYYY-MM-DD or null");
+  }
   if (
     body.careerSummary !== undefined && !boundedString(body.careerSummary, 4000)
-  ) errors.push("careerSummary exceeds 4000 characters");
+  ) {
+    errors.push("careerSummary exceeds 4000 characters");
+  }
   if (!isRecord(body.preferences)) errors.push("preferences must be an object");
   const locations = body.locations;
   if (!Array.isArray(locations) || locations.length > 20) {
     errors.push("locations must be an array of at most 20 items");
-  } else {locations.forEach((location, index) => {
+  } else {
+    locations.forEach((location, index) => {
       if (!isRecord(location)) {
         return errors.push(`locations[${index}] must be an object`);
       }
@@ -144,14 +153,11 @@ const validate = (body: unknown): string[] => {
       }
       if (
         location.address !== undefined && !boundedString(location.address, 500)
-      ) errors.push(`locations[${index}].address exceeds 500 characters`);
-      if (!boundedNumber(location.travelMinutes ?? 0, 0, 1440)) {
-        errors.push(`locations[${index}].travelMinutes must be 0..1440`);
+      ) {
+        errors.push(`locations[${index}].address exceeds 500 characters`);
       }
-      if (!boundedNumber(location.preparationMinutes ?? 0, 0, 1440)) {
-        errors.push(`locations[${index}].preparationMinutes must be 0..1440`);
-      }
-    });}
+    });
+  }
   const preferences = isRecord(body.preferences) ? body.preferences : {};
   for (
     const field of [
@@ -171,24 +177,127 @@ const validate = (body: unknown): string[] => {
       "minimumUnscheduledBufferMinutes",
       "minimumEveningBufferMinutes",
       "preparationBufferMinutes",
-      "travelBufferMinutes",
     ]
   ) {
     if (
       preferences[field] !== undefined &&
       !boundedNumber(preferences[field], 0, 1440)
-    ) errors.push(`preferences.${field} must be an integer from 0 to 1440`);
+    ) {
+      errors.push(`preferences.${field} must be an integer from 0 to 1440`);
+    }
   }
   if (
     preferences.maximumFocusDurationMinutes !== undefined &&
     !boundedNumber(preferences.maximumFocusDurationMinutes, 15, 480)
-  ) errors.push("preferences.maximumFocusDurationMinutes must be 15..480");
+  ) {
+    errors.push("preferences.maximumFocusDurationMinutes must be 15..480");
+  }
+  if (
+    preferences.travelBufferPercent !== undefined &&
+    !boundedDecimal(preferences.travelBufferPercent, 0, 200)
+  ) {
+    errors.push(
+      "preferences.travelBufferPercent must be a number from 0 to 200",
+    );
+  }
+  if (
+    preferences.minimumTravelBufferMinutes !== undefined &&
+    !boundedNumber(preferences.minimumTravelBufferMinutes, 0, 120)
+  ) {
+    errors.push(
+      "preferences.minimumTravelBufferMinutes must be an integer from 0 to 120",
+    );
+  }
+  const travelRules = body.travelRules;
+  if (!Array.isArray(travelRules) || travelRules.length > 100) {
+    errors.push("travelRules must be an array of at most 100 items");
+  } else {
+    travelRules.forEach((rule, index) => {
+      if (!isRecord(rule)) {
+        return errors.push(`travelRules[${index}] must be an object`);
+      }
+      for (const field of ["originLocationId", "destinationLocationId"]) {
+        if (!isUuid(rule[field])) {
+          errors.push(`travelRules[${index}].${field} must be a UUID`);
+        }
+      }
+      if (rule.originLocationId === rule.destinationLocationId) {
+        errors.push(`travelRules[${index}] origin and destination must differ`);
+      }
+      if (
+        !["walking", "cycling", "public_transport", "driving", "other"]
+          .includes(
+            String(rule.transportMode),
+          )
+      ) {
+        errors.push(`travelRules[${index}].transportMode is invalid`);
+      }
+      for (const field of ["normalMinutes", "peakMinutes"]) {
+        if (!boundedNumber(rule[field], 1, 1440)) {
+          errors.push(
+            `travelRules[${index}].${field} must be an integer from 1 to 1440`,
+          );
+        }
+      }
+      for (const field of ["peakStart", "peakEnd"]) {
+        if (
+          rule[field] !== null && rule[field] !== undefined &&
+          !isTime(rule[field])
+        ) {
+          errors.push(`travelRules[${index}].${field} must be HH:MM or null`);
+        }
+      }
+      if ((rule.peakStart == null) !== (rule.peakEnd == null)) {
+        errors.push(
+          `travelRules[${index}] peakStart and peakEnd must be provided together`,
+        );
+      }
+      if (
+        rule.bufferPercent !== undefined &&
+        !boundedDecimal(rule.bufferPercent, 0, 200)
+      ) {
+        errors.push(`travelRules[${index}].bufferPercent must be 0..200`);
+      }
+      if (
+        rule.minimumBufferMinutes !== undefined &&
+        !boundedNumber(rule.minimumBufferMinutes, 0, 120)
+      ) {
+        errors.push(
+          `travelRules[${index}].minimumBufferMinutes must be 0..120`,
+        );
+      }
+    });
+  }
+  const preparationRules = body.preparationRules;
+  if (!Array.isArray(preparationRules) || preparationRules.length > 100) {
+    errors.push("preparationRules must be an array of at most 100 items");
+  } else {
+    preparationRules.forEach((rule, index) => {
+      if (!isRecord(rule)) {
+        return errors.push(`preparationRules[${index}] must be an object`);
+      }
+      if (!isUuid(rule.locationId)) {
+        errors.push(`preparationRules[${index}].locationId must be a UUID`);
+      }
+      for (
+        const field of [
+          "prepareBeforeDepartureMinutes",
+          "settleAfterArrivalMinutes",
+        ]
+      ) {
+        if (!boundedNumber(rule[field] ?? 0, 0, 240)) {
+          errors.push(`preparationRules[${index}].${field} must be 0..240`);
+        }
+      }
+    });
+  }
   const timePreferences = body.timePreferences;
   if (!Array.isArray(timePreferences) || timePreferences.length !== 7) {
     errors.push(
       "timePreferences must contain exactly one entry for each weekday (0-6)",
     );
-  } else {timePreferences.forEach((item, index) => {
+  } else {
+    timePreferences.forEach((item, index) => {
       if (!isRecord(item) || item.weekday !== index) {
         errors.push(`timePreferences[${index}].weekday must be ${index}`);
       }
@@ -201,7 +310,8 @@ const validate = (body: unknown): string[] => {
         ]
       ) {
         if (
-          !Array.isArray(item[field]) || item[field].length > 20 ||
+          !Array.isArray(item[field]) ||
+          item[field].length > 20 ||
           item[field].some((window) => !isWindow(window))
         ) {
           errors.push(
@@ -209,11 +319,13 @@ const validate = (body: unknown): string[] => {
           );
         }
       }
-    });}
+    });
+  }
   const commitments = body.commitments;
   if (!Array.isArray(commitments) || commitments.length > 100) {
     errors.push("commitments must be an array of at most 100 items");
-  } else {commitments.forEach((item, index) => {
+  } else {
+    commitments.forEach((item, index) => {
       if (!isRecord(item) || !isUuid(item.id)) {
         errors.push(`commitments[${index}].id must be a UUID`);
       } else if (
@@ -226,11 +338,13 @@ const validate = (body: unknown): string[] => {
       if (isRecord(item) && !boundedNumber(item.importance ?? 3, 1, 5)) {
         errors.push(`commitments[${index}].importance must be 1..5`);
       }
-    });}
+    });
+  }
   const routines = body.routines;
   if (!Array.isArray(routines) || routines.length > 100) {
     errors.push("routines must be an array of at most 100 items");
-  } else {routines.forEach((item, index) => {
+  } else {
+    routines.forEach((item, index) => {
       if (!isRecord(item) || !isUuid(item.id)) {
         errors.push(`routines[${index}].id must be a UUID`);
       } else if (
@@ -243,7 +357,8 @@ const validate = (body: unknown): string[] => {
       if (isRecord(item) && !boundedString(item.cadence, 100)) {
         errors.push(`routines[${index}].cadence exceeds 100 characters`);
       }
-    });}
+    });
+  }
   return errors;
 };
 
@@ -324,6 +439,8 @@ const authUser = async (request: Request, requestId: string) => {
 const sanitise = (
   profile: Record<string, unknown> | null,
   locations: Record<string, unknown>[],
+  travelRules: Record<string, unknown>[],
+  preparationRules: Record<string, unknown>[],
   timePreferences: Record<string, unknown>[],
   commitments: Record<string, unknown>[],
   routines: Record<string, unknown>[],
@@ -341,8 +458,24 @@ const sanitise = (
     label: location.label,
     kind: location.location_kind,
     hasAddress: Boolean(location.encrypted_address),
-    travelMinutes: location.default_travel_minutes,
-    preparationMinutes: location.default_preparation_minutes,
+  })),
+  travelRules: travelRules.map((rule) => ({
+    id: rule.id,
+    originLocationId: rule.origin_location_id,
+    destinationLocationId: rule.destination_location_id,
+    transportMode: rule.transport_mode,
+    normalMinutes: rule.normal_minutes,
+    peakMinutes: rule.peak_minutes,
+    peakStart: rule.peak_start,
+    peakEnd: rule.peak_end,
+    bufferPercent: Number(rule.buffer_percent ?? 20),
+    minimumBufferMinutes: rule.minimum_buffer_minutes ?? 5,
+  })),
+  preparationRules: preparationRules.map((rule) => ({
+    id: rule.id,
+    locationId: rule.location_id,
+    prepareBeforeDepartureMinutes: rule.prepare_before_departure_minutes,
+    settleAfterArrivalMinutes: rule.settle_after_arrival_minutes,
   })),
   timePreferences: timePreferences.map((item) => ({
     weekday: item.weekday,
@@ -380,7 +513,7 @@ Deno.serve(async (request) => {
   }
   const auth = await authUser(request, requestId);
   if (auth.error || !auth.user) return auth.error;
-  if (!await consumeRateLimit(auth.user.id, "personal_profile", 30)) {
+  if (!(await consumeRateLimit(auth.user.id, "personal_profile", 30))) {
     return failure(
       requestId,
       "rate_limited",
@@ -392,28 +525,71 @@ Deno.serve(async (request) => {
   }
 
   if (request.method === "GET") {
-    const [profile, locations, timePreferences, commitments, routines] =
-      await Promise.all([
-        service.from("personal_profiles").select(
+    const [
+      profile,
+      locations,
+      travelRules,
+      preparationRules,
+      timePreferences,
+      commitments,
+      routines,
+    ] = await Promise.all([
+      service
+        .from("personal_profiles")
+        .select(
           "user_id,date_of_birth,home_location_id,work_location_id,career_summary,planning_preferences,notification_preferences,privacy_preferences,updated_at",
-        ).eq("user_id", auth.user.id).maybeSingle(),
-        service.from("personal_locations").select(
-          "id,label,location_kind,encrypted_address,default_travel_minutes,default_preparation_minutes",
-        ).eq("user_id", auth.user.id).order("label"),
-        service.from("time_preferences").select(
-          "weekday,preferred_focus_windows,guaranteed_busy_windows,preferred_training_windows,quiet_hours,maximum_focus_duration_minutes,minimum_unscheduled_buffer_minutes,minimum_evening_buffer_minutes,transport_preferences",
-        ).eq("user_id", auth.user.id).order("weekday"),
-        service.from("commitments").select("id,title,due_at,importance,status")
-          .eq("user_id", auth.user.id).order("due_at", {
-            ascending: true,
-            nullsFirst: false,
-          }),
-        service.from("routines").select(
-          "id,title,cadence,preferred_window,active",
-        ).eq("user_id", auth.user.id).order("title"),
-      ]);
-    const failed = [profile, locations, timePreferences, commitments, routines]
-      .find((result) => result.error);
+        )
+        .eq("user_id", auth.user.id)
+        .maybeSingle(),
+      service
+        .from("personal_locations")
+        .select("id,label,location_kind,encrypted_address")
+        .eq("user_id", auth.user.id)
+        .order("label"),
+      service
+        .from("location_travel_rules")
+        .select(
+          "id,origin_location_id,destination_location_id,transport_mode,normal_minutes,peak_minutes,peak_start,peak_end,buffer_percent,minimum_buffer_minutes",
+        )
+        .eq("user_id", auth.user.id)
+        .order("created_at"),
+      service
+        .from("location_preparation_rules")
+        .select(
+          "id,location_id,prepare_before_departure_minutes,settle_after_arrival_minutes",
+        )
+        .eq("user_id", auth.user.id)
+        .order("created_at"),
+      service
+        .from("time_preferences")
+        .select(
+          "weekday,preferred_focus_windows,guaranteed_busy_windows,preferred_training_windows,quiet_hours,maximum_focus_duration_minutes,minimum_unscheduled_buffer_minutes,minimum_evening_buffer_minutes,travel_buffer_percent,minimum_travel_buffer_minutes,transport_preferences",
+        )
+        .eq("user_id", auth.user.id)
+        .order("weekday"),
+      service
+        .from("commitments")
+        .select("id,title,due_at,importance,status")
+        .eq("user_id", auth.user.id)
+        .order("due_at", {
+          ascending: true,
+          nullsFirst: false,
+        }),
+      service
+        .from("routines")
+        .select("id,title,cadence,preferred_window,active")
+        .eq("user_id", auth.user.id)
+        .order("title"),
+    ]);
+    const failed = [
+      profile,
+      locations,
+      travelRules,
+      preparationRules,
+      timePreferences,
+      commitments,
+      routines,
+    ].find((result) => result.error);
     if (failed?.error) {
       return failure(
         requestId,
@@ -431,6 +607,8 @@ Deno.serve(async (request) => {
         ...sanitise(
           profile.data as Record<string, unknown> | null,
           locations.data as Record<string, unknown>[],
+          travelRules.data as Record<string, unknown>[],
+          preparationRules.data as Record<string, unknown>[],
           timePreferences.data as Record<string, unknown>[],
           commitments.data as Record<string, unknown>[],
           routines.data as Record<string, unknown>[],
@@ -470,12 +648,15 @@ Deno.serve(async (request) => {
   const input = body as Record<string, unknown>;
   const preferences = input.preferences as Record<string, unknown>;
   const locations = input.locations as Record<string, unknown>[];
+  const travelRules = input.travelRules as Record<string, unknown>[];
+  const preparationRules = input.preparationRules as Record<string, unknown>[];
   const timePreferences = input.timePreferences as Record<string, unknown>[];
   const commitments = input.commitments as Record<string, unknown>[];
   const routines = input.routines as Record<string, unknown>[];
-  const existingLocations = await service.from("personal_locations").select(
-    "id,label,encrypted_address",
-  ).eq("user_id", auth.user.id);
+  const existingLocations = await service
+    .from("personal_locations")
+    .select("id,label,encrypted_address")
+    .eq("user_id", auth.user.id);
   if (existingLocations.error) {
     return failure(
       requestId,
@@ -514,8 +695,6 @@ Deno.serve(async (request) => {
         encrypted_address: address
           ? await encryptAddress(address)
           : existing?.encrypted_address,
-        default_travel_minutes: location.travelMinutes,
-        default_preparation_minutes: location.preparationMinutes,
       });
     }
   } catch (error) {
@@ -550,15 +729,22 @@ Deno.serve(async (request) => {
     );
   }
   const now = new Date().toISOString();
-  const profileWrite = await service.from("personal_profiles").upsert({
-    user_id: auth.user.id,
-    date_of_birth: input.dateOfBirth ?? null,
-    career_summary: input.careerSummary ?? null,
-    planning_preferences: preferences,
-    updated_at: now,
-  }, { onConflict: "user_id" }).select(
-    "user_id,date_of_birth,home_location_id,work_location_id,career_summary,planning_preferences,notification_preferences,privacy_preferences,updated_at",
-  ).single();
+  const profileWrite = await service
+    .from("personal_profiles")
+    .upsert(
+      {
+        user_id: auth.user.id,
+        date_of_birth: input.dateOfBirth ?? null,
+        career_summary: input.careerSummary ?? null,
+        planning_preferences: preferences,
+        updated_at: now,
+      },
+      { onConflict: "user_id" },
+    )
+    .select(
+      "user_id,date_of_birth,home_location_id,work_location_id,career_summary,planning_preferences,notification_preferences,privacy_preferences,updated_at",
+    )
+    .single();
   if (profileWrite.error) {
     return failure(
       requestId,
@@ -588,9 +774,35 @@ Deno.serve(async (request) => {
       "The profile was saved but locations were not; retry to finish the update.",
     );
   }
-  const savedLocations = await service.from("personal_locations").select(
-    "id,label,location_kind,encrypted_address,default_travel_minutes,default_preparation_minutes",
-  ).eq("user_id", auth.user.id);
+  const retainedLocationIds = encryptedLocations
+    .filter((location) => typeof location.id === "string")
+    .map((location) => location.id as string);
+  const staleLocations = retainedLocationIds.length
+    ? await service
+      .from("personal_locations")
+      .delete()
+      .eq("user_id", auth.user.id)
+      .not("id", "in", `(${retainedLocationIds.join(",")})`)
+    : await service.from("personal_locations").delete().eq(
+      "user_id",
+      auth.user.id,
+    );
+  if (staleLocations.error) {
+    return failure(
+      requestId,
+      "locations_cleanup_failed",
+      "persistence.locations_cleanup",
+      500,
+      `Removed locations could not be reconciled (${
+        staleLocations.error.code ?? "database_error"
+      }).`,
+      "Retry once; no location was removed until reconciliation succeeds.",
+    );
+  }
+  const savedLocations = await service
+    .from("personal_locations")
+    .select("id,label,location_kind,encrypted_address")
+    .eq("user_id", auth.user.id);
   if (savedLocations.error) {
     return failure(
       requestId,
@@ -609,11 +821,14 @@ Deno.serve(async (request) => {
   const work = savedLocations.data?.find((location) =>
     location.location_kind === "work"
   )?.id ?? null;
-  const profileLink = await service.from("personal_profiles").update({
-    home_location_id: home,
-    work_location_id: work,
-    updated_at: now,
-  }).eq("user_id", auth.user.id);
+  const profileLink = await service
+    .from("personal_profiles")
+    .update({
+      home_location_id: home,
+      work_location_id: work,
+      updated_at: now,
+    })
+    .eq("user_id", auth.user.id);
   if (profileLink.error) {
     return failure(
       requestId,
@@ -641,8 +856,12 @@ Deno.serve(async (request) => {
       transport_preferences: {
         mode: preferences.transportPreferences ?? "",
         preparationBufferMinutes: preferences.preparationBufferMinutes,
-        travelBufferMinutes: preferences.travelBufferMinutes,
+        travelBufferPercent: preferences.travelBufferPercent ?? 20,
+        minimumTravelBufferMinutes: preferences.minimumTravelBufferMinutes ?? 5,
       },
+      travel_buffer_percent: preferences.travelBufferPercent ?? 20,
+      minimum_travel_buffer_minutes: preferences.minimumTravelBufferMinutes ??
+        5,
       updated_at: now,
     })),
     { onConflict: "user_id,weekday" },
@@ -657,6 +876,115 @@ Deno.serve(async (request) => {
         preferenceWrite.error.code ?? "database_error"
       }).`,
       "The profile and locations were saved; retry to finish weekly preferences.",
+    );
+  }
+  const travelIds = travelRules
+    .filter((rule) => typeof rule.id === "string")
+    .map((rule) => rule.id as string);
+  const staleTravelRules = travelIds.length
+    ? await service
+      .from("location_travel_rules")
+      .delete()
+      .eq("user_id", auth.user.id)
+      .not("id", "in", `(${travelIds.join(",")})`)
+    : await service.from("location_travel_rules").delete().eq(
+      "user_id",
+      auth.user.id,
+    );
+  if (staleTravelRules.error) {
+    return failure(
+      requestId,
+      "travel_rules_cleanup_failed",
+      "persistence.travel_rules_cleanup",
+      500,
+      `Removed travel rules could not be reconciled (${
+        staleTravelRules.error.code ?? "database_error"
+      }).`,
+      "Retry once; no new route data was accepted until reconciliation succeeds.",
+    );
+  }
+  const travelRuleWrite = await service.from("location_travel_rules").upsert(
+    travelRules.map((rule) => ({
+      ...(rule.id ? { id: rule.id } : {}),
+      user_id: auth.user.id,
+      origin_location_id: rule.originLocationId,
+      destination_location_id: rule.destinationLocationId,
+      transport_mode: rule.transportMode,
+      normal_minutes: rule.normalMinutes,
+      peak_minutes: rule.peakMinutes,
+      peak_start: rule.peakStart ?? null,
+      peak_end: rule.peakEnd ?? null,
+      buffer_percent: rule.bufferPercent ?? preferences.travelBufferPercent ??
+        20,
+      minimum_buffer_minutes: rule.minimumBufferMinutes ??
+        preferences.minimumTravelBufferMinutes ?? 5,
+      updated_at: now,
+    })),
+    {
+      onConflict:
+        "user_id,origin_location_id,destination_location_id,transport_mode",
+    },
+  );
+  if (travelRuleWrite.error) {
+    return failure(
+      requestId,
+      "travel_rules_write_failed",
+      "persistence.travel_rules",
+      500,
+      `Travel rules could not be saved (${
+        travelRuleWrite.error.code ?? "database_error"
+      }).`,
+      "Check that every route uses saved locations, then retry.",
+    );
+  }
+  const preparationIds = preparationRules
+    .filter((rule) => typeof rule.id === "string")
+    .map((rule) => rule.id as string);
+  const stalePreparationRules = preparationIds.length
+    ? await service
+      .from("location_preparation_rules")
+      .delete()
+      .eq("user_id", auth.user.id)
+      .not("id", "in", `(${preparationIds.join(",")})`)
+    : await service.from("location_preparation_rules").delete().eq(
+      "user_id",
+      auth.user.id,
+    );
+  if (stalePreparationRules.error) {
+    return failure(
+      requestId,
+      "preparation_rules_cleanup_failed",
+      "persistence.preparation_rules_cleanup",
+      500,
+      `Removed preparation rules could not be reconciled (${
+        stalePreparationRules.error.code ?? "database_error"
+      }).`,
+      "Retry once; no new preparation data was accepted until reconciliation succeeds.",
+    );
+  }
+  const preparationRuleWrite = await service.from("location_preparation_rules")
+    .upsert(
+      preparationRules.map((rule) => ({
+        ...(rule.id ? { id: rule.id } : {}),
+        user_id: auth.user.id,
+        location_id: rule.locationId,
+        prepare_before_departure_minutes: rule.prepareBeforeDepartureMinutes ??
+          0,
+        settle_after_arrival_minutes: rule.settleAfterArrivalMinutes ?? 0,
+        updated_at: now,
+      })),
+      { onConflict: "user_id,location_id" },
+    );
+  if (preparationRuleWrite.error) {
+    return failure(
+      requestId,
+      "preparation_rules_write_failed",
+      "persistence.preparation_rules",
+      500,
+      `Preparation rules could not be saved (${
+        preparationRuleWrite.error.code ?? "database_error"
+      }).`,
+      "Check that every rule uses a saved location, then retry.",
     );
   }
   const commitmentWrite = await service.from("commitments").upsert(
@@ -717,6 +1045,8 @@ Deno.serve(async (request) => {
       sections: [
         "profile",
         "locations",
+        "travel_rules",
+        "preparation_rules",
         "time_preferences",
         "commitments",
         "routines",
@@ -725,14 +1055,42 @@ Deno.serve(async (request) => {
       timePreferenceDays: timePreferences.length,
     },
   });
-  const freshProfile = await service.from("personal_profiles").select(
-    "user_id,date_of_birth,home_location_id,work_location_id,career_summary,planning_preferences,notification_preferences,privacy_preferences,updated_at",
-  ).eq("user_id", auth.user.id).single();
+  const freshProfile = await service
+    .from("personal_profiles")
+    .select(
+      "user_id,date_of_birth,home_location_id,work_location_id,career_summary,planning_preferences,notification_preferences,privacy_preferences,updated_at",
+    )
+    .eq("user_id", auth.user.id)
+    .single();
+  const freshTravelRules = await service
+    .from("location_travel_rules")
+    .select(
+      "id,origin_location_id,destination_location_id,transport_mode,normal_minutes,peak_minutes,peak_start,peak_end,buffer_percent,minimum_buffer_minutes",
+    )
+    .eq("user_id", auth.user.id);
+  const freshPreparationRules = await service
+    .from("location_preparation_rules")
+    .select(
+      "id,location_id,prepare_before_departure_minutes,settle_after_arrival_minutes",
+    )
+    .eq("user_id", auth.user.id);
+  if (freshTravelRules.error || freshPreparationRules.error) {
+    return failure(
+      requestId,
+      "profile_read_after_write_failed",
+      "persistence.reload",
+      500,
+      "The profile was saved but route rules could not be reloaded for confirmation.",
+      "Retry once; the request ID identifies the reload boundary.",
+    );
+  }
   return json(
     {
       ...sanitise(
         freshProfile.data as Record<string, unknown>,
         savedLocations.data as Record<string, unknown>[],
+        freshTravelRules.data as Record<string, unknown>[],
+        freshPreparationRules.data as Record<string, unknown>[],
         timePreferences,
         commitments,
         routines,
@@ -741,6 +1099,8 @@ Deno.serve(async (request) => {
       changedSections: [
         "profile",
         "locations",
+        "travel_rules",
+        "preparation_rules",
         "time_preferences",
         "commitments",
         "routines",

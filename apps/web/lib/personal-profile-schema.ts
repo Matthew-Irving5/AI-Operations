@@ -22,7 +22,8 @@ export const personalProfileSchema = z.object({
     minimumUnscheduledBufferMinutes: z.number().int().min(0).max(1440),
     minimumEveningBufferMinutes: z.number().int().min(0).max(1440),
     preparationBufferMinutes: z.number().int().min(0).max(1440),
-    travelBufferMinutes: z.number().int().min(0).max(1440),
+    travelBufferPercent: z.number().min(0).max(200),
+    minimumTravelBufferMinutes: z.number().int().min(0).max(120),
     transportPreferences: z.string().max(200),
   }),
   locations: z
@@ -32,12 +33,36 @@ export const personalProfileSchema = z.object({
         label: z.string().min(1).max(100),
         kind: z.enum(['home', 'work', 'common']),
         address: z.string().max(500).optional(),
-        travelMinutes: z.number().int().min(0).max(1440),
-        preparationMinutes: z.number().int().min(0).max(1440),
         hasAddress: z.boolean().optional(),
       }),
     )
     .max(20),
+  travelRules: z
+    .array(
+      z.object({
+        id: uuid.optional(),
+        originLocationId: uuid,
+        destinationLocationId: uuid,
+        transportMode: z.enum(['walking', 'cycling', 'public_transport', 'driving', 'other']),
+        normalMinutes: z.number().int().min(1).max(1440),
+        peakMinutes: z.number().int().min(1).max(1440),
+        peakStart: time.nullable().optional(),
+        peakEnd: time.nullable().optional(),
+        bufferPercent: z.number().min(0).max(200),
+        minimumBufferMinutes: z.number().int().min(0).max(120),
+      }),
+    )
+    .max(100),
+  preparationRules: z
+    .array(
+      z.object({
+        id: uuid.optional(),
+        locationId: uuid,
+        prepareBeforeDepartureMinutes: z.number().int().min(0).max(240),
+        settleAfterArrivalMinutes: z.number().int().min(0).max(240),
+      }),
+    )
+    .max(100),
   timePreferences: z
     .array(
       z.object({

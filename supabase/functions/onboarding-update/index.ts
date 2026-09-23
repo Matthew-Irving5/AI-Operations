@@ -173,7 +173,8 @@ Deno.serve(async (request) => {
         "minimumUnscheduledBufferMinutes",
         "minimumEveningBufferMinutes",
         "preparationBufferMinutes",
-        "travelBufferMinutes",
+        "travelBufferPercent",
+        "minimumTravelBufferMinutes",
         "transportPreferences",
       ]
     ) {
