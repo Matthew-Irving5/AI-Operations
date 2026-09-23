@@ -1,5 +1,5 @@
 begin;
-select plan(119);
+select plan(124);
 select ok(exists(select 1 from information_schema.columns where table_schema='public' and table_name='personal_profiles' and column_name='date_of_birth'), 'Personal profiles store date of birth');
 select ok(exists(select 1 from information_schema.columns where table_schema='public' and table_name='personal_locations' and column_name='default_travel_minutes'), 'Approved locations store travel buffers');
 select ok((select relrowsecurity from pg_class where relname='time_preferences' and relnamespace = 'public'::regnamespace), 'Weekly time preferences have RLS enabled');
@@ -10,6 +10,11 @@ select ok((select relrowsecurity from pg_class where relname='location_travel_ru
 select ok((select relrowsecurity from pg_class where relname='location_preparation_rules' and relnamespace = 'public'::regnamespace), 'Location preparation rules have RLS enabled');
 select ok(not has_table_privilege('authenticated', 'public.location_travel_rules', 'INSERT'), 'Browser cannot directly insert route travel rules');
 select ok(not has_table_privilege('authenticated', 'public.location_preparation_rules', 'INSERT'), 'Browser cannot directly insert preparation rules');
+select ok(has_table_privilege('service_role', 'public.personal_locations', 'SELECT'), 'Control plane can read encrypted location metadata');
+select ok(has_table_privilege('service_role', 'public.personal_locations', 'INSERT'), 'Control plane can insert encrypted locations');
+select ok(has_table_privilege('service_role', 'public.time_preferences', 'UPDATE'), 'Control plane can update weekly preferences');
+select ok(has_table_privilege('service_role', 'public.location_travel_rules', 'INSERT'), 'Control plane can insert route rules');
+select ok(has_table_privilege('service_role', 'public.audit_events', 'INSERT'), 'Control plane can append profile audit events');
 
 select ok(
   not exists (

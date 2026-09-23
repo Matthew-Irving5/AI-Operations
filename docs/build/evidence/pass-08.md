@@ -126,3 +126,15 @@ operator acceptance record.
   workspace tests, and production build). Edge `deno check` passed. Function
   deployment is performed by the repository staging workflow because no local
   Supabase access token is present in the operator environment.
+
+### Session recovery and control-plane grant correction (2026-09-24)
+
+- A live save request reached the Edge Function after session recovery but
+  failed at `persistence.read_locations` with PostgreSQL `42501`. Production
+  grant inspection proved the service-role control-plane role had no SELECT or
+  write privileges on the personal-profile tables; this was the single failing
+  boundary, before address encryption or profile persistence.
+- Migration `20260924100000_personal_profile_service_role_grants.sql` grants the
+  least-privilege operations required by `personal-profile` while retaining the
+  browser write lock. pgTAP assertions cover representative control-plane
+  grants and browser denial.
