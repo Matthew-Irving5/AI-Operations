@@ -138,3 +138,13 @@ operator acceptance record.
   least-privilege operations required by `personal-profile` while retaining the
   browser write lock. pgTAP assertions cover representative control-plane
   grants and browser denial.
+
+### Personal-profile checklist dependency grant (2026-09-24)
+
+- The first checklist attempt after the successful profile save reached the
+  validator and failed only on its `app_users` timezone dependency with
+  PostgreSQL `42501`; production inspection showed `service_role` had SELECT on
+  the personal-profile tables but not on `app_users`.
+- Migration `20260924110000_personal_profile_checklist_dependency_grant.sql`
+  adds only the missing service-role SELECT privilege, with a pgTAP assertion;
+  browser privileges remain unchanged.

@@ -1,5 +1,5 @@
 begin;
-select plan(124);
+select plan(125);
 select ok(exists(select 1 from information_schema.columns where table_schema='public' and table_name='personal_profiles' and column_name='date_of_birth'), 'Personal profiles store date of birth');
 select ok(exists(select 1 from information_schema.columns where table_schema='public' and table_name='personal_locations' and column_name='default_travel_minutes'), 'Approved locations store travel buffers');
 select ok((select relrowsecurity from pg_class where relname='time_preferences' and relnamespace = 'public'::regnamespace), 'Weekly time preferences have RLS enabled');
@@ -15,6 +15,7 @@ select ok(has_table_privilege('service_role', 'public.personal_locations', 'INSE
 select ok(has_table_privilege('service_role', 'public.time_preferences', 'UPDATE'), 'Control plane can update weekly preferences');
 select ok(has_table_privilege('service_role', 'public.location_travel_rules', 'INSERT'), 'Control plane can insert route rules');
 select ok(has_table_privilege('service_role', 'public.audit_events', 'INSERT'), 'Control plane can append profile audit events');
+select ok(has_table_privilege('service_role', 'public.app_users', 'SELECT'), 'Checklist validator can read the operator timezone');
 
 select ok(
   not exists (
