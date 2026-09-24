@@ -148,7 +148,7 @@ Deno.serve(async (request) => {
       503,
       "configuration.github_token",
       "The read-only GitHub token is not configured in the Edge Function environment; no provider request was made.",
-      "Add the protected GITHUB_PERSONAL_READ_TOKEN secret to this environment, redeploy the Edge Function, then retry.",
+      "Add the protected PERSONAL_READ_TOKEN secret to the matching GitHub Actions environment (staging or production), redeploy so it is copied to the runtime, then retry.",
     );
   }
   let response: Response;

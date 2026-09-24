@@ -67,7 +67,10 @@ jobs:
           PROJECT_REF: ${{ secrets.PRODUCTION_SUPABASE_PROJECT_REF }}
           FINANCE_ARCHIVE_GATEWAY_URL: ${{ vars.FINANCE_ARCHIVE_GATEWAY_URL }}
           FINANCE_ARCHIVE_GATEWAY_SECRET: ${{ secrets.FINANCE_ARCHIVE_GATEWAY_SECRET }}
-          GITHUB_PERSONAL_READ_TOKEN: ${{ secrets.GITHUB_PERSONAL_READ_TOKEN }}
+          # GitHub environment secret names cannot use the GITHUB_ prefix. Keep the
+          # provider-facing Supabase secret name stable while reading the operator's
+          # PERSONAL_READ_TOKEN environment secret here.
+          GITHUB_PERSONAL_READ_TOKEN: ${{ secrets.PERSONAL_READ_TOKEN }}
         run: |
           test -n "$FINANCE_ARCHIVE_GATEWAY_URL" || { echo "Missing production variable: FINANCE_ARCHIVE_GATEWAY_URL"; exit 1; }
           test -n "$FINANCE_ARCHIVE_GATEWAY_SECRET" || { echo "Missing production secret: FINANCE_ARCHIVE_GATEWAY_SECRET"; exit 1; }
@@ -75,7 +78,7 @@ jobs:
           if [ -n "$GITHUB_PERSONAL_READ_TOKEN" ]; then
             npx supabase secrets set GITHUB_PERSONAL_READ_TOKEN="$GITHUB_PERSONAL_READ_TOKEN" --project-ref "$PROJECT_REF"
           else
-            echo "GITHUB_PERSONAL_READ_TOKEN is not configured; Career sync will fail closed with github_connection_unavailable until the protected secret is added."
+            echo "PERSONAL_READ_TOKEN is not configured; Career sync will fail closed with github_connection_unavailable until the protected secret is added."
           fi
           for function in supabase/functions/*; do
             [[ "$(basename "$function")" == _* ]] && continue

@@ -40,9 +40,10 @@ The Career connection is read-only and hard-allowlisted to `Matthew-Irving5`. Cr
 fine-grained personal access token for that owner with repository metadata read permission only;
 do not grant contents write, administration, workflow, issue, pull-request, or organisation
 permissions, and never use a `BrightSG` token. Add the token as the masked GitHub Actions
-environment secret `GITHUB_PERSONAL_READ_TOKEN` in both `staging` and `production`. The deployment
-workflow copies it into the matching Supabase Edge Function secret; it is never sent to browser
-code or stored in Postgres.
+environment secret `PERSONAL_READ_TOKEN` in both `staging` and `production`. GitHub reserves the
+`GITHUB_` prefix, so the workflow maps this environment secret to the runtime
+`GITHUB_PERSONAL_READ_TOKEN` Supabase Edge Function secret. It is never sent to browser code or
+stored in Postgres.
 
 After deployment, open **Career**, choose **Connect and sync personal GitHub**, complete the
 in-page fresh MFA challenge, and wait for the repository evidence count and retrieval timestamp to
