@@ -142,6 +142,10 @@ select ok(
   'Finance mapping and imports have named one-time MFA gates'
 );
 select ok(
+  position('github_sync' in pg_get_functiondef('public.create_mfa_action_gate(text)'::regprocedure)) > 0,
+  'GitHub evidence sync has a named one-time MFA gate'
+);
+select ok(
   position('finance_configure' in (
     select pg_get_constraintdef(oid)
     from pg_constraint
@@ -153,6 +157,14 @@ select ok(
       where conname = 'mfa_action_gates_action_key_check'
     )) > 0,
   'Finance MFA gate action keys are database-constrained'
+);
+select ok(
+  position('github_sync' in (
+    select pg_get_constraintdef(oid)
+    from pg_constraint
+    where conname = 'mfa_action_gates_action_key_check'
+  )) > 0,
+  'GitHub MFA sync action key is database-constrained'
 );
 select ok(
   position('is_allowed_aal2' in pg_get_functiondef('public.create_worker_device_from_mfa_gate(uuid,text,text,text,timestamptz)'::regprocedure)) = 0,

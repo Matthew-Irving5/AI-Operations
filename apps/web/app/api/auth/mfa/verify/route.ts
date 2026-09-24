@@ -20,6 +20,7 @@ const bodySchema = z.object({
       'digital_scan_create',
       'finance_configure',
       'finance_import',
+      'github_sync',
     ])
     .optional(),
 });

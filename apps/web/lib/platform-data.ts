@@ -750,3 +750,37 @@ export async function financeMappingReadinessData(): Promise<
     error: null,
   };
 }
+
+export async function githubConnectionReadinessData(): Promise<
+  Readonly<{
+    ready: boolean;
+    evidenceCount: number;
+    latestRetrievedAt: string | null;
+    error: string | null;
+  }>
+> {
+  const client = await createSupabaseServerClient();
+  const cutoff = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+  const evidence = await client
+    .from('career_github_evidence')
+    .select('id,retrieved_at', { count: 'exact' })
+    .eq('owner_login', 'Matthew-Irving5')
+    .like('source_url', 'https://github.com/Matthew-Irving5/%')
+    .gte('retrieved_at', cutoff)
+    .order('retrieved_at', { ascending: false })
+    .limit(100);
+  if (evidence.error) {
+    return {
+      ready: false,
+      evidenceCount: 0,
+      latestRetrievedAt: null,
+      error: 'GitHub connection readiness could not be verified.',
+    };
+  }
+  return {
+    ready: (evidence.count ?? 0) > 0,
+    evidenceCount: evidence.count ?? 0,
+    latestRetrievedAt: evidence.data?.[0]?.retrieved_at ?? null,
+    error: null,
+  };
+}

@@ -1,6 +1,7 @@
 import {
   digitalEstateData,
   financeMappingReadinessData,
+  githubConnectionReadinessData,
   onboardingData,
   personalProfileReadinessData,
   sourcePermissionsData,
@@ -9,13 +10,14 @@ import { OnboardingForm } from './onboarding-form';
 import { freshnessLabel } from '../data-sources/source-permissions';
 
 export default async function SettingsPage() {
-  const [{ items, accepted }, sources, digitalEstate, personalProfile, financeMapping] =
+  const [{ items, accepted }, sources, digitalEstate, personalProfile, financeMapping, github] =
     await Promise.all([
       onboardingData(),
       sourcePermissionsData(),
       digitalEstateData(),
       personalProfileReadinessData(),
       financeMappingReadinessData(),
+      githubConnectionReadinessData(),
     ]);
   const freshnessBySource = new Map(sources.freshness.data.map((item) => [item.source, item]));
   const googleConnections = sources.connections.data.filter(
@@ -90,7 +92,8 @@ export default async function SettingsPage() {
       digitalEstate.devices.error ??
       digitalEstate.scans.error ??
       personalProfile.error ??
-      financeMapping.error) ? (
+      financeMapping.error ??
+      github.error) ? (
         <p className="notice" role="alert">
           {items.error ??
             accepted.error ??
@@ -100,7 +103,8 @@ export default async function SettingsPage() {
             digitalEstate.devices.error ??
             digitalEstate.scans.error ??
             personalProfile.error ??
-            financeMapping.error}
+            financeMapping.error ??
+            github.error}
         </p>
       ) : null}
       <OnboardingForm
@@ -110,6 +114,7 @@ export default async function SettingsPage() {
         windowsWorkerReady={windowsWorkerReady}
         personalProfileReady={personalProfile.ready}
         financeMappingReady={financeMapping.ready}
+        githubConnectionReady={github.ready}
       />
     </>
   );
