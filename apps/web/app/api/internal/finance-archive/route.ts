@@ -8,7 +8,6 @@ import {
 } from '../../../../lib/archive-gateway';
 
 export const dynamic = 'force-dynamic';
-export const runtime = 'edge';
 
 type Diagnostic = {
   code: string;
@@ -60,7 +59,19 @@ export async function POST(request: Request) {
       'Submit the controlled statement through the Finance import flow.',
     );
   }
-  const { env } = await getCloudflareContext({ async: true });
+  let env: CloudflareEnv;
+  try {
+    ({ env } = await getCloudflareContext({ async: true }));
+  } catch {
+    return failure(
+      requestId,
+      'archive_runtime_context_unavailable',
+      503,
+      'archive.runtime_context',
+      'The Worker runtime could not provide the configured Cloudflare bindings to the finance archive route.',
+      'Redeploy the Worker with the private ARCHIVE_BUCKET binding and gateway secret, then retry the import.',
+    );
+  }
   const secret = env.FINANCE_ARCHIVE_GATEWAY_SECRET;
   if (!secret) {
     return failure(
