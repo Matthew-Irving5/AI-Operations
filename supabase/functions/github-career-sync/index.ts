@@ -239,6 +239,8 @@ Deno.serve(async (request) => {
     onConflict: "user_id,repository_external_id,evidence_kind,source_url",
   });
   if (persistenceError) {
+    const databaseCode = persistenceError.code ?? "database_error";
+    const permissionDenied = databaseCode === "42501";
     return failure(
       requestId,
       "github_evidence_store_failed",
@@ -247,7 +249,10 @@ Deno.serve(async (request) => {
       `The GitHub response was valid, but repository evidence could not be stored (${
         persistenceError.code ?? "database_error"
       }).`,
-      "Retry once; if it repeats, provide the request ID. No partial evidence was accepted.",
+      permissionDenied
+        ? "The service-role database grants for career_github_evidence are incomplete. Deploy the server-only SELECT/INSERT/UPDATE grant migration, then retry; do not grant write access to the browser role."
+        : "Retry once; if it repeats, provide the request ID and database code. No partial evidence was accepted.",
+      { databaseCode },
     );
   }
   const audit = await service.from("audit_events").insert({
