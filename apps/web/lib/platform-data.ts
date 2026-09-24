@@ -134,6 +134,25 @@ const financeCloseSchema = z.object({
   readiness: z.string(),
   reconciled: z.boolean(),
 });
+const financeAccountSchema = z.object({
+  id: z.string().uuid(),
+  institution_name: z.string(),
+  account_label: z.string(),
+  account_type: z.string(),
+  currency: z.string(),
+  active: z.boolean(),
+});
+const financeCategorySchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  active: z.boolean(),
+});
+const financeAdapterSchema = z.object({
+  id: z.string().uuid(),
+  spreadsheet_external_id: z.string(),
+  configuration: z.record(z.string(), z.unknown()),
+  read_only: z.literal(true),
+});
 const careerEvidenceSchema = z.object({
   repository_name: z.string(),
   evidence_kind: z.string(),
@@ -513,16 +532,28 @@ export async function financeData(): Promise<
   Readonly<{
     closes: PageData<z.infer<typeof financeCloseSchema>[]>;
     transactionCount: PageData<number>;
+    accounts: PageData<z.infer<typeof financeAccountSchema>[]>;
+    categories: PageData<z.infer<typeof financeCategorySchema>[]>;
+    adapters: PageData<z.infer<typeof financeAdapterSchema>[]>;
   }>
 > {
   const client = await createSupabaseServerClient();
-  const [closes, transactions] = await Promise.all([
+  const [closes, transactions, accounts, categories, adapters] = await Promise.all([
     client
       .from('finance_close_periods')
       .select('id,period_start,period_end,close_kind,readiness,reconciled')
       .order('period_end', { ascending: false })
       .limit(24),
     client.from('finance_transactions').select('*', { count: 'exact', head: true }),
+    client
+      .from('finance_accounts')
+      .select('id,institution_name,account_label,account_type,currency,active')
+      .order('created_at', { ascending: false }),
+    client.from('finance_categories').select('id,name,active').order('name', { ascending: true }),
+    client
+      .from('finance_sheet_adapters')
+      .select('id,spreadsheet_external_id,configuration,read_only')
+      .order('created_at', { ascending: false }),
   ]);
   return {
     closes: closes.error
@@ -531,6 +562,15 @@ export async function financeData(): Promise<
     transactionCount: transactions.error
       ? { data: 0, error: 'Finance transaction status could not be loaded.' }
       : { data: transactions.count ?? 0, error: null },
+    accounts: accounts.error
+      ? { data: [], error: 'Finance account mappings could not be loaded.' }
+      : parsedRows(accounts.data, z.array(financeAccountSchema)),
+    categories: categories.error
+      ? { data: [], error: 'Finance category mappings could not be loaded.' }
+      : parsedRows(categories.data, z.array(financeCategorySchema)),
+    adapters: adapters.error
+      ? { data: [], error: 'Finance source mappings could not be loaded.' }
+      : parsedRows(adapters.data, z.array(financeAdapterSchema)),
   };
 }
 
@@ -678,4 +718,35 @@ export async function personalProfileReadinessData(): Promise<
         planning[field] !== undefined && planning[field] !== null && planning[field] !== '',
     );
   return { ready, error: null };
+}
+
+export async function financeMappingReadinessData(): Promise<
+  Readonly<{ ready: boolean; error: string | null }>
+> {
+  const client = await createSupabaseServerClient();
+  const [accounts, categories, statements, transactions, closes] = await Promise.all([
+    client.from('finance_accounts').select('id').eq('active', true).limit(1),
+    client.from('finance_categories').select('id').eq('active', true).limit(1),
+    client.from('finance_statements').select('id').eq('status', 'parsed').limit(1),
+    client.from('finance_transactions').select('id', { count: 'exact', head: true }),
+    client
+      .from('finance_close_periods')
+      .select('id')
+      .eq('readiness', 'ready')
+      .eq('reconciled', true)
+      .limit(1),
+  ]);
+  const failed = [accounts, categories, statements, transactions, closes].find(
+    (result) => result.error,
+  );
+  if (failed) return { ready: false, error: 'Finance mapping readiness could not be verified.' };
+  return {
+    ready:
+      (accounts.data?.length ?? 0) > 0 &&
+      (categories.data?.length ?? 0) > 0 &&
+      (statements.data?.length ?? 0) > 0 &&
+      (transactions.count ?? 0) > 0 &&
+      (closes.data?.length ?? 0) > 0,
+    error: null,
+  };
 }

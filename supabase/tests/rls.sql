@@ -1,5 +1,5 @@
 begin;
-select plan(125);
+select plan(133);
 select ok(exists(select 1 from information_schema.columns where table_schema='public' and table_name='personal_profiles' and column_name='date_of_birth'), 'Personal profiles store date of birth');
 select ok(exists(select 1 from information_schema.columns where table_schema='public' and table_name='personal_locations' and column_name='default_travel_minutes'), 'Approved locations store travel buffers');
 select ok((select relrowsecurity from pg_class where relname='time_preferences' and relnamespace = 'public'::regnamespace), 'Weekly time preferences have RLS enabled');
@@ -16,6 +16,14 @@ select ok(has_table_privilege('service_role', 'public.time_preferences', 'UPDATE
 select ok(has_table_privilege('service_role', 'public.location_travel_rules', 'INSERT'), 'Control plane can insert route rules');
 select ok(has_table_privilege('service_role', 'public.audit_events', 'INSERT'), 'Control plane can append profile audit events');
 select ok(has_table_privilege('service_role', 'public.app_users', 'SELECT'), 'Checklist validator can read the operator timezone');
+select ok(has_table_privilege('service_role', 'public.finance_accounts', 'SELECT'), 'Finance control plane can read mapped accounts');
+select ok(has_table_privilege('service_role', 'public.finance_accounts', 'INSERT'), 'Finance control plane can create mapped accounts');
+select ok(has_table_privilege('service_role', 'public.finance_categories', 'INSERT'), 'Finance control plane can create categories');
+select ok(has_table_privilege('service_role', 'public.finance_statements', 'INSERT'), 'Finance control plane can archive statements');
+select ok(has_table_privilege('service_role', 'public.finance_transactions', 'INSERT'), 'Finance control plane can store transactions');
+select ok(has_table_privilege('service_role', 'public.finance_close_periods', 'UPDATE'), 'Finance control plane can update close readiness');
+select ok(has_table_privilege('service_role', 'public.finance_sheet_adapters', 'INSERT'), 'Finance control plane can map read-only sheets');
+select ok(has_table_privilege('service_role', 'public.source_objects', 'INSERT'), 'Finance control plane can index archived objects');
 
 select ok(
   not exists (

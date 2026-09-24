@@ -1,5 +1,6 @@
 import {
   digitalEstateData,
+  financeMappingReadinessData,
   onboardingData,
   personalProfileReadinessData,
   sourcePermissionsData,
@@ -8,12 +9,14 @@ import { OnboardingForm } from './onboarding-form';
 import { freshnessLabel } from '../data-sources/source-permissions';
 
 export default async function SettingsPage() {
-  const [{ items, accepted }, sources, digitalEstate, personalProfile] = await Promise.all([
-    onboardingData(),
-    sourcePermissionsData(),
-    digitalEstateData(),
-    personalProfileReadinessData(),
-  ]);
+  const [{ items, accepted }, sources, digitalEstate, personalProfile, financeMapping] =
+    await Promise.all([
+      onboardingData(),
+      sourcePermissionsData(),
+      digitalEstateData(),
+      personalProfileReadinessData(),
+      financeMappingReadinessData(),
+    ]);
   const freshnessBySource = new Map(sources.freshness.data.map((item) => [item.source, item]));
   const googleConnections = sources.connections.data.filter(
     (connection) => connection.provider === 'google' && connection.status === 'connected',
@@ -85,7 +88,9 @@ export default async function SettingsPage() {
       sources.freshness.error ??
       sources.appleDevices.error ??
       digitalEstate.devices.error ??
-      digitalEstate.scans.error) ? (
+      digitalEstate.scans.error ??
+      personalProfile.error ??
+      financeMapping.error) ? (
         <p className="notice" role="alert">
           {items.error ??
             accepted.error ??
@@ -94,7 +99,8 @@ export default async function SettingsPage() {
             sources.appleDevices.error ??
             digitalEstate.devices.error ??
             digitalEstate.scans.error ??
-            personalProfile.error}
+            personalProfile.error ??
+            financeMapping.error}
         </p>
       ) : null}
       <OnboardingForm
@@ -103,6 +109,7 @@ export default async function SettingsPage() {
         sourcePermissionsReady={sourcePermissionsReady}
         windowsWorkerReady={windowsWorkerReady}
         personalProfileReady={personalProfile.ready}
+        financeMappingReady={financeMapping.ready}
       />
     </>
   );
