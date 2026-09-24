@@ -1,5 +1,5 @@
 begin;
-select plan(137);
+select plan(138);
 select ok(exists(select 1 from information_schema.columns where table_schema='public' and table_name='personal_profiles' and column_name='date_of_birth'), 'Personal profiles store date of birth');
 select ok(exists(select 1 from information_schema.columns where table_schema='public' and table_name='personal_locations' and column_name='default_travel_minutes'), 'Approved locations store travel buffers');
 select ok((select relrowsecurity from pg_class where relname='time_preferences' and relnamespace = 'public'::regnamespace), 'Weekly time preferences have RLS enabled');
@@ -24,6 +24,7 @@ select ok(has_table_privilege('service_role', 'public.finance_transactions', 'IN
 select ok(has_table_privilege('service_role', 'public.finance_close_periods', 'UPDATE'), 'Finance control plane can update close readiness');
 select ok(has_table_privilege('service_role', 'public.finance_sheet_adapters', 'INSERT'), 'Finance control plane can map read-only sheets');
 select ok(has_table_privilege('service_role', 'public.source_objects', 'INSERT'), 'Finance control plane can index archived objects');
+select ok(has_table_privilege('service_role', 'public.career_github_evidence', 'SELECT,INSERT,UPDATE'), 'Career GitHub sync can upsert repository evidence through the service role');
 
 select ok(
   not exists (
