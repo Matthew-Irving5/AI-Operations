@@ -59,18 +59,23 @@ const sha256 = async (value: string) =>
   ).join("");
 
 function isUuid(value: unknown): value is string {
-  return typeof value === "string" &&
+  return (
+    typeof value === "string" &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      .test(value);
+      .test(value)
+  );
 }
 
 function isSafeText(value: unknown, maxLength: number): value is string {
-  return typeof value === "string" && value.trim().length > 0 &&
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
     value.length <= maxLength &&
     !Array.from(value).some((character) => {
       const code = character.charCodeAt(0);
       return code < 32 || code === 127;
-    });
+    })
+  );
 }
 
 Deno.serve(async (request) => {
@@ -125,7 +130,7 @@ Deno.serve(async (request) => {
   // legitimately arrive while the browser still presents the pre-challenge
   // AAL1 session cookie. The gate was created only after AAL2 verification and
   // is consumed exactly once below, matching the Digital Estate flow.
-  const payload = await request.json().catch(() => null) as {
+  const payload = (await request.json().catch(() => null)) as {
     accountId?: unknown;
     currency?: unknown;
     statementName?: unknown;
@@ -135,11 +140,13 @@ Deno.serve(async (request) => {
     mfaGateId?: unknown;
   } | null;
   if (
-    !payload || !isUuid(payload.accountId) ||
+    !payload ||
+    !isUuid(payload.accountId) ||
     typeof payload.currency !== "string" ||
     !/^[A-Z]{3}$/.test(payload.currency) ||
     !isSafeText(payload.statementName, 200) ||
-    typeof payload.csv !== "string" || payload.csv.length === 0 ||
+    typeof payload.csv !== "string" ||
+    payload.csv.length === 0 ||
     payload.csv.length > 1_000_000 ||
     (payload.openingBalance !== undefined &&
       typeof payload.openingBalance !== "string") ||
@@ -147,7 +154,9 @@ Deno.serve(async (request) => {
       typeof payload.closingBalance !== "string") ||
     typeof payload.mfaGateId !== "string" ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      .test(payload.mfaGateId)
+      .test(
+        payload.mfaGateId,
+      )
   ) {
     return failure(
       requestId,
@@ -169,10 +178,12 @@ Deno.serve(async (request) => {
       "Correct the statement format and submit it again; no archive or database write occurred.",
     );
   }
-  const account = await service.from("finance_accounts").select(
-    "id,currency,active",
-  )
-    .eq("id", payload.accountId).eq("user_id", identity.user.id).maybeSingle();
+  const account = await service
+    .from("finance_accounts")
+    .select("id,currency,active")
+    .eq("id", payload.accountId)
+    .eq("user_id", identity.user.id)
+    .maybeSingle();
   if (account.error) {
     return failure(
       requestId,
@@ -207,7 +218,10 @@ Deno.serve(async (request) => {
   }
   const { data: gateConsumed, error: gateError } = await caller.rpc(
     "consume_mfa_action_gate",
-    { p_gate_id: payload.mfaGateId, p_action_key: "finance_import" },
+    {
+      p_gate_id: payload.mfaGateId,
+      p_action_key: "finance_import",
+    },
   );
   if (gateError || gateConsumed !== true) {
     return failure(
@@ -222,8 +236,12 @@ Deno.serve(async (request) => {
     );
   }
   const digest = await sha256(payload.csv);
-  const duplicate = await service.from("finance_statements").select("id,status")
-    .eq("user_id", identity.user.id).eq("sha256", digest).maybeSingle();
+  const duplicate = await service
+    .from("finance_statements")
+    .select("id,status")
+    .eq("user_id", identity.user.id)
+    .eq("sha256", digest)
+    .maybeSingle();
   if (duplicate.error) {
     return failure(
       requestId,
@@ -283,6 +301,7 @@ Deno.serve(async (request) => {
         "x-archive-secret": archiveSecret,
         "x-content-sha256": digest,
         "x-file-name": payload.statementName,
+        "x-user-id": identity.user.id,
       },
       body: payload.csv,
     });
@@ -296,13 +315,15 @@ Deno.serve(async (request) => {
       "Retry once; if it repeats, provide the request ID and keep the statement locally.",
     );
   }
-  const archive = await archiveResponse.json().catch(() => null) as {
+  const archive = (await archiveResponse.json().catch(() => null)) as {
     key?: unknown;
     bytes?: unknown;
   } | null;
   if (
-    !archiveResponse.ok || !isSafeText(archive?.key, 500) ||
-    typeof archive?.bytes !== "number" || archive.bytes < 1
+    !archiveResponse.ok ||
+    !isSafeText(archive?.key, 500) ||
+    typeof archive?.bytes !== "number" ||
+    archive.bytes < 1
   ) {
     return failure(
       requestId,
@@ -313,16 +334,20 @@ Deno.serve(async (request) => {
       "Retry once; if it repeats, provide the request ID for archive-gateway investigation.",
     );
   }
-  const object = await service.from("source_objects").insert({
-    user_id: identity.user.id,
-    r2_key: archive.key,
-    sha256: digest,
-    size_bytes: archive.bytes,
-    mime_type: "text/csv",
-    data_classification: "highly_sensitive",
-    source: "finance_upload",
-    captured_at: new Date().toISOString(),
-  }).select("id").single();
+  const object = await service
+    .from("source_objects")
+    .insert({
+      user_id: identity.user.id,
+      r2_key: archive.key,
+      sha256: digest,
+      size_bytes: archive.bytes,
+      mime_type: "text/csv",
+      data_classification: "highly_sensitive",
+      source: "finance_upload",
+      captured_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
   if (object.error || !object.data) {
     return failure(
       requestId,
@@ -335,20 +360,24 @@ Deno.serve(async (request) => {
       "Do not retry blindly; provide the request ID so the archive/object boundary can be reconciled.",
     );
   }
-  const statement = await service.from("finance_statements").insert({
-    user_id: identity.user.id,
-    account_id: payload.accountId,
-    source: "upload",
-    source_object_id: object.data.id,
-    sha256: digest,
-    mime_type: "text/csv",
-    period_start: parsed.rows[0]?.transactionDate,
-    period_end: parsed.rows.at(-1)?.transactionDate,
-    opening_balance: payload.openingBalance ?? null,
-    closing_balance: payload.closingBalance ?? null,
-    currency: payload.currency,
-    status: "archived",
-  }).select("id").single();
+  const statement = await service
+    .from("finance_statements")
+    .insert({
+      user_id: identity.user.id,
+      account_id: payload.accountId,
+      source: "upload",
+      source_object_id: object.data.id,
+      sha256: digest,
+      mime_type: "text/csv",
+      period_start: parsed.rows[0]?.transactionDate,
+      period_end: parsed.rows.at(-1)?.transactionDate,
+      opening_balance: payload.openingBalance ?? null,
+      closing_balance: payload.closingBalance ?? null,
+      currency: payload.currency,
+      status: "archived",
+    })
+    .select("id")
+    .single();
   if (statement.error || !statement.data) {
     return failure(
       requestId,
@@ -361,30 +390,33 @@ Deno.serve(async (request) => {
       "Do not retry blindly; provide the request ID so the archive/object boundary can be reconciled.",
     );
   }
-  const transactions = await Promise.all(parsed.rows.map(async (row) => ({
-    user_id: identity.user!.id,
-    account_id: payload.accountId!,
-    statement_id: statement.data!.id,
-    external_id: row.externalId,
-    transaction_date: row.transactionDate,
-    description: row.description,
-    amount: row.amount,
-    currency: payload.currency as string,
-    transaction_hash: await sha256(
-      [
-        row.externalId,
-        row.transactionDate,
-        row.description,
-        row.amount,
-        payload.currency,
-      ].join("\u0000"),
-    ),
-    provenance: { source: "statement_csv", request_id: requestId },
-  })));
-  const stored = await service.from("finance_transactions").upsert(
-    transactions,
-    { onConflict: "account_id,transaction_hash" },
+  const transactions = await Promise.all(
+    parsed.rows.map(async (row) => ({
+      user_id: identity.user!.id,
+      account_id: payload.accountId!,
+      statement_id: statement.data!.id,
+      external_id: row.externalId,
+      transaction_date: row.transactionDate,
+      description: row.description,
+      amount: row.amount,
+      currency: payload.currency as string,
+      transaction_hash: await sha256(
+        [
+          row.externalId,
+          row.transactionDate,
+          row.description,
+          row.amount,
+          payload.currency,
+        ].join(
+          "\u0000",
+        ),
+      ),
+      provenance: { source: "statement_csv", request_id: requestId },
+    })),
   );
+  const stored = await service
+    .from("finance_transactions")
+    .upsert(transactions, { onConflict: "account_id,transaction_hash" });
   if (stored.error) {
     return failure(
       requestId,
@@ -402,15 +434,21 @@ Deno.serve(async (request) => {
     payload.openingBalance,
     payload.closingBalance,
   );
-  const closeResult = await service.from("finance_close_periods").upsert({
-    user_id: identity.user.id,
-    period_start: close.periodStart,
-    period_end: close.periodEnd,
-    close_kind: close.closeKind,
-    readiness: close.readiness,
-    blockers: close.blockers,
-    reconciled: close.reconciled,
-  }, { onConflict: "user_id,period_start,period_end,close_kind" }).select("id")
+  const closeResult = await service
+    .from("finance_close_periods")
+    .upsert(
+      {
+        user_id: identity.user.id,
+        period_start: close.periodStart,
+        period_end: close.periodEnd,
+        close_kind: close.closeKind,
+        readiness: close.readiness,
+        blockers: close.blockers,
+        reconciled: close.reconciled,
+      },
+      { onConflict: "user_id,period_start,period_end,close_kind" },
+    )
+    .select("id")
     .single();
   if (closeResult.error || !closeResult.data) {
     return failure(
@@ -424,11 +462,14 @@ Deno.serve(async (request) => {
       "Do not retry blindly; provide the request ID so the transaction and close evidence can be reconciled.",
     );
   }
-  const statementUpdate = await service.from("finance_statements").update({
-    status: "parsed",
-    period_start: close.periodStart,
-    period_end: close.periodEnd,
-  }).eq("id", statement.data.id);
+  const statementUpdate = await service
+    .from("finance_statements")
+    .update({
+      status: "parsed",
+      period_start: close.periodStart,
+      period_end: close.periodEnd,
+    })
+    .eq("id", statement.data.id);
   if (statementUpdate.error) {
     return failure(
       requestId,
