@@ -1,5 +1,5 @@
 begin;
-select plan(36);
+select plan(40);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password,
   email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -207,6 +207,30 @@ select is((select configuration->'selected_calendar_ids'->>0 from public.connect
 select is((select consumed_at is not null from public.mfa_action_gates
   where id = '50000000-0000-4000-8000-000000000006'), true,
   'source selection consumes its gate exactly once');
+
+-- Finance requests use the user-bound one-time gate as their elevation proof.
+-- The resumed browser request may still carry an AAL1 JWT, so these tests
+-- explicitly prove that gate consumption does not depend on the JWT AAL claim.
+insert into public.mfa_action_gates(id, user_id, action_key, expires_at, created_at)
+values
+  ('50000000-0000-4000-8000-000000000007', '00000000-0000-0000-0000-000000000101',
+    'finance_configure', now() + interval '2 minutes', now()),
+  ('50000000-0000-4000-8000-000000000008', '00000000-0000-0000-0000-000000000101',
+    'finance_import', now() + interval '2 minutes', now());
+select set_config('request.jwt.claims',
+  '{"sub":"00000000-0000-0000-0000-000000000101","role":"authenticated","aal":"aal1"}', true);
+select is(public.consume_mfa_action_gate(
+  '50000000-0000-4000-8000-000000000007', 'finance_configure'), true,
+  'Finance configuration gate is sufficient after inline MFA handoff at AAL1');
+select is((select consumed_at is not null from public.mfa_action_gates
+  where id = '50000000-0000-4000-8000-000000000007'), true,
+  'Finance configuration gate is consumed exactly once');
+select is(public.consume_mfa_action_gate(
+  '50000000-0000-4000-8000-000000000008', 'finance_import'), true,
+  'Finance import gate is sufficient after inline MFA handoff at AAL1');
+select is(public.consume_mfa_action_gate(
+  '50000000-0000-4000-8000-000000000008', 'finance_import'), false,
+  'Finance import gate rejects replay');
 
 select * from finish();
 rollback;

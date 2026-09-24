@@ -1,6 +1,9 @@
 -- Finance configuration and statement import use the same one-time MFA gate
 -- handoff as the other sensitive checklist operations. The browser resumes
 -- the original operation after MFA; the Edge Functions consume the gate once.
+-- Gate creation requires AAL2. Consumption intentionally relies on the
+-- user-bound, one-time gate rather than re-reading the JWT AAL, because an
+-- inline browser handoff can briefly resume with the pre-challenge AAL1 token.
 alter table public.mfa_action_gates
   drop constraint if exists mfa_action_gates_action_key_check;
 

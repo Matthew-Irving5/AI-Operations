@@ -14,7 +14,9 @@ credentials or an unrestricted export into the browser.
    for an approved read-only source and requires its spreadsheet ID.
 4. Click **Save mapping**. The Finance page opens the fresh MFA challenge
    inline; enter the Microsoft Authenticator code once and the original form
-   submits automatically. A successful response shows the account ID,
+   submits automatically. The server consumes the resulting one-time,
+   user-bound gate, so the resumed request does not depend on the browser JWT
+   still reporting AAL2. A successful response shows the account ID,
    category count, and source kind. If it fails, copy the complete diagnostic:
    `code`, `stage`, HTTP status, request ID, detail, and remediation. That
    identifies the exact boundary; do not retry blindly after an archive error.

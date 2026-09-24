@@ -6,9 +6,10 @@ Finance configuration is managed through the authenticated `finance-control`
 Edge Function. The browser may provide an account label, institution, account
 type, currency, category names, and either a controlled CSV source or an
 approved read-only Google Sheet identifier; it never receives or stores bank
-credentials. The function requires the allowlisted account and a fresh AAL2
-session, validates every field, and writes only the mapping records needed by
-the finance control plane.
+credentials. The function requires the allowlisted account and a fresh,
+user-bound one-time MFA gate created by an AAL2 challenge, validates every
+field, and writes only the mapping records needed by the finance control
+plane.
 
 Statement import is archive-first. `finance-import` validates the account and
 CSV at the boundary, computes a SHA-256 content identity, archives the exact
@@ -25,7 +26,10 @@ parsed statement with transactions, and a ready, reconciled close period. Each
 failure reports a stable code, stage, HTTP status, request ID, safe detail, and
 remediation. Finance writes use a named one-time MFA gate and an in-page
 challenge, so the form and raw CSV remain only in React memory while MFA runs;
-credentials and secrets are never logged or persisted in browser state.
+credentials and secrets are never logged or persisted in browser state. The
+resumed Edge Function request consumes that gate instead of requiring the
+browser JWT to still report AAL2; this prevents a stale AAL1 cookie at the
+inline handoff boundary from rejecting an otherwise valid MFA operation.
 
 ## Consequences
 

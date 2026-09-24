@@ -99,11 +99,7 @@ Deno.serve(async (request) => {
   const caller = createClient(url, Deno.env.get("SUPABASE_ANON_KEY") ?? "", {
     global: { headers: { Authorization: authorization } },
   });
-  const [{ data: identity, error: identityError }, { data: assurance }] =
-    await Promise.all([
-      caller.auth.getUser(),
-      caller.auth.mfa.getAuthenticatorAssuranceLevel(),
-    ]);
+  const { data: identity, error: identityError } = await caller.auth.getUser();
   if (identityError || !identity.user) {
     return failure(
       requestId,
@@ -124,16 +120,11 @@ Deno.serve(async (request) => {
       "Use the allowlisted production account and do not retry with another account.",
     );
   }
-  if (assurance?.currentLevel !== "aal2") {
-    return failure(
-      requestId,
-      "fresh_mfa_required",
-      403,
-      "authorization.aal2",
-      "Importing a financial statement requires an AAL2 session.",
-      "Use the Finance in-page MFA challenge before submitting; no statement was archived.",
-    );
-  }
+  // The one-time, user-bound gate is the elevation proof for this request.
+  // Do not re-check the JWT's current AAL here: an inline MFA response can
+  // legitimately arrive while the browser still presents the pre-challenge
+  // AAL1 session cookie. The gate was created only after AAL2 verification and
+  // is consumed exactly once below, matching the Digital Estate flow.
   const payload = await request.json().catch(() => null) as {
     accountId?: unknown;
     currency?: unknown;
