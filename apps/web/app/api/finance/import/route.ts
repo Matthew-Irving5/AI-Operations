@@ -16,6 +16,7 @@ const bodySchema = z.object({
     .string()
     .regex(/^-?(?:0|[1-9]\d*)(?:\.\d{1,2})?$/)
     .optional(),
+  mfaGateId: z.string().uuid(),
 });
 
 function diagnostic(
@@ -47,8 +48,8 @@ export async function POST(request: Request) {
       'invalid_finance_import',
       400,
       'request.validation',
-      'The statement import requires an account, matching currency, name, CSV, and optional decimal balances.',
-      'Use the four-column CSV format shown on Finance and correct the highlighted fields.',
+      'The statement import requires an account, matching currency, name, CSV, optional decimal balances, and a one-time MFA gate.',
+      'Return through the Finance MFA handoff and use the four-column CSV format shown on Finance.',
     );
   const accessToken = await getAuthenticatedServerAccessToken();
   if (!accessToken)

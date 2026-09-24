@@ -23,8 +23,9 @@ The `finance_mapping` checklist item is server-evidence-gated. It can only be
 completed after the server verifies an active account, active categories, a
 parsed statement with transactions, and a ready, reconciled close period. Each
 failure reports a stable code, stage, HTTP status, request ID, safe detail, and
-remediation. Raw CSV, credentials, and secrets are not logged or persisted in
-browser state.
+remediation. Finance writes use a named one-time MFA gate and an in-page
+challenge, so the form and raw CSV remain only in React memory while MFA runs;
+credentials and secrets are never logged or persisted in browser state.
 
 ## Consequences
 

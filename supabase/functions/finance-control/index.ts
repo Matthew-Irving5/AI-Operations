@@ -112,12 +112,27 @@ Deno.serve(async (request) => {
       403,
       "authorization.aal2",
       "Finance account and category configuration requires an AAL2 session.",
-      "Complete the Microsoft Authenticator challenge, then submit the form again.",
+      "Use the Finance in-page MFA challenge before submitting; no mapping write occurred.",
     );
   }
   const body = await request.json().catch(() => null) as
     | Record<string, unknown>
     | null;
+  const mfaGateId = body?.mfaGateId;
+  if (
+    typeof mfaGateId !== "string" ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(mfaGateId)
+  ) {
+    return failure(
+      requestId,
+      "mfa_handoff_missing",
+      400,
+      "mfa_gate.validation",
+      "The finance mapping resumed without the UUID of its one-time MFA gate.",
+      "Start the mapping again from Finance and complete the in-page MFA challenge.",
+    );
+  }
   const account = body?.account as Record<string, unknown> | undefined;
   const source = body?.source as Record<string, unknown> | undefined;
   const categoryValues = Array.isArray(body?.categories)
@@ -166,6 +181,22 @@ Deno.serve(async (request) => {
       "request.source_validation",
       "A Google Sheet source requires its approved external spreadsheet ID.",
       "Select the approved finance workbook in Data Sources and copy only its file ID.",
+    );
+  }
+  const { data: gateConsumed, error: gateError } = await caller.rpc(
+    "consume_mfa_action_gate",
+    { p_gate_id: mfaGateId, p_action_key: "finance_configure" },
+  );
+  if (gateError || gateConsumed !== true) {
+    return failure(
+      requestId,
+      "fresh_mfa_required",
+      403,
+      "mfa_gate.consume",
+      gateError
+        ? "The one-time Finance mapping MFA gate could not be validated by the database boundary."
+        : "The one-time Finance mapping MFA gate was missing, expired, replayed, or bound to another user.",
+      "Start the mapping again and complete a fresh Microsoft Authenticator challenge.",
     );
   }
   const userId = identity.user.id;

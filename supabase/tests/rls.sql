@@ -137,6 +137,11 @@ select ok(
   'Read-only Digital Estate scans have a named one-time MFA gate'
 );
 select ok(
+  position('finance_configure' in pg_get_functiondef('public.create_mfa_action_gate(text)'::regprocedure)) > 0
+    and position('finance_import' in pg_get_functiondef('public.create_mfa_action_gate(text)'::regprocedure)) > 0,
+  'Finance mapping and imports have named one-time MFA gates'
+);
+select ok(
   position('is_allowed_aal2' in pg_get_functiondef('public.create_worker_device_from_mfa_gate(uuid,text,text,text,timestamptz)'::regprocedure)) = 0,
   'Worker registration consumes the user-bound one-time gate after browser redirect'
 );

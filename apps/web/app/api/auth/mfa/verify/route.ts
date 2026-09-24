@@ -18,6 +18,8 @@ const bodySchema = z.object({
       'worker_device_register',
       'worker_device_revoke',
       'digital_scan_create',
+      'finance_configure',
+      'finance_import',
     ])
     .optional(),
 });

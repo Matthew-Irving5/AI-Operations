@@ -131,7 +131,7 @@ Deno.serve(async (request) => {
       403,
       "authorization.aal2",
       "Importing a financial statement requires an AAL2 session.",
-      "Complete the Microsoft Authenticator challenge, then submit the import again.",
+      "Use the Finance in-page MFA challenge before submitting; no statement was archived.",
     );
   }
   const payload = await request.json().catch(() => null) as {
@@ -141,6 +141,7 @@ Deno.serve(async (request) => {
     csv?: unknown;
     openingBalance?: unknown;
     closingBalance?: unknown;
+    mfaGateId?: unknown;
   } | null;
   if (
     !payload || !isUuid(payload.accountId) ||
@@ -152,7 +153,10 @@ Deno.serve(async (request) => {
     (payload.openingBalance !== undefined &&
       typeof payload.openingBalance !== "string") ||
     (payload.closingBalance !== undefined &&
-      typeof payload.closingBalance !== "string")
+      typeof payload.closingBalance !== "string") ||
+    typeof payload.mfaGateId !== "string" ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(payload.mfaGateId)
   ) {
     return failure(
       requestId,
@@ -208,6 +212,22 @@ Deno.serve(async (request) => {
       "request.account_consistency",
       `The selected account is inactive or uses ${account.data.currency}, not ${payload.currency}.`,
       "Choose the matching mapped account and statement currency.",
+    );
+  }
+  const { data: gateConsumed, error: gateError } = await caller.rpc(
+    "consume_mfa_action_gate",
+    { p_gate_id: payload.mfaGateId, p_action_key: "finance_import" },
+  );
+  if (gateError || gateConsumed !== true) {
+    return failure(
+      requestId,
+      "fresh_mfa_required",
+      403,
+      "mfa_gate.consume",
+      gateError
+        ? "The one-time Finance import MFA gate could not be validated by the database boundary."
+        : "The one-time Finance import MFA gate was missing, expired, replayed, or bound to another user.",
+      "Start the import again and complete a fresh Microsoft Authenticator challenge.",
     );
   }
   const digest = await sha256(payload.csv);

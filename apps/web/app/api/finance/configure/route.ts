@@ -15,6 +15,7 @@ const bodySchema = z.object({
     kind: z.enum(['upload', 'google_sheet']),
     spreadsheetExternalId: z.string().trim().min(1).max(256).optional(),
   }),
+  mfaGateId: z.string().uuid(),
 });
 
 function diagnostic(
@@ -46,8 +47,8 @@ export async function POST(request: Request) {
       'invalid_finance_configuration',
       400,
       'request.validation',
-      'The finance configuration did not match the required account, source, and category shape.',
-      'Correct the highlighted fields and submit again; do not enter provider credentials.',
+      'The finance configuration did not match the required account, source, category, and one-time MFA gate shape.',
+      'Return through the Finance MFA handoff and submit again; do not enter provider credentials.',
     );
   const accessToken = await getAuthenticatedServerAccessToken();
   if (!accessToken)
