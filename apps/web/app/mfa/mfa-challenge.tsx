@@ -117,6 +117,19 @@ export function MfaChallenge({
         'MFA succeeded, but the server did not return the one-time operation gate (mfa_gate_not_returned). Start the operation again in this browser; no operation was submitted.',
       );
     }
+    try {
+      const channel = new BroadcastChannel('ai-operations-mfa');
+      channel.postMessage({ type: 'mfa_verified' });
+      channel.close();
+    } catch {
+      // Storage below is the fallback for browsers without BroadcastChannel.
+    }
+    try {
+      localStorage.setItem('ai_operations_mfa_verified', String(Date.now()));
+      localStorage.removeItem('ai_operations_mfa_verified');
+    } catch {
+      // The resumed finance page reports that the automatic handoff was unavailable.
+    }
     window.location.assign(workerReturnTo ?? scanReturnTo ?? returnTo);
   }
   return (

@@ -1,7 +1,7 @@
 'use client';
 
 import type { ChangeEvent, FormEvent } from 'react';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 type Account = {
@@ -26,6 +26,7 @@ type DiagnosticPayload = {
     remediation?: string;
   };
 };
+type FinanceAction = 'configure' | 'import';
 
 const sampleCsv = [
   'id,date,description,amount',
@@ -65,6 +66,7 @@ export default function FinanceMappingForm({
   const [busy, setBusy] = useState<'configure' | 'import' | null>(null);
   const [message, setMessage] = useState('');
   const [reauthRequired, setReauthRequired] = useState(false);
+  const [pendingAction, setPendingAction] = useState<FinanceAction | null>(null);
   const categoryNames = useMemo(
     () =>
       categoryText
@@ -74,9 +76,29 @@ export default function FinanceMappingForm({
     [categoryText],
   );
 
-  async function configure(event: FormEvent) {
-    event.preventDefault();
+  function beginMfa(action: FinanceAction) {
+    if (pendingAction && pendingAction !== action) {
+      setMessage(
+        'mfa_already_pending · authorization.aal2 · HTTP 409 · request local — A finance action is already waiting for MFA in another tab. — Complete that challenge or refresh this page to cancel it.',
+      );
+      return;
+    }
+    setPendingAction(action);
+    setMessage(
+      'Fresh MFA is required. Opening Microsoft Authenticator verification in another tab…',
+    );
+    const challenge = window.open('/mfa?returnTo=%2Ffinance', '_blank', 'noopener,noreferrer');
+    if (!challenge) {
+      setPendingAction(null);
+      setMessage(
+        'mfa_popup_blocked · authorization.aal2 · HTTP 409 · request local — The browser blocked the automatic MFA tab. — Allow pop-ups for AI Operations, then click the same button again; no finance data was submitted.',
+      );
+    }
+  }
+
+  const saveMapping = useCallback(async () => {
     setBusy('configure');
+    setPendingAction(null);
     setReauthRequired(false);
     setMessage('Saving account, category, and source mapping…');
     try {
@@ -121,11 +143,26 @@ export default function FinanceMappingForm({
     } finally {
       setBusy(null);
     }
+  }, [
+    accountLabel,
+    accountType,
+    categoryNames,
+    currency,
+    institutionName,
+    router,
+    sourceKind,
+    spreadsheetExternalId,
+  ]);
+
+  function configure(event: FormEvent) {
+    event.preventDefault();
+    if (pendingAction) return beginMfa('configure');
+    beginMfa('configure');
   }
 
-  async function importStatement(event: FormEvent) {
-    event.preventDefault();
+  const importStatementAfterMfa = useCallback(async () => {
     setBusy('import');
+    setPendingAction(null);
     setReauthRequired(false);
     setMessage('Validating, archiving, parsing, and reconciling the statement…');
     try {
@@ -175,7 +212,46 @@ export default function FinanceMappingForm({
     } finally {
       setBusy(null);
     }
+  }, [accountId, closingBalance, csv, currency, openingBalance, router, statementName]);
+
+  function importStatement(event: FormEvent) {
+    event.preventDefault();
+    if (pendingAction) return beginMfa('import');
+    beginMfa('import');
   }
+
+  useEffect(() => {
+    let channel: BroadcastChannel | null = null;
+    let resumed = false;
+    const resume = () => {
+      if (resumed || !pendingAction) return;
+      resumed = true;
+      setMessage('MFA verified. Submitting the finance action automatically…');
+      if (pendingAction === 'configure') void saveMapping();
+      else void importStatementAfterMfa();
+    };
+    try {
+      channel = new BroadcastChannel('ai-operations-mfa');
+      channel.addEventListener('message', (event: MessageEvent<unknown>) => {
+        if (
+          typeof event.data === 'object' &&
+          event.data !== null &&
+          (event.data as { type?: unknown }).type === 'mfa_verified'
+        )
+          resume();
+      });
+    } catch {
+      channel = null;
+    }
+    const storage = (event: StorageEvent) => {
+      if (event.key === 'ai_operations_mfa_verified') resume();
+    };
+    window.addEventListener('storage', storage);
+    return () => {
+      channel?.close();
+      window.removeEventListener('storage', storage);
+    };
+  }, [pendingAction, saveMapping, importStatementAfterMfa]);
 
   async function loadFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
