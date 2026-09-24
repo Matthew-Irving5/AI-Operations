@@ -110,6 +110,7 @@ const steps = [
     instructions: [
       'Configure the approved finance source and category mapping. Import a controlled statement or fixture without entering credentials into the app.',
       'Confirm transaction deduplication, balances, currency, and close readiness on the Finance page.',
+      'The checkbox remains locked until the server verifies an active account, category mapping, parsed statement, stored transactions, and a reconciled close period.',
     ],
   },
   {
@@ -152,12 +153,14 @@ export function OnboardingForm({
   sourcePermissionsReady,
   windowsWorkerReady,
   personalProfileReady,
+  financeMappingReady,
 }: Readonly<{
   completedCodes: string[];
   accepted: boolean;
   sourcePermissionsReady: boolean;
   windowsWorkerReady: boolean;
   personalProfileReady: boolean;
+  financeMappingReady: boolean;
 }>) {
   const [completed, setCompleted] = useState(() => new Set(completedCodes));
   const [status, setStatus] = useState(accepted ? 'Production onboarding accepted.' : '');
@@ -262,7 +265,8 @@ export function OnboardingForm({
                   accepted ||
                   (code === 'source_permissions' && !sourcePermissionsReady) ||
                   (code === 'windows_worker' && !windowsWorkerReady) ||
-                  (code === 'personal_profile' && !personalProfileReady)
+                  (code === 'personal_profile' && !personalProfileReady) ||
+                  (code === 'finance_mapping' && !financeMappingReady)
                 }
                 onChange={(event) => void toggle(code, event.target.checked)}
               />{' '}
@@ -287,6 +291,13 @@ export function OnboardingForm({
                   <p role="status">
                     This item is locked until Devices shows a recent heartbeat and a verified
                     lightweight smoke scan. The server will reject an unaudited completion.
+                  </p>
+                ) : null}
+                {code === 'finance_mapping' && !financeMappingReady && !completed.has(code) ? (
+                  <p role="status">
+                    This item is locked until Finance shows a mapped account, categories, an
+                    imported statement, stored transactions, and a reconciled close period. The
+                    server will reject an unaudited completion.
                   </p>
                 ) : null}
                 {code === 'gmail_test' && (

@@ -1,7 +1,8 @@
 import { financeData } from '../../../lib/platform-data';
+import FinanceMappingForm from './finance-mapping-form';
 
 export default async function FinancePage() {
-  const { closes, transactionCount } = await financeData();
+  const { closes, transactionCount, accounts, categories, adapters } = await financeData();
   return (
     <>
       <h1>Finance Operations</h1>
@@ -9,9 +10,17 @@ export default async function FinancePage() {
         Statements are archived before parsing. The system never makes payments, transfers,
         investments, or account-setting changes.
       </p>
-      {(closes.error ?? transactionCount.error) ? (
+      {(closes.error ??
+      transactionCount.error ??
+      accounts.error ??
+      categories.error ??
+      adapters.error) ? (
         <p role="alert" className="notice">
-          {closes.error ?? transactionCount.error}
+          {closes.error ??
+            transactionCount.error ??
+            accounts.error ??
+            categories.error ??
+            adapters.error}
         </p>
       ) : null}
       <section className="grid" aria-label="Finance status">
@@ -40,14 +49,19 @@ export default async function FinancePage() {
         </section>
       ) : (
         <p className="card">
-          No close has been prepared. Upload a supported CSV, OFX/QIF, PDF, or XLSX statement
-          through the secure ingestion route.
+          No close has been prepared. Save an account/source mapping, then import the controlled
+          four-column CSV shown below through the archive-first route.
         </p>
       )}
       <p className="card">
         Raw statement download and export require fresh MFA and remain unavailable from this
         overview.
       </p>
+      <FinanceMappingForm
+        accounts={accounts.data}
+        categories={categories.data}
+        adapters={adapters.data}
+      />
     </>
   );
 }

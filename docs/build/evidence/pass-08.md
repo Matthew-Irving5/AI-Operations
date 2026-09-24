@@ -148,3 +148,26 @@ operator acceptance record.
 - Migration `20260924110000_personal_profile_checklist_dependency_grant.sql`
   adds only the missing service-role SELECT privilege, with a pgTAP assertion;
   browser privileges remain unchanged.
+
+### Finance source mapping and controlled import (2026-09-24)
+
+- ADR 0011 freezes the finance mapping contract: authenticated AAL2 mapping,
+  controlled CSV or approved read-only Google Sheet source, archive-first
+  statement import, integer minor-unit money, replay protection, and a
+  server-evidence-gated `finance_mapping` checklist item.
+- `finance-control` configures accounts, categories, and source adapters with
+  stable stage/code/status/request-ID/remediation diagnostics. `finance-import`
+  validates the account and CSV, archives exact bytes before persistence,
+  rejects malformed amounts, deduplicates by content SHA-256, and records a
+  deterministic reconciled close period without logging raw CSV or secrets.
+- The Finance page now has explicit loading, mapping, import, replay,
+  reconciliation, and error states. Settings disables the finance checkbox
+  until the server verifies the complete evidence chain and records evidence
+  metadata.
+- Added service-role least-privilege grants and pgTAP assertions for the
+  finance control-plane writes, plus deterministic Deno contract tests for
+  money parsing, quoted CSV, reconciliation, and category normalisation.
+- Local validation completed for Prettier, TypeScript, ESLint, workspace
+  tests, Deno check/lint/tests, and the production build. The local database
+  reset remains unavailable when Docker Desktop is stopped; hosted CI is the
+  authoritative migration/RLS validation boundary.

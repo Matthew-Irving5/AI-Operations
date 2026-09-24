@@ -109,6 +109,123 @@ Deno.serve(async (request) => {
       resultVerifiedAt: scan.data.result_verified_at,
     };
   }
+  if (body.code === "finance_mapping" && body.complete) {
+    const account = service.from("finance_accounts").select(
+      "id,currency,active,created_at",
+    ).eq("user_id", identity.user.id).eq("active", true)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const categories = service.from("finance_categories").select(
+      "id",
+    ).eq("user_id", identity.user.id).eq("active", true);
+    const statement = service.from("finance_statements").select(
+      "id,account_id,status,created_at,currency",
+    ).eq("user_id", identity.user.id).eq("status", "parsed")
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const transactions = service.from("finance_transactions").select(
+      "id",
+      { count: "exact", head: true },
+    ).eq("user_id", identity.user.id);
+    const close = service.from("finance_close_periods").select(
+      "id,readiness,reconciled,created_at",
+    ).eq("user_id", identity.user.id).eq("readiness", "ready")
+      .eq("reconciled", true).order("created_at", { ascending: false })
+      .limit(1).maybeSingle();
+    const results = await Promise.all([
+      account,
+      categories,
+      statement,
+      transactions,
+      close,
+    ]);
+    const [
+      accountResult,
+      categoryResult,
+      statementResult,
+      transactionResult,
+      closeResult,
+    ] = results;
+    const failedTable = accountResult.error
+      ? "accounts"
+      : categoryResult.error
+      ? "categories"
+      : statementResult.error
+      ? "statements"
+      : transactionResult.error
+      ? "transactions"
+      : closeResult.error
+      ? "close_periods"
+      : null;
+    const failedError = accountResult.error ?? categoryResult.error ??
+      statementResult.error ?? transactionResult.error ?? closeResult.error;
+    if (failedTable && failedError) {
+      const table = failedTable;
+      const errorCode = failedError.code ?? "database_error";
+      return json({
+        code: "finance_mapping_evidence_check_failed",
+        stage: `checklist.finance_${table}_read`,
+        httpStatus: 500,
+        detail:
+          `The finance checklist validator could not read ${table} (${errorCode}).`,
+        remediation:
+          "Retry once; if it repeats, provide the request ID. The checklist was not changed.",
+        requestId,
+        diagnostic: {
+          code: "finance_mapping_evidence_check_failed",
+          stage: `checklist.finance_${table}_read`,
+          httpStatus: 500,
+          requestId,
+          detail:
+            `The finance checklist validator could not read ${table} (${errorCode}).`,
+          remediation:
+            "Retry once; if it repeats, provide the request ID. The checklist was not changed.",
+        },
+      }, 500);
+    }
+    const missing: string[] = [];
+    if (!accountResult.data) missing.push("active_finance_account");
+    if ((categoryResult.data?.length ?? 0) < 1) {
+      missing.push("category_mapping");
+    }
+    if (!statementResult.data) missing.push("parsed_statement");
+    if ((transactionResult.count ?? 0) < 1) missing.push("stored_transactions");
+    if (!closeResult.data) missing.push("reconciled_close");
+    if (
+      statementResult.data && accountResult.data &&
+      statementResult.data.account_id !== accountResult.data.id
+    ) missing.push("statement_account_match");
+    if (missing.length) {
+      return json({
+        code: "finance_mapping_evidence_required",
+        stage: "checklist.finance_evidence",
+        httpStatus: 422,
+        reason: "finance_mapping_not_complete",
+        missing,
+        detail:
+          "The server cannot verify a configured, imported, deduplicated, and reconciled finance source yet.",
+        remediation:
+          "Configure an account and categories, import a controlled statement, verify a reconciled close, then retry.",
+        requestId,
+        diagnostic: {
+          code: "finance_mapping_evidence_required",
+          stage: "checklist.finance_evidence",
+          httpStatus: 422,
+          requestId,
+          detail: `Missing finance evidence: ${missing.join(", ")}.`,
+          remediation:
+            "Configure an account and categories, import a controlled statement, verify a reconciled close, then retry.",
+        },
+      }, 422);
+    }
+    metadata = {
+      verifiedAt: completed_at,
+      accountId: accountResult.data!.id,
+      categoryCount: categoryResult.data?.length ?? 0,
+      statementId: statementResult.data!.id,
+      transactionCount: transactionResult.count ?? 0,
+      closePeriodId: closeResult.data!.id,
+      evidence: "server_verified_finance_mapping",
+    };
+  }
   if (body.code === "personal_profile" && body.complete) {
     const profile = await service.from("personal_profiles").select(
       "updated_at,planning_preferences,home_location_id,work_location_id",
