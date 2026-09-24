@@ -64,6 +64,7 @@ export default function FinanceMappingForm({
   const [closingBalance, setClosingBalance] = useState('');
   const [busy, setBusy] = useState<'configure' | 'import' | null>(null);
   const [message, setMessage] = useState('');
+  const [reauthRequired, setReauthRequired] = useState(false);
   const categoryNames = useMemo(
     () =>
       categoryText
@@ -76,6 +77,7 @@ export default function FinanceMappingForm({
   async function configure(event: FormEvent) {
     event.preventDefault();
     setBusy('configure');
+    setReauthRequired(false);
     setMessage('Saving account, category, and source mapping…');
     try {
       const response = await fetch('/api/finance/configure', {
@@ -94,6 +96,10 @@ export default function FinanceMappingForm({
         | (DiagnosticPayload & { accountId?: string; categoryCount?: number })
         | null;
       if (!response.ok) {
+        setReauthRequired(
+          payload?.code === 'fresh_mfa_required' ||
+            payload?.diagnostic?.code === 'fresh_mfa_required',
+        );
         setMessage(errorText(payload, response.status, 'finance_configuration_failed'));
         return;
       }
@@ -120,6 +126,7 @@ export default function FinanceMappingForm({
   async function importStatement(event: FormEvent) {
     event.preventDefault();
     setBusy('import');
+    setReauthRequired(false);
     setMessage('Validating, archiving, parsing, and reconciling the statement…');
     try {
       const response = await fetch('/api/finance/import', {
@@ -143,6 +150,10 @@ export default function FinanceMappingForm({
           })
         | null;
       if (!response.ok) {
+        setReauthRequired(
+          payload?.code === 'fresh_mfa_required' ||
+            payload?.diagnostic?.code === 'fresh_mfa_required',
+        );
         setMessage(errorText(payload, response.status, 'finance_import_failed'));
         return;
       }
@@ -360,6 +371,18 @@ export default function FinanceMappingForm({
       >
         {message}
       </p>
+      {reauthRequired ? (
+        <p className="notice">
+          The form is still held in this tab. Open the fresh MFA challenge in another tab, verify
+          Microsoft Authenticator, return here, and click the same button again.
+          <button
+            type="button"
+            onClick={() => window.open('/mfa?returnTo=%2Ffinance', '_blank', 'noopener,noreferrer')}
+          >
+            Open fresh MFA in another tab
+          </button>
+        </p>
+      ) : null}
     </section>
   );
 }
