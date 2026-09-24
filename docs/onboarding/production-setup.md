@@ -26,6 +26,10 @@ and keeps Drive as a selected source rather than the archive of record.
 
 For Pass 4, configure separate private Health and Finance archive gateways plus their matching
 secrets: `HEALTH_ARCHIVE_GATEWAY_URL`, `HEALTH_ARCHIVE_GATEWAY_SECRET`, `HEALTH_INGEST_SECRET`,
-`FINANCE_ARCHIVE_GATEWAY_URL`, and `FINANCE_ARCHIVE_GATEWAY_SECRET`. Each gateway must verify the
-content SHA-256 and return an R2 key and byte count. Do not enable either import until the gateway,
-private bucket policy, and synthetic staging validation are complete.
+`FINANCE_ARCHIVE_GATEWAY_URL`, and `FINANCE_ARCHIVE_GATEWAY_SECRET`. The Finance gateway is the
+authenticated `POST /api/internal/finance-archive` route on the environment's Cloudflare Worker;
+it writes only to the private `ARCHIVE_BUCKET` R2 binding, verifies the content SHA-256, and
+returns only an R2 key and byte count. The gateway secret is configured as both a Cloudflare
+Worker secret and a Supabase Edge Function secret; it never appears in browser code or logs.
+Do not enable either import until the gateway, private bucket policy, and synthetic staging
+validation are complete.

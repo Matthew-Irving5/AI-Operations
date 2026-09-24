@@ -44,6 +44,15 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
         run: pnpm run deploy -- --config wrangler.production.jsonc
+      - name: Configure production finance archive gateway secret
+        working-directory: apps/web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          FINANCE_ARCHIVE_GATEWAY_SECRET: ${{ secrets.FINANCE_ARCHIVE_GATEWAY_SECRET }}
+        run: |
+          test -n "$FINANCE_ARCHIVE_GATEWAY_SECRET" || { echo "Missing production secret: FINANCE_ARCHIVE_GATEWAY_SECRET"; exit 1; }
+          printf '%s' "$FINANCE_ARCHIVE_GATEWAY_SECRET" | pnpm exec wrangler secret put FINANCE_ARCHIVE_GATEWAY_SECRET --config wrangler.production.jsonc
       - name: Apply production migrations
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.PRODUCTION_SUPABASE_ACCESS_TOKEN }}
@@ -56,8 +65,12 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.PRODUCTION_SUPABASE_ACCESS_TOKEN }}
           PROJECT_REF: ${{ secrets.PRODUCTION_SUPABASE_PROJECT_REF }}
+          FINANCE_ARCHIVE_GATEWAY_URL: ${{ vars.FINANCE_ARCHIVE_GATEWAY_URL }}
+          FINANCE_ARCHIVE_GATEWAY_SECRET: ${{ secrets.FINANCE_ARCHIVE_GATEWAY_SECRET }}
         run: |
-          npx supabase secrets set PUBLIC_APP_ORIGIN=https://ai-operations-production.ai-operations.workers.dev --project-ref "$PROJECT_REF"
+          test -n "$FINANCE_ARCHIVE_GATEWAY_URL" || { echo "Missing production variable: FINANCE_ARCHIVE_GATEWAY_URL"; exit 1; }
+          test -n "$FINANCE_ARCHIVE_GATEWAY_SECRET" || { echo "Missing production secret: FINANCE_ARCHIVE_GATEWAY_SECRET"; exit 1; }
+          npx supabase secrets set PUBLIC_APP_ORIGIN=https://ai-operations-production.ai-operations.workers.dev FINANCE_ARCHIVE_GATEWAY_URL="$FINANCE_ARCHIVE_GATEWAY_URL" FINANCE_ARCHIVE_GATEWAY_SECRET="$FINANCE_ARCHIVE_GATEWAY_SECRET" --project-ref "$PROJECT_REF"
           for function in supabase/functions/*; do
             [[ "$(basename "$function")" == _* ]] && continue
             deployed=false
