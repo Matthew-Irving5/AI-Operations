@@ -226,6 +226,74 @@ Deno.serve(async (request) => {
       evidence: "server_verified_finance_mapping",
     };
   }
+  if (body.code === "github_connection" && body.complete) {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+    const evidence = await service.from("career_github_evidence").select(
+      "id,repository_external_id,owner_login,source_url,retrieved_at",
+      { count: "exact" },
+    ).eq("user_id", identity.user.id).eq("owner_login", "Matthew-Irving5")
+      .like("source_url", "https://github.com/Matthew-Irving5/%")
+      .gte("retrieved_at", cutoff).order("retrieved_at", { ascending: false })
+      .limit(100);
+    if (evidence.error) {
+      return json({
+        code: "github_connection_evidence_check_failed",
+        stage: "checklist.github_evidence_read",
+        httpStatus: 500,
+        detail:
+          `The GitHub evidence validator could not read repository evidence (${
+            evidence.error.code ?? "database_error"
+          }).`,
+        remediation:
+          "Retry once; if it repeats, provide the request ID. The checklist was not changed.",
+        requestId,
+        diagnostic: {
+          code: "github_connection_evidence_check_failed",
+          stage: "checklist.github_evidence_read",
+          httpStatus: 500,
+          requestId,
+          detail:
+            `The GitHub evidence validator could not read repository evidence (${
+              evidence.error.code ?? "database_error"
+            }).`,
+          remediation:
+            "Retry once; if it repeats, provide the request ID. The checklist was not changed.",
+        },
+      }, 500);
+    }
+    const evidenceCount = evidence.count ?? 0;
+    const latestRetrievedAt = evidence.data?.[0]?.retrieved_at ?? null;
+    if (evidenceCount < 1 || !latestRetrievedAt) {
+      return json({
+        code: "github_connection_evidence_required",
+        stage: "checklist.github_evidence",
+        httpStatus: 422,
+        reason: "github_sync_not_complete",
+        missing: ["recent_repository_evidence"],
+        detail:
+          "The server cannot verify a recent read-only repository sync for Matthew-Irving5.",
+        remediation:
+          "Open Career, complete fresh MFA, run the read-only GitHub sync, then retry.",
+        requestId,
+        diagnostic: {
+          code: "github_connection_evidence_required",
+          stage: "checklist.github_evidence",
+          httpStatus: 422,
+          requestId,
+          detail: "Missing recent repository evidence for Matthew-Irving5.",
+          remediation:
+            "Open Career, complete fresh MFA, run the read-only GitHub sync, then retry.",
+        },
+      }, 422);
+    }
+    metadata = {
+      verifiedAt: completed_at,
+      owner: "Matthew-Irving5",
+      evidenceCount,
+      latestRetrievedAt,
+      evidence: "server_verified_github_connection",
+    };
+  }
   if (body.code === "personal_profile" && body.complete) {
     const profile = await service.from("personal_profiles").select(
       "updated_at,planning_preferences,home_location_id,work_location_id",

@@ -18,6 +18,26 @@ operator acceptance record.
 - operator-owned onboarding and production acceptance;
 - unresolved blockers, if any, using the three-turn blocked-goal protocol.
 
+## Personal GitHub connection implementation (2026-09-24)
+
+- The Career page now exposes a same-page read-only sync control. It holds the operation in the
+  page while the user completes Microsoft Authenticator MFA and submits automatically using a
+  one-time `github_sync` database gate.
+- The sync route never accepts a GitHub token from the browser. Deployment optionally copies the
+  masked `GITHUB_PERSONAL_READ_TOKEN` environment secret to the matching Supabase Edge Function
+  secret; when it is absent, the function fails closed with `github_connection_unavailable` and
+  no provider request is made.
+- The Edge Function emits stable diagnostics with stage, HTTP status, correlation/request ID,
+  redacted provider status, and remediation. It hard-allows `Matthew-Irving5`, rejects `BrightSG`
+  or malformed repository URLs before persistence, stores bounded repository evidence, and writes
+  a redacted audit record.
+- Settings now disables the GitHub checklist item until a recent server-verified evidence record
+  exists. The onboarding Edge Function repeats the evidence query and stores owner, count, and
+  retrieval timestamp metadata, so a manual checkbox cannot bypass the provider boundary.
+- Local validation: web format check, TypeScript, production build, Deno format/lint/check, 41
+  shared Deno contract tests, and the workspace Vitest suite passed. `pnpm test:db` could not run
+  locally because Docker/Postgres is not running; hosted CI remains the migration/RLS gate.
+
 ## In-progress evidence
 
 - Repository ownership and Pass 7: verified `Matthew-Irving5/AI-Operations`; PR #20 is merged at `c10f382` with its required checks successful.

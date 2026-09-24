@@ -154,6 +154,7 @@ export function OnboardingForm({
   windowsWorkerReady,
   personalProfileReady,
   financeMappingReady,
+  githubConnectionReady,
 }: Readonly<{
   completedCodes: string[];
   accepted: boolean;
@@ -161,6 +162,7 @@ export function OnboardingForm({
   windowsWorkerReady: boolean;
   personalProfileReady: boolean;
   financeMappingReady: boolean;
+  githubConnectionReady: boolean;
 }>) {
   const [completed, setCompleted] = useState(() => new Set(completedCodes));
   const [status, setStatus] = useState(accepted ? 'Production onboarding accepted.' : '');
@@ -266,7 +268,8 @@ export function OnboardingForm({
                   (code === 'source_permissions' && !sourcePermissionsReady) ||
                   (code === 'windows_worker' && !windowsWorkerReady) ||
                   (code === 'personal_profile' && !personalProfileReady) ||
-                  (code === 'finance_mapping' && !financeMappingReady)
+                  (code === 'finance_mapping' && !financeMappingReady) ||
+                  (code === 'github_connection' && !githubConnectionReady)
                 }
                 onChange={(event) => void toggle(code, event.target.checked)}
               />{' '}
@@ -298,6 +301,13 @@ export function OnboardingForm({
                     This item is locked until Finance shows a mapped account, categories, an
                     imported statement, stored transactions, and a reconciled close period. The
                     server will reject an unaudited completion.
+                  </p>
+                ) : null}
+                {code === 'github_connection' && !githubConnectionReady && !completed.has(code) ? (
+                  <p role="status">
+                    This item is locked until Career contains a recent server-verified repository
+                    evidence record owned by Matthew-Irving5. Use Career’s read-only sync control;
+                    manual ticking is rejected by the server.
                   </p>
                 ) : null}
                 {code === 'gmail_test' && (

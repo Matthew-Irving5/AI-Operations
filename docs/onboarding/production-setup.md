@@ -33,3 +33,22 @@ returns only an R2 key and byte count. The gateway secret is configured as both 
 Worker secret and a Supabase Edge Function secret; it never appears in browser code or logs.
 Do not enable either import until the gateway, private bucket policy, and synthetic staging
 validation are complete.
+
+## Personal GitHub connection
+
+The Career connection is read-only and hard-allowlisted to `Matthew-Irving5`. Create a GitHub
+fine-grained personal access token for that owner with repository metadata read permission only;
+do not grant contents write, administration, workflow, issue, pull-request, or organisation
+permissions, and never use a `BrightSG` token. Add the token as the masked GitHub Actions
+environment secret `GITHUB_PERSONAL_READ_TOKEN` in both `staging` and `production`. The deployment
+workflow copies it into the matching Supabase Edge Function secret; it is never sent to browser
+code or stored in Postgres.
+
+After deployment, open **Career**, choose **Connect and sync personal GitHub**, complete the
+in-page fresh MFA challenge, and wait for the repository evidence count and retrieval timestamp to
+refresh. The sync stores only repository IDs, names, owner, source URL, and retrieval provenance;
+it performs no writes to GitHub and sends no outreach. The Settings GitHub checklist item remains
+locked until a recent server-verified evidence record exists. If the action fails, retain the
+displayed code, stage, HTTP status, and request ID; `github_connection_unavailable` means the
+environment secret is missing, while `github_provider_unauthorised` means the token was rejected
+by GitHub.
