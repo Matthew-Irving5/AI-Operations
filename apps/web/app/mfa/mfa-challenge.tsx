@@ -32,6 +32,7 @@ export function MfaChallenge({
   factorId,
   returnTo = '/overview',
   job,
+  onVerified,
 }: {
   factorId?: string;
   returnTo?: string;
@@ -42,7 +43,10 @@ export function MfaChallenge({
     | 'connection_scope_change'
     | 'worker_device_register'
     | 'worker_device_revoke'
-    | 'digital_scan_create';
+    | 'digital_scan_create'
+    | 'finance_configure'
+    | 'finance_import';
+  onVerified?: (mfaGateId: string) => void;
 }) {
   const [code, setCode] = useState('');
   const [message, setMessage] = useState('');
@@ -109,13 +113,22 @@ export function MfaChallenge({
           .join(' | '),
       );
     }
-    if (job && result?.mfaGateId) {
-      storeMfaGate(JSON.stringify({ job, id: result.mfaGateId }));
-    }
     if (job && !result?.mfaGateId) {
       return setMessage(
         'MFA succeeded, but the server did not return the one-time operation gate (mfa_gate_not_returned). Start the operation again in this browser; no operation was submitted.',
       );
+    }
+    if (onVerified) {
+      if (!result?.mfaGateId) {
+        return setMessage(
+          'MFA succeeded, but the in-page operation gate was not returned (mfa_gate_not_returned). No operation was submitted; start the Finance action again.',
+        );
+      }
+      onVerified(result.mfaGateId);
+      return;
+    }
+    if (job && result?.mfaGateId) {
+      storeMfaGate(JSON.stringify({ job, id: result.mfaGateId }));
     }
     try {
       const channel = new BroadcastChannel('ai-operations-mfa');

@@ -1,8 +1,9 @@
 'use client';
 
 import type { ChangeEvent, FormEvent } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { MfaChallenge } from '../../mfa/mfa-challenge';
 
 type Account = {
   id: string;
@@ -48,7 +49,13 @@ export default function FinanceMappingForm({
   accounts,
   categories,
   adapters,
-}: Readonly<{ accounts: Account[]; categories: Category[]; adapters: Adapter[] }>) {
+  factorId,
+}: Readonly<{
+  accounts: Account[];
+  categories: Category[];
+  adapters: Adapter[];
+  factorId?: string;
+}>) {
   const router = useRouter();
   const existing = accounts.find((account) => account.active) ?? accounts[0];
   const [institutionName, setInstitutionName] = useState(existing?.institution_name ?? '');
@@ -65,8 +72,7 @@ export default function FinanceMappingForm({
   const [closingBalance, setClosingBalance] = useState('');
   const [busy, setBusy] = useState<'configure' | 'import' | null>(null);
   const [message, setMessage] = useState('');
-  const [reauthRequired, setReauthRequired] = useState(false);
-  const [pendingAction, setPendingAction] = useState<FinanceAction | null>(null);
+  const [mfaAction, setMfaAction] = useState<FinanceAction | null>(null);
   const categoryNames = useMemo(
     () =>
       categoryText
@@ -77,181 +83,140 @@ export default function FinanceMappingForm({
   );
 
   function beginMfa(action: FinanceAction) {
-    if (pendingAction && pendingAction !== action) {
-      setMessage(
-        'mfa_already_pending · authorization.aal2 · HTTP 409 · request local — A finance action is already waiting for MFA in another tab. — Complete that challenge or refresh this page to cancel it.',
-      );
-      return;
-    }
-    setPendingAction(action);
+    setMfaAction(action);
     setMessage(
-      'Fresh MFA is required. Opening Microsoft Authenticator verification in another tab…',
+      'Fresh MFA is required. Complete the Microsoft Authenticator challenge below; your Finance form remains in this page and will submit automatically after verification.',
     );
-    const challenge = window.open('/mfa?returnTo=%2Ffinance', '_blank', 'noopener,noreferrer');
-    if (!challenge) {
-      setPendingAction(null);
-      setMessage(
-        'mfa_popup_blocked · authorization.aal2 · HTTP 409 · request local — The browser blocked the automatic MFA tab. — Allow pop-ups for AI Operations, then click the same button again; no finance data was submitted.',
-      );
-    }
   }
 
-  const saveMapping = useCallback(async () => {
-    setBusy('configure');
-    setPendingAction(null);
-    setReauthRequired(false);
-    setMessage('Saving account, category, and source mapping…');
-    try {
-      const response = await fetch('/api/finance/configure', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          account: { institutionName, accountLabel, accountType, currency },
-          categories: categoryNames,
-          source: {
-            kind: sourceKind,
-            ...(sourceKind === 'google_sheet' ? { spreadsheetExternalId } : {}),
-          },
-        }),
-      });
-      const payload = (await response.json().catch(() => null)) as
-        | (DiagnosticPayload & { accountId?: string; categoryCount?: number })
-        | null;
-      if (!response.ok) {
-        setReauthRequired(
-          payload?.code === 'fresh_mfa_required' ||
-            payload?.diagnostic?.code === 'fresh_mfa_required',
-        );
-        setMessage(errorText(payload, response.status, 'finance_configuration_failed'));
-        return;
-      }
-      if (!payload?.accountId) {
+  const saveMapping = useCallback(
+    async (mfaGateId: string) => {
+      setBusy('configure');
+      setMessage('Saving account, category, and source mapping…');
+      try {
+        const response = await fetch('/api/finance/configure', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            account: { institutionName, accountLabel, accountType, currency },
+            categories: categoryNames,
+            source: {
+              kind: sourceKind,
+              ...(sourceKind === 'google_sheet' ? { spreadsheetExternalId } : {}),
+            },
+            mfaGateId,
+          }),
+        });
+        const payload = (await response.json().catch(() => null)) as
+          | (DiagnosticPayload & { accountId?: string; categoryCount?: number })
+          | null;
+        if (!response.ok) {
+          setMessage(errorText(payload, response.status, 'finance_configuration_failed'));
+          return;
+        }
+        if (!payload?.accountId) {
+          setMessage(
+            'finance_configuration_invalid_response · persistence.response · HTTP 502 · request unknown — The server did not return the mapped account ID. Do not import until this is corrected.',
+          );
+          return;
+        }
+        setAccountId(payload.accountId);
         setMessage(
-          'finance_configuration_invalid_response · persistence.response · HTTP 502 · request unknown — The server did not return the mapped account ID. Do not import until this is corrected.',
+          `Mapping saved: ${payload.categoryCount ?? categoryNames.length} categories. No provider credentials were stored.`,
         );
-        return;
+        router.refresh();
+      } catch {
+        setMessage(
+          'finance_configuration_network_failed · control_plane.network · HTTP 502 · request unavailable — The mapping request could not reach the server. Retry once; no mapping was confirmed.',
+        );
+      } finally {
+        setBusy(null);
       }
-      setAccountId(payload.accountId);
-      setMessage(
-        `Mapping saved: ${payload.categoryCount ?? categoryNames.length} categories. No provider credentials were stored.`,
-      );
-      router.refresh();
-    } catch {
-      setMessage(
-        'finance_configuration_network_failed · control_plane.network · HTTP 502 · request unavailable — The mapping request could not reach the server. Retry once; no mapping was confirmed.',
-      );
-    } finally {
-      setBusy(null);
-    }
-  }, [
-    accountLabel,
-    accountType,
-    categoryNames,
-    currency,
-    institutionName,
-    router,
-    sourceKind,
-    spreadsheetExternalId,
-  ]);
+    },
+    [
+      accountLabel,
+      accountType,
+      categoryNames,
+      currency,
+      institutionName,
+      router,
+      sourceKind,
+      spreadsheetExternalId,
+    ],
+  );
 
   function configure(event: FormEvent) {
     event.preventDefault();
-    if (pendingAction) return beginMfa('configure');
     beginMfa('configure');
   }
 
-  const importStatementAfterMfa = useCallback(async () => {
-    setBusy('import');
-    setPendingAction(null);
-    setReauthRequired(false);
-    setMessage('Validating, archiving, parsing, and reconciling the statement…');
-    try {
-      const response = await fetch('/api/finance/import', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          accountId,
-          currency,
-          statementName,
-          csv,
-          ...(openingBalance ? { openingBalance } : {}),
-          ...(closingBalance ? { closingBalance } : {}),
-        }),
-      });
-      const payload = (await response.json().catch(() => null)) as
-        | (DiagnosticPayload & {
-            imported?: boolean;
-            replay?: boolean;
-            transactionCount?: number;
-            close?: { readiness?: string; reconciled?: boolean };
-          })
-        | null;
-      if (!response.ok) {
-        setReauthRequired(
-          payload?.code === 'fresh_mfa_required' ||
-            payload?.diagnostic?.code === 'fresh_mfa_required',
-        );
-        setMessage(errorText(payload, response.status, 'finance_import_failed'));
-        return;
-      }
-      if (payload?.replay) {
+  const importStatementAfterMfa = useCallback(
+    async (mfaGateId: string) => {
+      setBusy('import');
+      setMessage('Validating, archiving, parsing, and reconciling the statement…');
+      try {
+        const response = await fetch('/api/finance/import', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            accountId,
+            currency,
+            statementName,
+            csv,
+            ...(openingBalance ? { openingBalance } : {}),
+            ...(closingBalance ? { closingBalance } : {}),
+            mfaGateId,
+          }),
+        });
+        const payload = (await response.json().catch(() => null)) as
+          | (DiagnosticPayload & {
+              imported?: boolean;
+              replay?: boolean;
+              transactionCount?: number;
+              close?: { readiness?: string; reconciled?: boolean };
+            })
+          | null;
+        if (!response.ok) {
+          setMessage(errorText(payload, response.status, 'finance_import_failed'));
+          return;
+        }
+        if (payload?.replay) {
+          setMessage(
+            'finance_statement_replay · persistence.statement_duplicate_check · HTTP 200 — This exact statement was already imported; no duplicate transactions were created. Review the existing close state.',
+          );
+        } else {
+          setMessage(
+            `Import complete: ${payload?.transactionCount ?? 0} transactions; close ${payload?.close?.readiness ?? 'unknown'}${payload?.close?.reconciled ? ' and reconciled' : ''}. Re-uploading the same file will be rejected as a replay.`,
+          );
+          setCsv('');
+        }
+        router.refresh();
+      } catch {
         setMessage(
-          'finance_statement_replay · persistence.statement_duplicate_check · HTTP 200 — This exact statement was already imported; no duplicate transactions were created. Review the existing close state.',
+          'finance_import_network_failed · control_plane.network · HTTP 502 · request unavailable — The statement was not confirmed as submitted. Retry once only after checking the Finance page state.',
         );
-      } else {
-        setMessage(
-          `Import complete: ${payload?.transactionCount ?? 0} transactions; close ${payload?.close?.readiness ?? 'unknown'}${payload?.close?.reconciled ? ' and reconciled' : ''}. Re-uploading the same file will be rejected as a replay.`,
-        );
-        setCsv('');
+      } finally {
+        setBusy(null);
       }
-      router.refresh();
-    } catch {
-      setMessage(
-        'finance_import_network_failed · control_plane.network · HTTP 502 · request unavailable — The statement was not confirmed as submitted. Retry once only after checking the Finance page state.',
-      );
-    } finally {
-      setBusy(null);
-    }
-  }, [accountId, closingBalance, csv, currency, openingBalance, router, statementName]);
+    },
+    [accountId, closingBalance, csv, currency, openingBalance, router, statementName],
+  );
+
+  const completeMfa = useCallback(
+    (mfaGateId: string) => {
+      if (!mfaAction) return;
+      setMfaAction(null);
+      setMessage('MFA verified. Submitting the Finance action automatically…');
+      if (mfaAction === 'configure') void saveMapping(mfaGateId);
+      else void importStatementAfterMfa(mfaGateId);
+    },
+    [importStatementAfterMfa, mfaAction, saveMapping],
+  );
 
   function importStatement(event: FormEvent) {
     event.preventDefault();
-    if (pendingAction) return beginMfa('import');
     beginMfa('import');
   }
-
-  useEffect(() => {
-    let channel: BroadcastChannel | null = null;
-    let resumed = false;
-    const resume = () => {
-      if (resumed || !pendingAction) return;
-      resumed = true;
-      setMessage('MFA verified. Submitting the finance action automatically…');
-      if (pendingAction === 'configure') void saveMapping();
-      else void importStatementAfterMfa();
-    };
-    try {
-      channel = new BroadcastChannel('ai-operations-mfa');
-      channel.addEventListener('message', (event: MessageEvent<unknown>) => {
-        if (
-          typeof event.data === 'object' &&
-          event.data !== null &&
-          (event.data as { type?: unknown }).type === 'mfa_verified'
-        )
-          resume();
-      });
-    } catch {
-      channel = null;
-    }
-    const storage = (event: StorageEvent) => {
-      if (event.key === 'ai_operations_mfa_verified') resume();
-    };
-    window.addEventListener('storage', storage);
-    return () => {
-      channel?.close();
-      window.removeEventListener('storage', storage);
-    };
-  }, [pendingAction, saveMapping, importStatementAfterMfa]);
 
   async function loadFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -274,10 +239,28 @@ export default function FinanceMappingForm({
         <h2>Map the source before importing</h2>
         <p className="profile-helper">
           This flow never asks for bank credentials. Account/category mapping is server-side and
-          every statement is archived before parsing. The CSV remains only in this tab until you
-          submit it and is cleared after a successful import.
+          every statement is archived before parsing. The form stays in this page while fresh MFA
+          runs and is cleared after a successful import.
         </p>
       </article>
+      {mfaAction ? (
+        <article className="card stack" aria-label="Finance fresh MFA">
+          <h2>Verify before submitting</h2>
+          <p className="profile-helper">
+            The {mfaAction === 'configure' ? 'account and source mapping' : 'statement import'} is
+            still held in this page. Enter your current Microsoft Authenticator code below; the
+            verified action will submit automatically.
+          </p>
+          <MfaChallenge
+            job={mfaAction === 'configure' ? 'finance_configure' : 'finance_import'}
+            onVerified={completeMfa}
+            {...(factorId ? { factorId } : {})}
+          />
+          <button type="button" onClick={() => setMfaAction(null)}>
+            Cancel MFA and return to the form
+          </button>
+        </article>
+      ) : null}
       <form className="card stack profile-section" onSubmit={configure}>
         <fieldset className="stack">
           <legend>1. Account and categories</legend>
@@ -353,7 +336,10 @@ export default function FinanceMappingForm({
             </label>
           ) : null}
         </fieldset>
-        <button type="submit" disabled={busy !== null || categoryNames.length === 0}>
+        <button
+          type="submit"
+          disabled={busy !== null || mfaAction !== null || categoryNames.length === 0}
+        >
           {busy === 'configure' ? 'Saving mapping…' : 'Save account and source mapping'}
         </button>
       </form>
@@ -429,7 +415,10 @@ export default function FinanceMappingForm({
             </label>
           </div>
         </fieldset>
-        <button type="submit" disabled={busy !== null || !accountId || !csv.trim()}>
+        <button
+          type="submit"
+          disabled={busy !== null || mfaAction !== null || !accountId || !csv.trim()}
+        >
           {busy === 'import' ? 'Importing securely…' : 'Archive and import statement'}
         </button>
       </form>
@@ -447,18 +436,6 @@ export default function FinanceMappingForm({
       >
         {message}
       </p>
-      {reauthRequired ? (
-        <p className="notice">
-          The form is still held in this tab. Open the fresh MFA challenge in another tab, verify
-          Microsoft Authenticator, return here, and click the same button again.
-          <button
-            type="button"
-            onClick={() => window.open('/mfa?returnTo=%2Ffinance', '_blank', 'noopener,noreferrer')}
-          >
-            Open fresh MFA in another tab
-          </button>
-        </p>
-      ) : null}
     </section>
   );
 }
