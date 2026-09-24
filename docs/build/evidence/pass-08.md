@@ -24,8 +24,9 @@ operator acceptance record.
   page while the user completes Microsoft Authenticator MFA and submits automatically using a
   one-time `github_sync` database gate.
 - The sync route never accepts a GitHub token from the browser. Deployment optionally copies the
-  masked `GITHUB_PERSONAL_READ_TOKEN` environment secret to the matching Supabase Edge Function
-  secret; when it is absent, the function fails closed with `github_connection_unavailable` and
+  masked `PERSONAL_READ_TOKEN` environment secret to the runtime `GITHUB_PERSONAL_READ_TOKEN`
+  Supabase Edge Function secret; when it is absent, the function fails closed with
+  `github_connection_unavailable` and
   no provider request is made.
 - The Edge Function emits stable diagnostics with stage, HTTP status, correlation/request ID,
   redacted provider status, and remediation. It hard-allows `Matthew-Irving5`, rejects `BrightSG`

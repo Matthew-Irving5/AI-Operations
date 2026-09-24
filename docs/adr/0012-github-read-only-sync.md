@@ -14,8 +14,10 @@ token path, and no server evidence gate for the onboarding checklist.
 ## Decision
 
 Use a fine-grained GitHub token with repository metadata read permission only. The token is
-stored as the masked `GITHUB_PERSONAL_READ_TOKEN` GitHub Actions environment secret and copied
-to the matching Supabase Edge Function secret during deployment. It never enters browser state,
+stored as the masked `PERSONAL_READ_TOKEN` GitHub Actions environment secret and copied to the
+runtime `GITHUB_PERSONAL_READ_TOKEN` Supabase Edge Function secret during deployment. GitHub
+environment naming is intentionally separate from the provider-facing runtime name because
+GitHub reserves the `GITHUB_` prefix for its own variables. The token never enters browser state,
 Postgres, or audit payloads. Career invokes the sync through an authenticated same-origin route,
 which requires a user-bound one-time `github_sync` fresh-MFA gate before calling GitHub.
 
