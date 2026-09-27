@@ -1,27 +1,26 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 import {
-  APPROVED_GOOGLE_SCOPES,
-  hasExactGoogleScopes,
-} from "../_shared/google-sync.ts";
+  googleAccountConfig,
+  hasExactScopes,
+  isGoogleAccountRole,
+  isGoogleRoleAvailableInEnvironment,
+  normalizeGoogleGrantedScopes,
+  scopesForGoogleRole,
+} from "../_shared/google-account-config.ts";
 import {
   type GoogleOAuthFailure,
   makeGoogleOAuthFailure,
   safeGoogleProviderCode,
 } from "../_shared/google-oauth-diagnostics.ts";
 import {
-  GMAIL_PROFILE_ENDPOINT,
-  gmailProfileEmail,
+  GOOGLE_USERINFO_ENDPOINT,
+  googleUserInfoEmail,
 } from "../_shared/google-oauth-profile.ts";
 
 const service = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
 );
-const allowedEmail = "matthewirving99@gmail.com";
-const allowedOrigins = new Set([
-  "ai-operations-production.ai-operations.workers.dev",
-  "ai-operations-staging.ai-operations.workers.dev",
-]);
 const env = (preferred: string, compatibility: string) =>
   Deno.env.get(preferred) ?? Deno.env.get(compatibility);
 const json = (body: unknown, status = 200) =>
@@ -89,17 +88,11 @@ type FailureContext = Readonly<{
 }>;
 
 function redirectOrigin(): URL | null {
-  const raw = env("PUBLIC_APP_ORIGIN", "APP_PUBLIC_ORIGIN");
-  if (!raw) return null;
-  try {
-    const origin = new URL(raw);
-    if (origin.protocol !== "https:" || !allowedOrigins.has(origin.hostname)) {
-      return null;
-    }
-    return origin;
-  } catch {
-    return null;
-  }
+  const config = googleAccountConfig(
+    Deno.env.get("AI_OPERATIONS_ENVIRONMENT"),
+    env("PUBLIC_APP_ORIGIN", "APP_PUBLIC_ORIGIN"),
+  );
+  return config ? new URL(config.appOrigin) : null;
 }
 
 function failurePayload(failure: GoogleOAuthFailure) {
@@ -222,7 +215,7 @@ Deno.serve(async (request) => {
     const result = await service
       .from("oauth_states")
       .select(
-        "id,user_id,pkce_verifier_encrypted,requested_scopes,redirect_uri,expires_at,consumed_at",
+        "id,user_id,pkce_verifier_encrypted,requested_scopes,redirect_uri,account_role,environment,expires_at,consumed_at",
       )
       .eq("state_hash", await sha(state))
       .maybeSingle();
@@ -251,6 +244,41 @@ Deno.serve(async (request) => {
       );
     }
     context = { userId: result.data.user_id, stateId: result.data.id };
+    const runtimeConfig = googleAccountConfig(
+      Deno.env.get("AI_OPERATIONS_ENVIRONMENT"),
+      env("PUBLIC_APP_ORIGIN", "APP_PUBLIC_ORIGIN"),
+    );
+    if (!runtimeConfig) {
+      return respondFailure(
+        failure(correlationId, {
+          code: "google_environment_configuration_invalid",
+          stage: "configuration",
+          reason: "environment_or_origin_mismatch",
+        }),
+        503,
+        context,
+      );
+    }
+    if (
+      !isGoogleAccountRole(result.data.account_role) ||
+      result.data.environment !== runtimeConfig.environment ||
+      !isGoogleRoleAvailableInEnvironment(
+        result.data.account_role,
+        runtimeConfig.environment,
+      )
+    ) {
+      return respondFailure(
+        failure(correlationId, {
+          code: "oauth_state_invalid",
+          stage: "oauth_state_validation",
+          reason: "account_role_or_environment_mismatch",
+        }),
+        403,
+        context,
+      );
+    }
+    const accountRole = result.data.account_role;
+    const expectedScopes = scopesForGoogleRole(accountRole);
     if (result.data.consumed_at) {
       return respondFailure(
         failure(correlationId, {
@@ -443,8 +471,9 @@ Deno.serve(async (request) => {
       );
     }
     const grantedScopes = tokens.scope?.split(/\s+/).filter(Boolean) ?? [];
-    const approvedScopeSet = new Set<string>(APPROVED_GOOGLE_SCOPES);
-    if (!hasExactGoogleScopes(grantedScopes)) {
+    const normalizedGrantedScopes = normalizeGoogleGrantedScopes(grantedScopes);
+    const approvedScopeSet = new Set<string>(expectedScopes);
+    if (!hasExactScopes(normalizedGrantedScopes, expectedScopes)) {
       await revokeAccessToken(tokens.access_token!);
       return respondFailure(
         failure(correlationId, {
@@ -452,12 +481,13 @@ Deno.serve(async (request) => {
           stage: "google_scope_validation",
           reason: "scope_set_mismatch",
           details: {
-            missing_scopes: APPROVED_GOOGLE_SCOPES.filter(
-              (scope) => !grantedScopes.includes(scope),
+            missing_scopes: expectedScopes.filter(
+              (scope) => !normalizedGrantedScopes.includes(scope),
             ),
-            unexpected_scopes: grantedScopes.filter((scope) =>
+            unexpected_scopes: normalizedGrantedScopes.filter((scope) =>
               !approvedScopeSet.has(scope)
             ),
+            received_scopes: grantedScopes,
           },
         }),
         422,
@@ -466,7 +496,7 @@ Deno.serve(async (request) => {
     }
     let account: Response;
     try {
-      account = await fetch(GMAIL_PROFILE_ENDPOINT, {
+      account = await fetch(GOOGLE_USERINFO_ENDPOINT, {
         headers: { authorization: `Bearer ${tokens.access_token}` },
       });
     } catch {
@@ -484,7 +514,8 @@ Deno.serve(async (request) => {
       );
     }
     const profileBody = (await account.json().catch(() => ({}))) as {
-      emailAddress?: unknown;
+      email?: unknown;
+      email_verified?: unknown;
       error?: unknown;
     };
     const providerProfileError = safeGoogleProviderCode(profileBody.error);
@@ -507,7 +538,7 @@ Deno.serve(async (request) => {
         context,
       );
     }
-    const profileEmail = gmailProfileEmail(profileBody);
+    const profileEmail = googleUserInfoEmail(profileBody);
     if (!profileEmail) {
       await revokeAccessToken(tokens.access_token!);
       return respondFailure(
@@ -516,14 +547,14 @@ Deno.serve(async (request) => {
           stage: "google_account_validation",
           reason: "email_missing",
           details: {
-            profile_identity_source: "gmail_profile",
+            profile_identity_source: "openid_userinfo",
           },
         }),
         403,
         context,
       );
     }
-    if (profileEmail !== allowedEmail) {
+    if (profileEmail !== runtimeConfig.accounts[accountRole]) {
       await revokeAccessToken(tokens.access_token!);
       return respondFailure(
         failure(correlationId, {
@@ -531,7 +562,7 @@ Deno.serve(async (request) => {
           stage: "google_account_validation",
           reason: "account_mismatch",
           details: {
-            profile_identity_source: "gmail_profile",
+            profile_identity_source: "openid_userinfo",
             allowlisted_account_match: false,
           },
         }),
@@ -545,13 +576,15 @@ Deno.serve(async (request) => {
         {
           user_id: result.data.user_id,
           provider: "google",
+          account_role: accountRole,
+          environment: runtimeConfig.environment,
           account_label: profileEmail,
           status: "connected",
-          sync_enabled: true,
-          scopes: [...APPROVED_GOOGLE_SCOPES],
+          sync_enabled: accountRole === "personal_data_source",
+          scopes: [...expectedScopes],
           encrypted_credential_reference: "connection_credentials",
         },
-        { onConflict: "user_id,provider" },
+        { onConflict: "user_id,provider,account_role,environment" },
       )
       .select("id")
       .single();
@@ -636,9 +669,16 @@ Deno.serve(async (request) => {
       aal: "aal2",
       correlation_id: correlationId,
       result: "success",
+      redacted_after: {
+        account_role: accountRole,
+        environment: runtimeConfig.environment,
+        verified_account_match: true,
+        granted_scopes: grantedScopes,
+      },
     });
     const target = new URL("/data-sources", appOrigin);
     target.searchParams.set("google", "connected");
+    target.searchParams.set("role", accountRole);
     target.searchParams.set("requestId", correlationId);
     return Response.redirect(target.toString(), 302);
   } catch {

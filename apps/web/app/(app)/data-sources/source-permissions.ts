@@ -37,6 +37,61 @@ export type GoogleSourceDiscoveryDiagnostic = Readonly<{
   requestId: string | null;
 }>;
 
+export type SourceRevokeResume = Readonly<{ provider: string; gateId: string }>;
+
+/**
+ * Consume a pending revoke handoff only in the card that owns its source.
+ * Multiple source cards mount on the same page and share sessionStorage.
+ */
+export function consumeSourceRevokeResume(
+  storage: Pick<Storage, 'getItem' | 'removeItem'>,
+  sourceId: string,
+): SourceRevokeResume | null {
+  const rawIntent = storage.getItem('source_revoke_intent');
+  if (!rawIntent) return null;
+
+  let intent: unknown;
+  try {
+    intent = JSON.parse(rawIntent);
+  } catch {
+    return null;
+  }
+  if (
+    typeof intent !== 'object' ||
+    intent === null ||
+    !('sourceId' in intent) ||
+    intent.sourceId !== sourceId
+  ) {
+    return null;
+  }
+
+  const rawGate = storage.getItem('mfa_job_gate');
+  storage.removeItem('source_revoke_intent');
+  storage.removeItem('mfa_job_gate');
+  if (!rawGate) return null;
+
+  try {
+    const gate: unknown = JSON.parse(rawGate);
+    if (
+      typeof gate !== 'object' ||
+      gate === null ||
+      !('job' in gate) ||
+      gate.job !== 'connection_revoke' ||
+      !('id' in gate) ||
+      typeof gate.id !== 'string' ||
+      !gate.id
+    ) {
+      return null;
+    }
+    return {
+      provider: 'provider' in intent && typeof intent.provider === 'string' ? intent.provider : '',
+      gateId: gate.id,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function recordValue(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
 }
@@ -153,32 +208,66 @@ export function parseGoogleSourceResources(value: unknown): GoogleSourceResource
 export const GOOGLE_SCOPE_DETAILS: Readonly<
   Record<
     string,
-    Readonly<{ label: string; access: 'Read-only' | 'Notification only'; reason: string }>
+    Readonly<{
+      label: string;
+      access: 'Read-only' | 'Read/write' | 'Identity only';
+      reason: string;
+    }>
   >
 > = {
+  openid: {
+    label: 'Google identity',
+    access: 'Identity only',
+    reason: 'Confirms which Google account granted this role; it does not access Workspace data.',
+  },
+  email: {
+    label: 'Google email identity',
+    access: 'Identity only',
+    reason:
+      'Confirms the verified account address for this role; it does not read mailbox contents.',
+  },
+  'https://www.googleapis.com/auth/userinfo.email': {
+    label: 'Google email identity',
+    access: 'Identity only',
+    reason:
+      'Confirms the verified account address for this role; it does not read mailbox contents.',
+  },
   'https://www.googleapis.com/auth/gmail.readonly': {
     label: 'Gmail',
     access: 'Read-only',
-    reason: 'Reads message metadata for personal, career, and finance workflows.',
+    reason:
+      'Reads messages and attachments for AI Operations conversations; mail is never changed by sync.',
   },
   'https://www.googleapis.com/auth/gmail.send': {
     label: 'Gmail send',
-    access: 'Notification only',
-    reason:
-      'Needed only to send configured notifications; the app never uses it to read, delete, or alter mail.',
+    access: 'Read/write',
+    reason: 'Sends replies and configured notifications from the AI Operations mailbox.',
   },
   'https://www.googleapis.com/auth/calendar.readonly': {
     label: 'Google Calendar',
     access: 'Read-only',
-    reason:
-      'Reads events and availability for planning. Calendar events are never changed by sync.',
+    reason: 'Reads calendars selected for planning.',
   },
-  'https://www.googleapis.com/auth/drive.readonly': {
+  'https://www.googleapis.com/auth/calendar.events.owned': {
+    label: 'Google Calendar events',
+    access: 'Read/write',
+    reason: 'Creates and edits events only on calendars owned by the personal data account.',
+  },
+  'https://www.googleapis.com/auth/drive.file': {
     label: 'Google Drive',
-    access: 'Read-only',
-    reason: 'Lists existing files for ingestion; it is not primary archival storage.',
+    access: 'Read/write',
+    reason: 'Reads and processes files individually selected for AI Operations.',
+  },
+  'https://www.googleapis.com/auth/tasks': {
+    label: 'Google Tasks',
+    access: 'Read/write',
+    reason:
+      'Reads, creates, updates, completes, and deletes Planner tasks on the personal data account.',
   },
 };
+
+export const GOOGLE_DRIVE_EMPTY_STATE =
+  'Your Google connection is healthy, but no Drive files have been shared with or selected for AI Operations yet. File selection depends on the Drive Picker, which is not available yet. Keep the limited Drive permission; you do not need to reconnect or grant broader access just because this list is empty.';
 
 export function googleScopeDetail(scope: string) {
   return (

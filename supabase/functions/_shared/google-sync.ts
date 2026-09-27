@@ -1,19 +1,25 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
+import {
+  GOOGLE_ACCOUNT_EMAILS,
+  GOOGLE_ROLE_SCOPES,
+  hasExactScopes,
+  isGoogleRoleAvailableInEnvironment,
+} from "./google-account-config.ts";
+import type { GoogleAccountRole } from "./google-account-config.ts";
 
-export const APPROVED_GOOGLE_SCOPES = [
-  "https://www.googleapis.com/auth/gmail.readonly",
-  "https://www.googleapis.com/auth/gmail.send",
-  "https://www.googleapis.com/auth/calendar.readonly",
-  "https://www.googleapis.com/auth/drive.readonly",
-] as const;
+export const APPROVED_GOOGLE_SCOPES = GOOGLE_ROLE_SCOPES.personal_data_source;
 
 const GOOGLE_SCOPE_SET = new Set<string>(APPROVED_GOOGLE_SCOPES);
 
 export function hasExactGoogleScopes(scopes: readonly string[]): boolean {
-  const unique = new Set(scopes);
-  return unique.size === GOOGLE_SCOPE_SET.size &&
-    unique.size === scopes.length &&
-    [...unique].every((scope) => GOOGLE_SCOPE_SET.has(scope));
+  return hasExactScopes(scopes, [...GOOGLE_SCOPE_SET]);
+}
+
+export function hasExactGoogleRoleScopes(
+  role: GoogleAccountRole,
+  scopes: readonly string[],
+): boolean {
+  return hasExactScopes(scopes, GOOGLE_ROLE_SCOPES[role]);
 }
 
 export function shouldRecoverGmailHistoryCursor(
@@ -60,6 +66,8 @@ export type DatasetResult = {
 type ConnectionRow = {
   id: string;
   user_id: string;
+  account_role: string;
+  environment: string;
   status: string;
   sync_enabled: boolean;
   scopes: string[];
@@ -297,18 +305,67 @@ async function getAccessToken(refreshToken: string, fetchImpl: typeof fetch) {
   return value.access_token;
 }
 
+export async function getGoogleMailboxAccessToken(
+  database: SupabaseClient,
+  role: "ai_operations_mailbox" | "ai_operations_mailbox_staging",
+  environment: "staging" | "production",
+  fetchImpl: typeof fetch = fetch,
+): Promise<Readonly<{ accessToken: string; connectionId: string }>> {
+  if (!isGoogleRoleAvailableInEnvironment(role, environment)) {
+    throw new GoogleSyncError("connection_role_forbidden");
+  }
+  const expectedAccount = role === "ai_operations_mailbox"
+    ? GOOGLE_ACCOUNT_EMAILS.ai_operations_mailbox.production
+    : GOOGLE_ACCOUNT_EMAILS.ai_operations_mailbox.staging;
+  const connectionResult = await database.from("connections").select(
+    "id,account_role,environment,account_label,status,scopes",
+  ).eq("provider", "google").eq("account_role", role)
+    .eq("environment", environment).maybeSingle().returns<{
+    id: string;
+    account_role: string;
+    environment: string;
+    account_label: string;
+    status: string;
+    scopes: string[];
+  }>();
+  const connection = connectionResult.data;
+  if (
+    connectionResult.error || !connection ||
+    connection.status !== "connected" ||
+    connection.account_role !== role ||
+    connection.environment !== environment ||
+    connection.account_label.toLowerCase() !== expectedAccount ||
+    !hasExactScopes(connection.scopes, GOOGLE_ROLE_SCOPES[role])
+  ) {
+    throw new GoogleSyncError("connection_unavailable");
+  }
+  const credentialResult = await database.from("connection_credentials").select(
+    "encrypted_refresh_token",
+  ).eq("connection_id", connection.id).maybeSingle()
+    .returns<CredentialRow>();
+  if (credentialResult.error || !credentialResult.data) {
+    throw new GoogleSyncError("credential_unavailable");
+  }
+  const refreshToken = await decryptRefreshToken(
+    credentialResult.data.encrypted_refresh_token,
+  );
+  const accessToken = await getAccessToken(refreshToken, fetchImpl);
+  return { accessToken, connectionId: connection.id };
+}
+
 export async function discoverGoogleSources(
   database: SupabaseClient,
   connectionId: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<GoogleSourceDiscovery> {
   const result = await database.from("connections").select(
-    "id,user_id,status,sync_enabled,scopes,configuration",
+    "id,user_id,account_role,environment,status,sync_enabled,scopes,configuration",
   ).eq("id", connectionId).eq("provider", "google").maybeSingle()
     .returns<ConnectionRow>();
   if (
     result.error || !result.data || result.data.status !== "connected" ||
-    !result.data.sync_enabled
+    !result.data.sync_enabled ||
+    result.data.account_role !== "personal_data_source"
   ) {
     throw new GoogleSyncError(
       "connection_unavailable",
@@ -464,7 +521,7 @@ export async function syncGoogleConnection({
 }: SyncOptions): Promise<GoogleSyncResult> {
   const currentTime = now();
   const connectionResult = await database.from("connections").select(
-    "id,user_id,status,sync_enabled,scopes,configuration",
+    "id,user_id,account_role,environment,status,sync_enabled,scopes,configuration",
   ).eq("id", connectionId).eq("provider", "google").maybeSingle()
     .returns<ConnectionRow>();
   if (connectionResult.error || !connectionResult.data) {
@@ -473,6 +530,9 @@ export async function syncGoogleConnection({
   const connection = connectionResult.data;
   if (connection.status !== "connected" || !connection.sync_enabled) {
     throw new GoogleSyncError("connection_unavailable");
+  }
+  if (connection.account_role !== "personal_data_source") {
+    throw new GoogleSyncError("connection_role_forbidden");
   }
   if (!hasExactGoogleScopes(connection.scopes)) {
     throw new GoogleSyncError("google_scopes_invalid");
@@ -501,7 +561,6 @@ export async function syncGoogleConnection({
     }).eq("id", connection.id).eq("user_id", connection.user_id);
     for (
       const dataset of [
-        "google_gmail",
         "google_calendar",
         "google_drive",
       ] as const
@@ -530,195 +589,219 @@ export async function syncGoogleConnection({
   let calendarProviderComplete = false;
   let driveProviderComplete = false;
 
-  // Gmail list and each metadata request must succeed before Gmail freshness
-  // can become fresh. The endpoint never requests message bodies or mutates mail.
-  try {
-    const profileResponse = await fetchImpl(
-      "https://gmail.googleapis.com/gmail/v1/users/me/profile",
-      { headers },
-    );
-    const profile = await readJson(profileResponse) as
-      | { historyId?: string }
-      | null;
-    if (!profileResponse.ok || !profile?.historyId) {
-      throw new GoogleSyncError("provider_request_failed");
-    }
-    const previousCursor = await readCursor(
-      database,
-      connection.id,
-      "gmail",
-      "INBOX",
-    );
-    const messages = new Map<string, GmailMessage>();
-    const deletedMessageIds = new Set<string>();
-    let providerHistoryId = profile.historyId;
-    let useHistory = Boolean(previousCursor);
-    let baselineRecovered = false;
-    let pageToken: string | undefined;
-    let pageCount = 0;
-    do {
-      const params = new URLSearchParams({ maxResults: "100" });
-      if (useHistory && previousCursor) {
-        params.set("startHistoryId", previousCursor);
-        params.append("historyTypes", "messageAdded");
-        params.append("historyTypes", "messageLabelAdded");
-        params.append("historyTypes", "messageDeleted");
-        if (pageToken) params.set("pageToken", pageToken);
-        const response = await fetchImpl(
-          `https://gmail.googleapis.com/gmail/v1/users/me/history?${params}`,
-          { headers },
-        );
-        const history = await readJson(response) as GmailHistory | null;
-        if (!response.ok || !history) {
-          if (
-            shouldRecoverGmailHistoryCursor(response.status, baselineRecovered)
-          ) {
-            useHistory = false;
-            baselineRecovered = true;
-            pageToken = undefined;
-            continue;
-          }
-          if (response.status === 404 || response.status === 400) {
-            throw new GoogleSyncError("gmail_history_cursor_invalid");
-          }
-          throw new GoogleSyncError("provider_request_failed");
-        }
-        providerHistoryId = history.historyId ?? providerHistoryId;
-        for (
-          const entry of [
-            ...(history.messagesAdded ?? []),
-            ...(history.labelsAdded ?? []),
-          ]
-        ) {
-          if (entry.message?.id) messages.set(entry.message.id, entry.message);
-        }
-        for (const entry of history.messagesDeleted ?? []) {
-          if (entry.message?.id) deletedMessageIds.add(entry.message.id);
-        }
-        for (const message of history.messages ?? []) {
-          if (message.id) messages.set(message.id, message);
-        }
-        pageToken = history.nextPageToken;
-      } else {
-        if (shouldSeedGmailCursor(previousCursor)) {
-          // The first run only establishes the provider cursor.  Listing a
-          // large Inbox can require thousands of detail calls and would make
-          // the on-demand sync fail at the page guard before Calendar/Drive
-          // can be ingested.  Historical Gmail backfill is intentionally
-          // deferred to the bounded history path.
-          pageToken = undefined;
-        } else {
-          params.set("labelIds", "INBOX");
-          if (pageToken) params.set("pageToken", pageToken);
-          const response = await fetchImpl(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages?${params}`,
-            { headers },
-          );
-          const list = await readJson(response) as
-            | { messages?: GmailMessage[]; nextPageToken?: string }
-            | null;
-          if (!response.ok || !list) {
-            throw new GoogleSyncError("provider_request_failed");
-          }
-          for (const message of list.messages ?? []) {
-            if (message.id) messages.set(message.id, message);
-          }
-          pageToken = list.nextPageToken;
-        }
-      }
-      pageCount += 1;
-      if (pageCount > MAX_PROVIDER_PAGES) {
-        throw new GoogleSyncError("provider_page_limit");
-      }
-    } while (pageToken);
-    let count = 0;
-    for (const message of messages.values()) {
-      if (!message.id) continue;
-      const detailResponse = await fetchImpl(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${
-          encodeURIComponent(message.id)
-        }?format=metadata`,
-        { headers },
-      );
-      const detail = await readJson(detailResponse) as GmailDetail | null;
-      if (
-        !detailResponse.ok || !detail?.id || !detail.threadId ||
-        !detail.internalDate
-      ) {
-        throw new GoogleSyncError("provider_request_failed");
-      }
-      const stored = await database.from("google_messages").upsert({
-        user_id: connection.user_id,
-        connection_id: connection.id,
-        gmail_message_id: detail.id,
-        thread_id: detail.threadId,
-        label_ids: detail.labelIds ?? [],
-        internal_at: new Date(Number(detail.internalDate)).toISOString(),
-        snippet: detail.snippet ?? null,
-        deleted_at: null,
-        payload_hash: await sha256(JSON.stringify(detail)),
-      }, { onConflict: "connection_id,gmail_message_id" });
-      if (stored.error) throw new GoogleSyncError("persistence_failed");
-      count += 1;
-      gmailPersisted = count;
-    }
-    if (deletedMessageIds.size) {
-      const deleted = await database.from("google_messages").update({
-        deleted_at: currentTime.toISOString(),
-      }).eq("connection_id", connection.id).in(
-        "gmail_message_id",
-        [...deletedMessageIds],
-      );
-      if (deleted.error) throw new GoogleSyncError("persistence_failed");
-      count += deletedMessageIds.size;
-      gmailPersisted = count;
-    }
-    // Cursor is the provider-issued Gmail history id, never a local timestamp.
-    gmailProviderComplete = true;
-    await writeCursor(
-      database,
-      connection,
-      "gmail",
-      "INBOX",
-      providerHistoryId,
-    );
+  // The personal-data role never receives Gmail scopes. Mailbox ingestion is a
+  // separate connection flow so a Gmail failure cannot make Calendar/Drive look stale.
+  if (
+    !connection.scopes.includes(
+      "https://www.googleapis.com/auth/gmail.readonly",
+    )
+  ) {
+    gmail = {
+      state: "not_connected",
+      count: 0,
+      reason: "separate_mailbox_role",
+    };
     await setFreshness(
       database,
       connection.user_id,
       "google_gmail",
-      "fresh",
-      null,
-      {
-        operation: "google_sync",
-        provider_status: profileResponse.status,
-        persisted_count: count,
-        cursor_type: "gmail_history_id",
-        baseline_cursor_seeded: shouldSeedGmailCursor(previousCursor),
-      },
-      currentTime,
-    );
-    gmail = { state: "fresh", count };
-  } catch (error) {
-    gmail = failedDataset(
-      error instanceof GoogleSyncError
-        ? error.safeCode
-        : "provider_request_failed",
-    );
-    await setFreshness(
-      database,
-      connection.user_id,
-      "google_gmail",
-      "error",
-      gmail.reason ?? "sync_failed",
-      {
-        operation: "google_sync",
-        provider_request_completed: gmailProviderComplete,
-        persisted_count: gmailPersisted,
-        persistence_complete: false,
-      },
+      "not_connected",
+      "separate_mailbox_role",
+      { operation: "google_sync", provider_request: false },
       currentTime,
     ).catch(() => undefined);
-  }
+  } else {try {
+      const profileResponse = await fetchImpl(
+        "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+        { headers },
+      );
+      const profile = await readJson(profileResponse) as
+        | { historyId?: string }
+        | null;
+      if (!profileResponse.ok || !profile?.historyId) {
+        throw new GoogleSyncError("provider_request_failed");
+      }
+      const previousCursor = await readCursor(
+        database,
+        connection.id,
+        "gmail",
+        "INBOX",
+      );
+      const messages = new Map<string, GmailMessage>();
+      const deletedMessageIds = new Set<string>();
+      let providerHistoryId = profile.historyId;
+      let useHistory = Boolean(previousCursor);
+      let baselineRecovered = false;
+      let pageToken: string | undefined;
+      let pageCount = 0;
+      do {
+        const params = new URLSearchParams({ maxResults: "100" });
+        if (useHistory && previousCursor) {
+          params.set("startHistoryId", previousCursor);
+          params.append("historyTypes", "messageAdded");
+          params.append("historyTypes", "messageLabelAdded");
+          params.append("historyTypes", "messageDeleted");
+          if (pageToken) params.set("pageToken", pageToken);
+          const response = await fetchImpl(
+            `https://gmail.googleapis.com/gmail/v1/users/me/history?${params}`,
+            { headers },
+          );
+          const history = await readJson(response) as GmailHistory | null;
+          if (!response.ok || !history) {
+            if (
+              shouldRecoverGmailHistoryCursor(
+                response.status,
+                baselineRecovered,
+              )
+            ) {
+              useHistory = false;
+              baselineRecovered = true;
+              pageToken = undefined;
+              continue;
+            }
+            if (response.status === 404 || response.status === 400) {
+              throw new GoogleSyncError("gmail_history_cursor_invalid");
+            }
+            throw new GoogleSyncError("provider_request_failed");
+          }
+          providerHistoryId = history.historyId ?? providerHistoryId;
+          for (
+            const entry of [
+              ...(history.messagesAdded ?? []),
+              ...(history.labelsAdded ?? []),
+            ]
+          ) {
+            if (entry.message?.id) {
+              messages.set(entry.message.id, entry.message);
+            }
+          }
+          for (const entry of history.messagesDeleted ?? []) {
+            if (entry.message?.id) deletedMessageIds.add(entry.message.id);
+          }
+          for (const message of history.messages ?? []) {
+            if (message.id) messages.set(message.id, message);
+          }
+          pageToken = history.nextPageToken;
+        } else {
+          if (shouldSeedGmailCursor(previousCursor)) {
+            // The first run only establishes the provider cursor.  Listing a
+            // large Inbox can require thousands of detail calls and would make
+            // the on-demand sync fail at the page guard before Calendar/Drive
+            // can be ingested.  Historical Gmail backfill is intentionally
+            // deferred to the bounded history path.
+            pageToken = undefined;
+          } else {
+            params.set("labelIds", "INBOX");
+            if (pageToken) params.set("pageToken", pageToken);
+            const response = await fetchImpl(
+              `https://gmail.googleapis.com/gmail/v1/users/me/messages?${params}`,
+              { headers },
+            );
+            const list = await readJson(response) as
+              | { messages?: GmailMessage[]; nextPageToken?: string }
+              | null;
+            if (!response.ok || !list) {
+              throw new GoogleSyncError("provider_request_failed");
+            }
+            for (const message of list.messages ?? []) {
+              if (message.id) messages.set(message.id, message);
+            }
+            pageToken = list.nextPageToken;
+          }
+        }
+        pageCount += 1;
+        if (pageCount > MAX_PROVIDER_PAGES) {
+          throw new GoogleSyncError("provider_page_limit");
+        }
+      } while (pageToken);
+      let count = 0;
+      for (const message of messages.values()) {
+        if (!message.id) continue;
+        const detailResponse = await fetchImpl(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${
+            encodeURIComponent(message.id)
+          }?format=metadata`,
+          { headers },
+        );
+        const detail = await readJson(detailResponse) as GmailDetail | null;
+        if (
+          !detailResponse.ok || !detail?.id || !detail.threadId ||
+          !detail.internalDate
+        ) {
+          throw new GoogleSyncError("provider_request_failed");
+        }
+        const stored = await database.from("google_messages").upsert({
+          user_id: connection.user_id,
+          connection_id: connection.id,
+          gmail_message_id: detail.id,
+          thread_id: detail.threadId,
+          label_ids: detail.labelIds ?? [],
+          internal_at: new Date(Number(detail.internalDate)).toISOString(),
+          snippet: detail.snippet ?? null,
+          deleted_at: null,
+          payload_hash: await sha256(JSON.stringify(detail)),
+        }, { onConflict: "connection_id,gmail_message_id" });
+        if (stored.error) throw new GoogleSyncError("persistence_failed");
+        count += 1;
+        gmailPersisted = count;
+      }
+      if (deletedMessageIds.size) {
+        const deleted = await database.from("google_messages").update({
+          deleted_at: currentTime.toISOString(),
+        }).eq("connection_id", connection.id).in(
+          "gmail_message_id",
+          [...deletedMessageIds],
+        );
+        if (deleted.error) throw new GoogleSyncError("persistence_failed");
+        count += deletedMessageIds.size;
+        gmailPersisted = count;
+      }
+      // Cursor is the provider-issued Gmail history id, never a local timestamp.
+      gmailProviderComplete = true;
+      await writeCursor(
+        database,
+        connection,
+        "gmail",
+        "INBOX",
+        providerHistoryId,
+      );
+      await setFreshness(
+        database,
+        connection.user_id,
+        "google_gmail",
+        "fresh",
+        null,
+        {
+          operation: "google_sync",
+          provider_status: profileResponse.status,
+          persisted_count: count,
+          cursor_type: "gmail_history_id",
+          baseline_cursor_seeded: shouldSeedGmailCursor(previousCursor),
+        },
+        currentTime,
+      );
+      gmail = { state: "fresh", count };
+    } catch (error) {
+      gmail = failedDataset(
+        error instanceof GoogleSyncError
+          ? error.safeCode
+          : "provider_request_failed",
+      );
+      await setFreshness(
+        database,
+        connection.user_id,
+        "google_gmail",
+        "error",
+        gmail.reason ?? "sync_failed",
+        {
+          operation: "google_sync",
+          provider_request_completed: gmailProviderComplete,
+          persisted_count: gmailPersisted,
+          persistence_complete: false,
+        },
+        currentTime,
+      ).catch(() => undefined);
+    }}
 
   // Calendar list, every calendar event request, and event persistence form one
   // verified dataset. A failed calendar is never silently counted as healthy.
@@ -1067,8 +1150,7 @@ export async function syncGoogleConnection({
   return {
     connection_id: connection.id,
     user_id: connection.user_id,
-    ok: gmail.state === "fresh" && calendar.state === "fresh" &&
-      drive.state === "fresh",
+    ok: calendar.state === "fresh" && drive.state === "fresh",
     datasets: { gmail, calendar, drive },
   };
 }
@@ -1092,9 +1174,14 @@ export async function revokeGoogleConnection(
   fetchImpl: typeof fetch = fetch,
 ): Promise<GoogleRevokeResult> {
   const connection = await database.from("connections").select(
-    "id,user_id,provider",
+    "id,user_id,provider,account_role",
   ).eq("id", connectionId).eq("user_id", userId).eq("provider", "google")
-    .maybeSingle().returns<{ id: string; user_id: string; provider: string }>();
+    .maybeSingle().returns<{
+    id: string;
+    user_id: string;
+    provider: string;
+    account_role: string;
+  }>();
   if (connection.error || !connection.data) {
     throw new GoogleSyncError("connection_unavailable");
   }
@@ -1127,13 +1214,11 @@ export async function revokeGoogleConnection(
   const deleted = await database.from("connection_credentials").delete()
     .eq("connection_id", connectionId).select("connection_id").maybeSingle();
   if (deleted.error) throw new GoogleSyncError("credential_delete_failed");
-  for (
-    const dataset of [
-      "google_gmail",
-      "google_calendar",
-      "google_drive",
-    ] as const
-  ) {
+  const affectedDatasets = connection.data.account_role ===
+      "personal_data_source"
+    ? ["google_calendar", "google_drive"] as const
+    : ["google_gmail"] as const;
+  for (const dataset of affectedDatasets) {
     await setFreshness(
       database,
       userId,

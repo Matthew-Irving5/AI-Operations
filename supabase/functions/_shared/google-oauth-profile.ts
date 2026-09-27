@@ -1,10 +1,12 @@
-export const GMAIL_PROFILE_ENDPOINT =
-  "https://gmail.googleapis.com/gmail/v1/users/me/profile";
+export const GOOGLE_USERINFO_ENDPOINT =
+  "https://openidconnect.googleapis.com/v1/userinfo";
 
-export function gmailProfileEmail(value: unknown): string | null {
+export function googleUserInfoEmail(value: unknown): string | null {
   if (typeof value !== "object" || value === null) return null;
-  const emailAddress = (value as { emailAddress?: unknown }).emailAddress;
-  if (typeof emailAddress !== "string") return null;
-  const normalized = emailAddress.trim().toLowerCase();
+  const profile = value as { email?: unknown; email_verified?: unknown };
+  if (profile.email_verified !== true || typeof profile.email !== "string") {
+    return null;
+  }
+  const normalized = profile.email.trim().toLowerCase();
   return normalized.length > 0 ? normalized : null;
 }

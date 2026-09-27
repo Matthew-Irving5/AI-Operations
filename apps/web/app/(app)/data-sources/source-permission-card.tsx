@@ -4,8 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { GoogleConnect } from './google-connect';
 import {
+  GOOGLE_DRIVE_EMPTY_STATE,
   actionMessage,
   cadenceLabel,
+  consumeSourceRevokeResume,
   freshnessLabel,
   googleScopeDetail,
   googleFreshnessLabel,
@@ -21,6 +23,8 @@ import {
 type Connection = {
   id: string;
   provider: string;
+  account_role: string;
+  environment: 'staging' | 'production';
   account_label: string;
   status: string;
   scopes: string[];
@@ -119,38 +123,26 @@ function useRevokeFlow(
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('resume') !== 'source_revoke') return;
-    const rawIntent = sessionStorage.getItem('source_revoke_intent');
-    const rawGate = sessionStorage.getItem('mfa_job_gate');
-    sessionStorage.removeItem('source_revoke_intent');
-    sessionStorage.removeItem('mfa_job_gate');
-    if (!rawIntent || !rawGate) return;
-    try {
-      const intent = JSON.parse(rawIntent) as { sourceId?: string; provider?: string };
-      const gate = JSON.parse(rawGate) as { job?: string; id?: string };
-      if (gate.job !== 'connection_revoke' || !gate.id || intent.sourceId !== sourceId) return;
-      window.setTimeout(() => {
-        setBusy(true);
-        void revokeConnection(intent.sourceId!, intent.provider ?? provider, gate.id!).then(
-          ({ response, body }) => {
-            setBusy(false);
-            if (!response.ok) {
-              setStatus(
-                actionMessage(body.code, `Revoke failed (${body.code ?? response.status}).`),
-              );
-              return;
-            }
-            setStatus(
-              body.provider_revoked === false
-                ? `Local access was disabled, but ${provider === 'google' ? 'Google' : 'the Apple provider'} did not confirm credential revocation. Open the provider security settings, revoke AI Operations access, and rotate the credential before reconnecting. Existing retained data is unchanged.`
-                : 'Source revoked. Existing retained data is unchanged, and future syncs are blocked.',
-            );
-            onComplete();
-          },
-        );
-      }, 0);
-    } catch {
-      setStatus('The saved revoke request was invalid. Start revoke again.');
-    }
+    const resume = consumeSourceRevokeResume(sessionStorage, sourceId);
+    if (!resume) return;
+    window.setTimeout(() => {
+      setBusy(true);
+      void revokeConnection(sourceId, resume.provider || provider, resume.gateId).then(
+        ({ response, body }) => {
+          setBusy(false);
+          if (!response.ok) {
+            setStatus(actionMessage(body.code, `Revoke failed (${body.code ?? response.status}).`));
+            return;
+          }
+          setStatus(
+            body.provider_revoked === false
+              ? `Local access was disabled, but ${provider === 'google' ? 'Google' : 'the Apple provider'} did not confirm credential revocation. Open the provider security settings, revoke AI Operations access, and rotate the credential before reconnecting. Existing retained data is unchanged.`
+              : 'Source revoked. Existing retained data is unchanged, and future syncs are blocked.',
+          );
+          onComplete();
+        },
+      );
+    }, 0);
   }, [onComplete, provider, setStatus, sourceId]);
 
   return { confirming, busy, revoke };
@@ -312,14 +304,12 @@ export function GoogleSourceCard({
     );
   }
   const overallFreshness = latestFreshness(freshness, [
-    'google_gmail',
     'google_calendar',
     'google_drive',
     'google',
   ]);
   const freshnessState = googleFreshnessLabel(overallFreshness);
   const datasets = [
-    { label: 'Gmail', sources: ['google_gmail', 'google'] },
     { label: 'Google Calendar', sources: ['google_calendar'] },
     { label: 'Google Drive', sources: ['google_drive'] },
   ].map((dataset) => ({ ...dataset, row: latestFreshness(freshness, dataset.sources) }));
@@ -345,7 +335,7 @@ export function GoogleSourceCard({
     <article className="card source-card" aria-labelledby={`google-${connection.id}`}>
       <div className="source-heading">
         <div>
-          <div className="label">Google source</div>
+          <div className="label">Personal Google data</div>
           <h3 id={`google-${connection.id}`}>{connection.account_label}</h3>
         </div>
         <span className={`status-pill status-${freshnessState.toLowerCase().replace(' ', '-')}`}>
@@ -353,9 +343,10 @@ export function GoogleSourceCard({
         </span>
       </div>
       <p>
-        Google Calendar, Gmail, and Drive files are available only to the workflows listed below.
-        Choose the calendars and Drive files this connection may ingest. Sync is read-only: it never
-        marks mail read, archives it, or changes calendar data.
+        This is the only account used for selected Google Drive files, Calendar and Tasks. Choose
+        the calendars and Drive files available to ingestion. Source sync never modifies Calendar
+        events or Gmail; Planner writes Calendar events and Tasks through its separately approved
+        action path.
       </p>
       <section aria-labelledby={`google-permissions-${connection.id}`}>
         <h4 id={`google-permissions-${connection.id}`}>Permissions and reasons</h4>
@@ -496,7 +487,7 @@ export function GoogleSourceCard({
                     </label>
                   ))
                 ) : (
-                  <p>No Drive files were returned. Reconnect Google and review Drive access.</p>
+                  <p>{GOOGLE_DRIVE_EMPTY_STATE}</p>
                 )}
               </div>
             </fieldset>
@@ -553,8 +544,11 @@ export function GoogleSourceCard({
         </p>
       ) : null}
       <p>
-        <strong>Affected workflows:</strong> Personal planning, Career evidence, Finance ingestion,
-        and configured notifications.
+        <strong>Account role:</strong> Personal data source · {connection.environment}.
+      </p>
+      <p>
+        <strong>Affected workflows:</strong> Personal planning, Career evidence and selected Drive
+        ingestion.
       </p>
       <div className="source-actions">
         <button
@@ -566,17 +560,84 @@ export function GoogleSourceCard({
         >
           {syncing ? 'Syncing…' : 'Google Sync now'}
         </button>
-        <GoogleConnect label="Reconnect Google" />
+        <GoogleConnect label="Reconnect personal Google data" role="personal_data_source" />
         <button type="button" onClick={revokeFlow.revoke} disabled={revokeFlow.busy || revoked}>
           {revokeFlow.confirming ? 'Confirm Google revoke' : 'Revoke Google'}
         </button>
       </div>
       {!selectionReady && state === 'connected' ? (
         <p className="notice source-recovery" role="status">
-          Save at least one calendar and one Drive file to enable Google Sync now and satisfy source
-          readiness. An empty saved selection remains valid configuration but ingests nothing.
+          Save at least one calendar and one selected Drive file to enable Google Sync now and
+          satisfy source readiness. An empty saved selection remains valid configuration but ingests
+          nothing.
         </p>
       ) : null}
+      <p aria-live="polite">{status}</p>
+    </article>
+  );
+}
+
+function GoogleMailboxCard({ connection }: Readonly<{ connection: Connection }>) {
+  const router = useRouter();
+  const [status, setStatus] = useState('');
+  const [revoked, setRevoked] = useState(connection.status === 'revoked');
+  const completeRevoke = useCallback(() => {
+    setRevoked(true);
+    router.refresh();
+  }, [router]);
+  const onRevokeStatus = useCallback((value: string) => setStatus(value), []);
+  const revokeFlow = useRevokeFlow(connection.id, 'google', completeRevoke, onRevokeStatus);
+  const legacy = connection.account_role === 'legacy_combined';
+  const role =
+    connection.account_role === 'ai_operations_mailbox_staging'
+      ? 'ai_operations_mailbox_staging'
+      : 'ai_operations_mailbox';
+  const state = revoked ? 'revoked' : connection.status;
+  return (
+    <article className="card source-card" aria-labelledby={`google-mailbox-${connection.id}`}>
+      <div className="source-heading">
+        <div>
+          <div className="label">
+            {legacy ? 'Legacy combined Google grant' : 'AI Operations communication mailbox'}
+          </div>
+          <h3 id={`google-mailbox-${connection.id}`}>{connection.account_label}</h3>
+        </div>
+        <span className={`status-pill status-${state.toLowerCase().replaceAll('_', '-')}`}>
+          {state} · {connection.environment}
+        </span>
+      </div>
+      <p>
+        {legacy
+          ? 'This previous combined grant is disabled until revoked and reconnected through the separate least-privilege account roles.'
+          : 'This mailbox is used for AI Operations conversations and outbound replies. It has Gmail-only access; Drive, Calendar and Tasks remain on the Personal Google data connection.'}
+      </p>
+      <section aria-labelledby={`google-mailbox-permissions-${connection.id}`}>
+        <h4 id={`google-mailbox-permissions-${connection.id}`}>Permissions and reasons</h4>
+        <ul className="scope-list">
+          {connection.scopes.map((scope) => {
+            const detail = googleScopeDetail(scope);
+            return (
+              <li key={scope}>
+                <strong>{detail.label}</strong>{' '}
+                <span className="scope-access">{detail.access}</span>
+                <span className="scope-reason"> — {detail.reason}</span>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+      {legacy ? (
+        <p className="notice source-recovery" role="status">
+          The previous combined Google grant has been disabled. Revoke AI Operations in the Google
+          Account security page, then connect this communication mailbox with Gmail-only access.
+        </p>
+      ) : null}
+      <div className="source-actions">
+        {!legacy ? <GoogleConnect label="Connect or reconnect mailbox" role={role} /> : null}
+        <button type="button" onClick={revokeFlow.revoke} disabled={revokeFlow.busy || revoked}>
+          {revokeFlow.confirming ? 'Confirm mailbox revoke' : 'Revoke mailbox'}
+        </button>
+      </div>
       <p aria-live="polite">{status}</p>
     </article>
   );
@@ -705,24 +766,57 @@ export function SourceSummary({
     () => connections.filter((item) => item.provider === 'google'),
     [connections],
   );
+  const personalGoogle = google.filter((item) => item.account_role === 'personal_data_source');
+  const currentMailboxRole =
+    personalGoogle[0]?.environment === 'staging'
+      ? 'ai_operations_mailbox_staging'
+      : 'ai_operations_mailbox';
+  const mailbox = google.filter((item) => item.account_role === currentMailboxRole);
+  const legacyGoogle = google.filter((item) => item.account_role === 'legacy_combined');
   return (
     <>
-      <h2>Google</h2>
+      <h2>Personal Google data</h2>
       <div className="stack">
-        {google.map((connection) => (
+        {personalGoogle.map((connection) => (
           <GoogleSourceCard key={connection.id} connection={connection} freshness={freshness} />
         ))}
       </div>
-      {!google.length ? (
+      {!personalGoogle.length ? (
         <div className="card source-card">
-          <h3>No Google account is connected.</h3>
+          <h3>No personal Google data account is connected.</h3>
           <p>
-            Connect Google to import read-only Calendar, Gmail, and Drive data. Gmail send is
-            requested only for configured notifications.
+            Connect the canonical personal account for selected Drive files, Google Calendar and
+            Google Tasks. Gmail access is not requested for this role.
           </p>
-          <GoogleConnect />
+          <GoogleConnect label="Connect personal Google data" role="personal_data_source" />
         </div>
       ) : null}
+      <h2>AI Operations communication mailbox</h2>
+      <div className="stack">
+        {mailbox.map((connection) => (
+          <GoogleMailboxCard key={connection.id} connection={connection} />
+        ))}
+      </div>
+      {!mailbox.length ? (
+        <div className="card source-card">
+          <h3>No AI Operations mailbox is connected.</h3>
+          <p>
+            Connect the Gmail-only mailbox for this deployment. Production and staging use separate
+            account roles, tokens and databases.
+          </p>
+          {personalGoogle.length ? (
+            <GoogleConnect label="Connect AI Operations mailbox" role={currentMailboxRole} />
+          ) : (
+            <p>
+              Connect the personal Google data account first so the deployment environment can be
+              verified.
+            </p>
+          )}
+        </div>
+      ) : null}
+      {legacyGoogle.map((connection) => (
+        <GoogleMailboxCard key={connection.id} connection={connection} />
+      ))}
       <h2>Apple Shortcut bridge</h2>
       <div className="stack">
         {appleDevices.map((device) => (

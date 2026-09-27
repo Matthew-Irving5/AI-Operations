@@ -1,4 +1,4 @@
-export const notificationRecipient = 'matthew.irving.ai@gmail.com';
+export const notificationRecipient = 'matthewirving99@gmail.com';
 export type GmailMessage = Readonly<{
   to: string;
   subject: string;
