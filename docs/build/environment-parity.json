@@ -1,0 +1,61 @@
+{
+  "environments": {
+    "staging": {
+      "projectRef": "jqtssfrfocnibffdkqch",
+      "supabaseUrl": "https://jqtssfrfocnibffdkqch.supabase.co",
+      "workerName": "ai-operations-staging",
+      "origin": "https://ai-operations-staging.ai-operations.workers.dev",
+      "archiveBucket": "ai-operations-staging",
+      "appEnv": "staging",
+      "wranglerConfig": "apps/web/wrangler.jsonc",
+      "githubEnvironment": "staging",
+      "requiredGitHubSecrets": [
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_API_TOKEN",
+        "FINANCE_ARCHIVE_GATEWAY_SECRET",
+        "STAGING_SUPABASE_ACCESS_TOKEN",
+        "STAGING_SUPABASE_ANON_KEY",
+        "STAGING_SUPABASE_DB_PASSWORD",
+        "STAGING_SUPABASE_PROJECT_REF",
+        "STAGING_SUPABASE_URL"
+      ],
+      "requiredGitHubVariables": ["FINANCE_ARCHIVE_GATEWAY_URL"]
+    },
+    "production": {
+      "projectRef": "epmgvknrydadzitzupzx",
+      "supabaseUrl": "https://epmgvknrydadzitzupzx.supabase.co",
+      "workerName": "ai-operations-production",
+      "origin": "https://ai-operations-production.ai-operations.workers.dev",
+      "archiveBucket": "ai-operations-production",
+      "appEnv": "production",
+      "wranglerConfig": "apps/web/wrangler.production.jsonc",
+      "githubEnvironment": "production",
+      "requiredGitHubSecrets": [
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_API_TOKEN",
+        "FINANCE_ARCHIVE_GATEWAY_SECRET",
+        "PRODUCTION_SUPABASE_ACCESS_TOKEN",
+        "PRODUCTION_SUPABASE_ANON_KEY",
+        "PRODUCTION_SUPABASE_DB_PASSWORD",
+        "PRODUCTION_SUPABASE_PROJECT_REF",
+        "PRODUCTION_SUPABASE_URL"
+      ],
+      "requiredGitHubVariables": ["FINANCE_ARCHIVE_GATEWAY_URL"]
+    }
+  },
+  "allowedDifferences": [
+    "Supabase project ref and URL",
+    "Cloudflare Worker name, origin, and self-reference service",
+    "Cloudflare R2 archive bucket name",
+    "APP_ENV",
+    "deployment version numbers and timestamps",
+    "provider bundle hash values (source-file digests are the parity authority)",
+    "secret values (values are never read or compared)"
+  ],
+  "requiredEdgeSecrets": [
+    "PUBLIC_APP_ORIGIN",
+    "FINANCE_ARCHIVE_GATEWAY_URL",
+    "FINANCE_ARCHIVE_GATEWAY_SECRET"
+  ],
+  "requiredWorkerSecrets": ["FINANCE_ARCHIVE_GATEWAY_SECRET"]
+}
