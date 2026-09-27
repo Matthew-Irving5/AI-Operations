@@ -76,6 +76,17 @@ jobs:
           test -n "$PRODUCTION_SUPABASE_DB_PASSWORD" || { echo "Missing production secret: PRODUCTION_SUPABASE_DB_PASSWORD"; exit 1; }
           test -n "$PRODUCTION_SUPABASE_URL" || { echo "Missing production secret: PRODUCTION_SUPABASE_URL"; exit 1; }
           test -n "$PRODUCTION_SUPABASE_ANON_KEY" || { echo "Missing production secret: PRODUCTION_SUPABASE_ANON_KEY"; exit 1; }
+      - name: Capture production Edge Function source attestation
+        env:
+          RELEASE_SHA: ${{ steps.staging-run.outputs.sha }}
+          SOURCE_ATTESTATION_PATH: function-source-attestation.json
+        run: pnpm environment:drift -- attest-source
+      - name: Validate staging and production source attestations
+        env:
+          RELEASE_SHA: ${{ steps.staging-run.outputs.sha }}
+          SOURCE_ATTESTATION_PATH: function-source-attestation.json
+          STAGING_INVENTORY_PATH: staging-parity/environment-drift.json
+        run: pnpm environment:drift -- validate-release-attestation
       - name: Deploy Worker
         working-directory: apps/web
         env:
@@ -99,8 +110,8 @@ jobs:
           PROJECT_REF: ${{ secrets.PRODUCTION_SUPABASE_PROJECT_REF }}
           DB_PASSWORD: ${{ secrets.PRODUCTION_SUPABASE_DB_PASSWORD }}
         run: |
-          npx supabase link --project-ref "$PROJECT_REF" --password "$DB_PASSWORD"
-          npx supabase db push --linked --password "$DB_PASSWORD" --yes
+          pnpm exec supabase link --project-ref "$PROJECT_REF" --password "$DB_PASSWORD"
+          pnpm exec supabase db push --linked --password "$DB_PASSWORD" --yes
       - name: Deploy production Edge Functions
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.PRODUCTION_SUPABASE_ACCESS_TOKEN }}
@@ -114,9 +125,9 @@ jobs:
         run: |
           test -n "$FINANCE_ARCHIVE_GATEWAY_URL" || { echo "Missing production variable: FINANCE_ARCHIVE_GATEWAY_URL"; exit 1; }
           test -n "$FINANCE_ARCHIVE_GATEWAY_SECRET" || { echo "Missing production secret: FINANCE_ARCHIVE_GATEWAY_SECRET"; exit 1; }
-          npx supabase secrets set PUBLIC_APP_ORIGIN=https://ai-operations-production.ai-operations.workers.dev FINANCE_ARCHIVE_GATEWAY_URL="$FINANCE_ARCHIVE_GATEWAY_URL" FINANCE_ARCHIVE_GATEWAY_SECRET="$FINANCE_ARCHIVE_GATEWAY_SECRET" --project-ref "$PROJECT_REF"
+          pnpm exec supabase secrets set PUBLIC_APP_ORIGIN=https://ai-operations-production.ai-operations.workers.dev FINANCE_ARCHIVE_GATEWAY_URL="$FINANCE_ARCHIVE_GATEWAY_URL" FINANCE_ARCHIVE_GATEWAY_SECRET="$FINANCE_ARCHIVE_GATEWAY_SECRET" --project-ref "$PROJECT_REF"
           if [ -n "$GITHUB_PERSONAL_READ_TOKEN" ]; then
-            npx supabase secrets set GITHUB_PERSONAL_READ_TOKEN="$GITHUB_PERSONAL_READ_TOKEN" --project-ref "$PROJECT_REF"
+            pnpm exec supabase secrets set GITHUB_PERSONAL_READ_TOKEN="$GITHUB_PERSONAL_READ_TOKEN" --project-ref "$PROJECT_REF"
           else
             echo "PERSONAL_READ_TOKEN is not configured; Career sync will fail closed with github_connection_unavailable until the protected secret is added."
           fi
@@ -124,7 +135,7 @@ jobs:
             [[ "$(basename "$function")" == _* ]] && continue
             deployed=false
             for attempt in 1 2 3; do
-              if npx supabase functions deploy "$(basename "$function")" --project-ref "$PROJECT_REF" --use-api; then
+              if pnpm exec supabase functions deploy "$(basename "$function")" --project-ref "$PROJECT_REF" --use-api; then
                 deployed=true
                 break
               fi
@@ -147,6 +158,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           STAGING_INVENTORY_PATH: staging-parity/environment-drift.json
           RELEASE_SHA: ${{ steps.staging-run.outputs.sha }}
+          SOURCE_ATTESTATION_PATH: function-source-attestation.json
           DRIFT_REPORT_PATH: production-environment-drift.json
         run: pnpm environment:drift -- staging-production
       - name: Safe production smoke test

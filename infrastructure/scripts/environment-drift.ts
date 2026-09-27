@@ -1,14 +1,6 @@
 import { createHash } from 'node:crypto';
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
 
@@ -36,9 +28,6 @@ const FunctionSchema = z.object({
   version: z.number(),
   ezbr_sha256: z.string().min(1),
 });
-const FunctionBodySchema = z.object({
-  files: z.array(z.object({ name: z.string(), content: z.string() })).min(1),
-});
 const FunctionsSchema = z.array(FunctionSchema);
 const MigrationRowsSchema = z.array(z.object({ version: z.string() }));
 const DigestRowsSchema = z.array(z.object({ schema_digest: z.string() })).length(1);
@@ -49,11 +38,16 @@ const GitHubEnvironmentSchema = z.object({
   secrets: z.array(z.string()),
   variables: z.array(z.string()),
 });
+const SourceAttestationSchema = z.object({
+  commit: z.string().regex(/^[a-f0-9]{40}$/i),
+  sourceDigest: z.string().regex(/^[a-f0-9]{64}$/i),
+  supabaseCliVersion: z.string().min(1),
+});
 const SnapshotSchema = z.object({
   migrations: z.array(z.string()),
   schemaDigest: z.string(),
   functions: FunctionsSchema,
-  functionSources: z.record(z.string(), z.string()),
+  sourceDigest: z.string().regex(/^[a-f0-9]{64}$/i),
   secrets: z.array(z.string()),
   worker: z.object({ vars: z.record(z.string(), z.string()), bindings: z.array(z.string()) }),
 });
@@ -64,6 +58,7 @@ const SnapshotReportSchema = z.object({
     mode: z.literal('repo-staging'),
     environment: z.literal('staging'),
     sourceCommit: z.string().regex(/^[a-f0-9]{40}$/i),
+    sourceAttestation: SourceAttestationSchema,
     githubEnvironment: GitHubEnvironmentSchema,
     inventorySnapshot: SnapshotSchema,
   }),
@@ -72,22 +67,6 @@ const SnapshotReportSchema = z.object({
 export type EnvironmentName = 'staging' | 'production';
 export type FunctionInventory = z.infer<typeof FunctionSchema>[];
 export type DriftReport = { ok: boolean; mismatches: string[]; evidence: Record<string, unknown> };
-
-export function deployedFunctionRelativePath(fileName: string): string {
-  const normalized = fileName.replaceAll('\\', '/');
-  const relativeName = normalized.startsWith('functions/')
-    ? normalized.slice('functions/'.length)
-    : normalized.startsWith('supabase/functions/')
-      ? normalized.slice('supabase/functions/'.length)
-      : '';
-  const segments = relativeName.split('/');
-  if (
-    !relativeName ||
-    segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')
-  )
-    throw new Error('Supabase function body returned an invalid runtime source path.');
-  return join(...segments);
-}
 
 export function sourceFileDigests(root: string): Record<string, string> {
   const files: string[] = [];
@@ -164,7 +143,7 @@ export function compareInventory(
     migrations: string[];
     schemaDigest: string;
     functions: FunctionInventory;
-    functionSources: Record<string, string>;
+    sourceDigest: string;
     secrets: string[];
     worker: WorkerInventory;
   },
@@ -172,7 +151,7 @@ export function compareInventory(
     migrations: string[];
     schemaDigest: string;
     functions: FunctionInventory;
-    functionSources: Record<string, string>;
+    sourceDigest: string;
     secrets: string[];
     worker: WorkerInventory;
   },
@@ -188,12 +167,8 @@ export function compareInventory(
   if (JSON.stringify(sorted(left.secrets)) !== JSON.stringify(sorted(right.secrets))) {
     mismatches.push(`${labels[0]} ↔ ${labels[1]}: Edge Function secret names differ`);
   }
-  const sourceDrift = compareSourceDigests(left.functionSources, right.functionSources);
-  if (sourceDrift.length > 0) {
-    mismatches.push(
-      `${labels[0]} ↔ ${labels[1]}: Edge Function source differs: ${sourceDrift.join(', ')}`,
-    );
-  }
+  if (left.sourceDigest !== right.sourceDigest)
+    mismatches.push(`${labels[0]} ↔ ${labels[1]}: release source attestations differ`);
   const functionMap = (entries: FunctionInventory) =>
     new Map(entries.map((entry) => [entry.slug, entry]));
   const leftFunctions = functionMap(left.functions);
@@ -209,6 +184,11 @@ export function compareInventory(
     }
     if (before.verify_jwt !== after.verify_jwt) {
       mismatches.push(`${labels[0]} ↔ ${labels[1]}: Edge Function ${slug} verify_jwt differs`);
+    }
+    if (before.ezbr_sha256 !== after.ezbr_sha256) {
+      mismatches.push(
+        `${labels[0]} ↔ ${labels[1]}: Edge Function ${slug} deployed bundle attestation differs`,
+      );
     }
   }
   const sharedWorkerShape = (value: WorkerInventory) => ({
@@ -298,9 +278,36 @@ export function validateStagingSnapshot(report: unknown, releaseSha: string): st
   if (!parsed.data.ok || parsed.data.mismatches.length > 0) {
     return ['production: staging inventory artifact did not pass its release gate'];
   }
-  return parsed.data.evidence.sourceCommit === releaseSha
-    ? []
-    : ['production: staging inventory commit does not match the release commit'];
+  const mismatches: string[] = [];
+  if (
+    parsed.data.evidence.sourceCommit !== releaseSha ||
+    parsed.data.evidence.sourceAttestation.commit !== releaseSha
+  ) {
+    mismatches.push('production: staging inventory commit does not match the release commit');
+  }
+  if (
+    parsed.data.evidence.inventorySnapshot.sourceDigest !==
+    parsed.data.evidence.sourceAttestation.sourceDigest
+  ) {
+    mismatches.push(
+      'production: staging inventory source digest does not match its predeploy attestation',
+    );
+  }
+  return mismatches;
+}
+
+export function compareSourceAttestations(
+  staging: z.infer<typeof SourceAttestationSchema>,
+  production: z.infer<typeof SourceAttestationSchema>,
+): string[] {
+  const mismatches: string[] = [];
+  if (staging.commit !== production.commit)
+    mismatches.push('staging ↔ production: release source commits differ');
+  if (staging.sourceDigest !== production.sourceDigest)
+    mismatches.push('staging ↔ production: predeploy function source digests differ');
+  if (staging.supabaseCliVersion !== production.supabaseCliVersion)
+    mismatches.push('staging ↔ production: Supabase CLI release versions differ');
+  return mismatches;
 }
 
 function requiredEnv(name: string): string {
@@ -483,54 +490,6 @@ function generateTypes(projectRef: string, token: string): string {
   }
 }
 
-async function downloadFunctionSources(
-  projectRef: string,
-  token: string,
-  functions: FunctionInventory,
-): Promise<Record<string, string>> {
-  const workdir = mkdtempSync(join(tmpdir(), 'ai-ops-function-drift-'));
-  try {
-    const functionRoot = join(workdir, 'functions');
-    mkdirSync(functionRoot, { recursive: true });
-    const writtenFiles = new Map<string, string>();
-    const batchSize = 5;
-    for (let offset = 0; offset < functions.length; offset += batchSize) {
-      const batch = functions.slice(offset, offset + batchSize);
-      const bodies = await Promise.all(
-        batch.map(({ slug }) =>
-          api(
-            `https://api.supabase.com/v1/projects/${projectRef}/functions/${encodeURIComponent(slug)}/body`,
-            token,
-            FunctionBodySchema,
-          ),
-        ),
-      );
-      for (const body of bodies) {
-        for (const file of body.files) {
-          const relativeName = deployedFunctionRelativePath(file.name);
-          const filePath = resolve(functionRoot, relativeName);
-          const relativePath = relative(functionRoot, filePath);
-          if (!relativePath || relativePath === '..' || relativePath.startsWith(`..${sep}`))
-            throw new Error('Supabase function body returned an invalid runtime source path.');
-          const previousContent = writtenFiles.get(relativePath);
-          if (previousContent !== undefined && previousContent !== file.content)
-            throw new Error(
-              `Supabase returned inconsistent shared function source: ${relativePath}.`,
-            );
-          if (previousContent === undefined) {
-            mkdirSync(dirname(filePath), { recursive: true });
-            writeFileSync(filePath, file.content, { encoding: 'utf8', mode: 0o600 });
-            writtenFiles.set(relativePath, file.content);
-          }
-        }
-      }
-    }
-    return sourceFileDigests(functionRoot);
-  } finally {
-    rmSync(workdir, { recursive: true, force: true });
-  }
-}
-
 function localMigrations(): string[] {
   return readdirSync('supabase/migrations')
     .filter((file) => file.endsWith('.sql'))
@@ -565,6 +524,44 @@ function localFunctionAuth(): Map<string, boolean> {
     if (header && value) result.set(header, value === 'true');
   }
   return result;
+}
+
+function captureSourceAttestation(): z.infer<typeof SourceAttestationSchema> {
+  const attestation = SourceAttestationSchema.parse({
+    commit: requiredEnv('RELEASE_SHA'),
+    sourceDigest: stableHash(sourceFileDigests('supabase/functions')),
+    supabaseCliVersion: execFileSync('corepack', ['pnpm', 'exec', 'supabase', '--version'], {
+      encoding: 'utf8',
+      shell: process.platform === 'win32',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim(),
+  });
+  const path = requiredEnv('SOURCE_ATTESTATION_PATH');
+  writeFileSync(path, `${JSON.stringify(attestation, null, 2)}\n`, {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
+  console.log(JSON.stringify(attestation));
+  return attestation;
+}
+
+function loadSourceAttestation(): z.infer<typeof SourceAttestationSchema> {
+  const attestation = SourceAttestationSchema.parse(
+    JSON.parse(readFileSync(requiredEnv('SOURCE_ATTESTATION_PATH'), 'utf8')),
+  );
+  const currentDigest = stableHash(sourceFileDigests('supabase/functions'));
+  if (attestation.commit !== requiredEnv('RELEASE_SHA'))
+    throw new Error('Function source attestation commit does not match the release.');
+  if (attestation.sourceDigest !== currentDigest)
+    throw new Error('Function source tree changed after release attestation.');
+  const currentCliVersion = execFileSync('corepack', ['pnpm', 'exec', 'supabase', '--version'], {
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  }).trim();
+  if (attestation.supabaseCliVersion !== currentCliVersion)
+    throw new Error('Supabase CLI version changed after release attestation.');
+  return attestation;
 }
 
 function stableHash(value: unknown): string {
@@ -667,7 +664,7 @@ async function inventory(
   migrations: string[];
   schemaDigest: string;
   functions: FunctionInventory;
-  functionSources: Record<string, string>;
+  sourceDigest: string;
   secrets: string[];
   worker: WorkerInventory;
 }> {
@@ -679,8 +676,14 @@ async function inventory(
     getSecretNames(config.projectRef, accessToken),
     getWorkerInventory(name),
   ]);
-  const functionSources = await downloadFunctionSources(config.projectRef, accessToken, functions);
-  return { migrations, schemaDigest, functions, functionSources, secrets, worker };
+  return {
+    migrations,
+    schemaDigest,
+    functions,
+    sourceDigest: stableHash(sourceFileDigests('supabase/functions')),
+    secrets,
+    worker,
+  };
 }
 
 export async function runDriftCheck(
@@ -700,7 +703,10 @@ export async function runDriftCheck(
   });
   if (mismatches.length) return { ok: false, mismatches, evidence: { mode, environment: name } };
 
+  const sourceAttestation = loadSourceAttestation();
   const current = await inventory(name, token);
+  if (current.sourceDigest !== sourceAttestation.sourceDigest)
+    mismatches.push('Function source digest differs from the predeploy release attestation.');
   const githubEnvironment = listGitHubEnvironmentNames(name);
   mismatches.push(...missingGitHubEnvironmentNames(name, githubEnvironment));
   mismatches.push(...deploymentWorkflowMismatches(name));
@@ -710,13 +716,7 @@ export async function runDriftCheck(
   const checkedInTypes = readFileSync('packages/db/src/database.types.ts', 'utf8').trimEnd();
   if (generatedTypes !== checkedInTypes)
     mismatches.push(`repo ↔ ${name}: generated database.types.ts differs from live schema`);
-  const localSources = sourceFileDigests('supabase/functions');
-  const differing = compareSourceDigests(localSources, current.functionSources);
-  if (differing.length > 0) {
-    mismatches.push(
-      `repo ↔ ${name}: deployed Edge Function source differs: ${differing.join(', ')}`,
-    );
-  }
+  const sourceDigest = sourceAttestation.sourceDigest;
   const auth = localFunctionAuth();
   const expectedSlugs = sorted([...auth.keys()]);
   const deployedSlugs = current.functions.map((fn) => fn.slug);
@@ -744,7 +744,11 @@ export async function runDriftCheck(
     migrationDigest: stableHash(sorted(current.migrations)),
     schemaDigest: current.schemaDigest,
     databaseTypesDigest: stableHash(generatedTypes),
-    functionSourceDigest: stableHash(current.functionSources),
+    sourceAttestation: {
+      ...sourceAttestation,
+      providerSourceBytesAvailable: false,
+      providerBundleHashesAreReleaseInvariants: true,
+    },
     functionCount: current.functions.length,
     functions: current.functions.map(({ slug, verify_jwt, version, ezbr_sha256 }) => ({
       slug,
@@ -762,13 +766,14 @@ export async function runDriftCheck(
     mismatches,
     evidence: {
       ...report,
-      sourceCommit: process.env.RELEASE_SHA ?? process.env.GITHUB_SHA ?? '',
+      sourceCommit: sourceAttestation.commit,
+      sourceAttestation,
       githubEnvironment,
       inventorySnapshot: {
         migrations: current.migrations,
         schemaDigest: current.schemaDigest,
         functions: current.functions,
-        functionSources: current.functionSources,
+        sourceDigest,
         secrets: current.secrets,
         worker: current.worker,
       },
@@ -778,17 +783,18 @@ export async function runDriftCheck(
 
 export async function runPairCheck(): Promise<DriftReport> {
   const productionToken = requiredEnv('PRODUCTION_SUPABASE_ACCESS_TOKEN');
+  const productionAttestation = loadSourceAttestation();
   const artifactPath = process.env.STAGING_INVENTORY_PATH;
-  const stagingArtifact = artifactPath
-    ? SnapshotReportSchema.parse(JSON.parse(readFileSync(artifactPath, 'utf8')))
-    : undefined;
+  if (!artifactPath)
+    throw new Error('Required staging release inventory artifact path is missing.');
+  const stagingArtifact = SnapshotReportSchema.parse(
+    JSON.parse(readFileSync(artifactPath, 'utf8')),
+  );
   const [staging, production] = await Promise.all([
-    stagingArtifact
-      ? Promise.resolve(stagingArtifact.evidence.inventorySnapshot)
-      : inventory('staging', requiredEnv('STAGING_SUPABASE_ACCESS_TOKEN')),
+    Promise.resolve(stagingArtifact.evidence.inventorySnapshot),
     inventory('production', productionToken),
   ]);
-  const stagingGithub = stagingArtifact?.evidence.githubEnvironment ?? listGitHubEnvironmentNames();
+  const stagingGithub = stagingArtifact.evidence.githubEnvironment;
   const productionGithub = listGitHubEnvironmentNames();
   const mismatches = [
     ...compareInventory(staging, production, ['staging', 'production']),
@@ -799,6 +805,8 @@ export async function runPairCheck(): Promise<DriftReport> {
     ...missingGitHubEnvironmentNames('staging', stagingGithub),
     ...missingGitHubEnvironmentNames('production', productionGithub),
   ];
+  const stagingAttestation = stagingArtifact.evidence.sourceAttestation;
+  mismatches.push(...compareSourceAttestations(stagingAttestation, productionAttestation));
   const missingStage = manifest.requiredEdgeSecrets.filter(
     (name) => !staging.secrets.includes(name),
   );
@@ -823,6 +831,11 @@ export async function runPairCheck(): Promise<DriftReport> {
         production: summarize(production),
       },
       githubEnvironmentNames: { staging: stagingGithub, production: productionGithub },
+      sourceAttestations: {
+        staging: stagingAttestation,
+        production: productionAttestation,
+        providerSourceBytesAvailable: false,
+      },
       allowedDifferences: manifest.allowedDifferences,
       mismatches,
     },
@@ -835,7 +848,7 @@ function summarize(value: Awaited<ReturnType<typeof inventory>>) {
     migrationDigest: stableHash(sorted(value.migrations)),
     schemaDigest: value.schemaDigest,
     functionCount: value.functions.length,
-    functionSourceDigest: stableHash(value.functionSources),
+    sourceDigest: value.sourceDigest,
     functions: value.functions.map(({ slug, verify_jwt, version, ezbr_sha256 }) => ({
       slug,
       verify_jwt,
@@ -849,6 +862,23 @@ function summarize(value: Awaited<ReturnType<typeof inventory>>) {
 
 async function main(): Promise<void> {
   const mode = process.argv[2] === '--' ? process.argv[3] : process.argv[2];
+  if (mode === 'attest-source') {
+    captureSourceAttestation();
+    return;
+  }
+  if (mode === 'validate-release-attestation') {
+    const report = SnapshotReportSchema.parse(
+      JSON.parse(readFileSync(requiredEnv('STAGING_INVENTORY_PATH'), 'utf8')),
+    );
+    const mismatches = [
+      ...validateStagingSnapshot(report, requiredEnv('RELEASE_SHA')),
+      ...compareSourceAttestations(report.evidence.sourceAttestation, loadSourceAttestation()),
+    ];
+    const result = { ok: mismatches.length === 0, mismatches };
+    console.log(JSON.stringify(result, null, 2));
+    if (mismatches.length > 0) process.exitCode = 1;
+    return;
+  }
   if (mode === 'validate-staging' || mode === 'validate-production') {
     const name: EnvironmentName = mode === 'validate-staging' ? 'staging' : 'production';
     const prefix = name.toUpperCase();
