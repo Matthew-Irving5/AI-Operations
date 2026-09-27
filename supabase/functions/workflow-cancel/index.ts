@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 import { consumeRateLimit } from "../_shared/rate-limit.ts";
+import { getAal2Identity } from "../_shared/auth-assurance.ts";
 
 const url = Deno.env.get("SUPABASE_URL") ?? "";
 const service = createClient(
@@ -21,14 +22,14 @@ Deno.serve(async (request) => {
   const caller = createClient(url, Deno.env.get("SUPABASE_ANON_KEY") ?? "", {
     global: { headers: { Authorization: token } },
   });
-  const [{ data: identity }, { data: assurance }] = await Promise.all([
-    caller.auth.getUser(),
-    caller.auth.mfa.getAuthenticatorAssuranceLevel(),
-  ]);
+  const accessToken = token.slice("Bearer ".length);
+  const identity = await getAal2Identity(
+    accessToken,
+    (jwt) => caller.auth.getUser(jwt),
+  );
   if (
     !identity.user ||
-    identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com" ||
-    assurance?.currentLevel !== "aal2"
+    identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com"
   ) return json({ code: "forbidden" }, 403);
   if (!await consumeRateLimit(identity.user.id, "workflow_cancel", 10)) {
     return json({ code: "rate_limited" }, 429);
