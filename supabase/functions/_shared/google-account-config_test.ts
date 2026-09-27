@@ -65,14 +65,12 @@ Deno.test("Google role scope sets isolate personal data from communication mailb
   assert(personal.includes("https://www.googleapis.com/auth/drive.file"));
   assert(personal.includes("https://www.googleapis.com/auth/tasks"));
   assert(!personal.some((scope) => scope.includes("gmail.")));
-  assert(mailbox.includes("https://www.googleapis.com/auth/gmail.readonly"));
-  assert(mailbox.includes("https://www.googleapis.com/auth/gmail.send"));
-  assert(
-    !mailbox.some((scope) =>
-      scope.includes("calendar.") || scope.includes("drive.") ||
-      scope.includes("tasks")
-    ),
-  );
+  assertEquals(mailbox, [
+    "openid",
+    "email",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+  ]);
   assertEquals(
     GOOGLE_ACCOUNT_EMAILS.personal_data_source,
     "matthewirving99@gmail.com",

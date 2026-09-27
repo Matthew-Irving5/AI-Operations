@@ -33,4 +33,6 @@ Google accounts have fixed, separate roles. Complete the real-account steps belo
 
 ## Release gate
 
-The implementation and staging mock checks do not constitute live account acceptance. Keep schedules disabled until the operator completes the production checks, validates the Gmail delivery test, confirms staging/production separation, and records `LIVE E2E SIGN-OFF: PASS` in the project acceptance record.
+The migration disables every existing combined Google connection and pauses its sync until the operator reconnects it with the narrow role-specific grant. It retains the encrypted credential so the authenticated revoke flow can request revocation at Google. The old broad grant cannot safely be relabeled as a personal-data grant because the provider refresh token itself still carries Gmail consent. Plan the production migration as a controlled window with the operator ready to reconnect; once applied, do not roll back to old code or restore broad scopes. Recover through forward code/schema fixes and role-specific reconnection.
+
+Apply and validate the new migration in staging first. Complete both staging account connections and the Gmail delivery test before approving the production deployment. After the production migration/deployment succeeds, reconnect the production personal and mailbox roles, validate delivery, and verify audit evidence. Keep schedules disabled until the operator completes the production checks, confirms staging/production separation, and records `LIVE E2E SIGN-OFF: PASS` in the project acceptance record.
