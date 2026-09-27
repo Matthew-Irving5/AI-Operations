@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
+import { getAal2Identity } from "../_shared/auth-assurance.ts";
 const url = Deno.env.get("SUPABASE_URL") ?? "";
 const service = createClient(
   url,
@@ -40,18 +41,18 @@ Deno.serve(async (request) => {
   const caller = createClient(url, Deno.env.get("SUPABASE_ANON_KEY") ?? "", {
     global: { headers: { Authorization: token } },
   });
-  const [{ data: identity }, { data: assurance }] = await Promise.all([
-    caller.auth.getUser(),
-    caller.auth.mfa.getAuthenticatorAssuranceLevel(),
-  ]);
+  const accessToken = token.slice("Bearer ".length);
+  const identity = await getAal2Identity(
+    accessToken,
+    (jwt) => caller.auth.getUser(jwt),
+  );
   const body = await request.json().catch(() => null) as {
     planId?: string;
     expectedPayloadSha256?: string;
   } | null;
   if (
     !identity.user ||
-    identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com" ||
-    assurance?.currentLevel !== "aal2"
+    identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com"
   ) return json({ code: "fresh_mfa_required" }, 403);
   if (
     !body?.planId || !/^[a-f0-9]{64}$/.test(body.expectedPayloadSha256 ?? "")
