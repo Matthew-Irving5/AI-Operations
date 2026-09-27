@@ -260,6 +260,27 @@ test('staging denies bounded launch before sign-in and keeps the login surface u
   await expect(page.getByText(/Multi-factor authentication is required/)).toBeVisible();
 });
 
+test('staging AAL2 probe reaches the deployed bearer-JWT gate without business side effects', async ({
+  page,
+}) => {
+  await signInWithFreshMfa(page);
+  const probe = await page.evaluate(async () => {
+    const response = await fetch('/api/auth/mfa/aal2-probe', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+    return {
+      httpStatus: response.status,
+      body: (await response.json()) as { probeId?: string; status?: number; code?: string },
+    };
+  });
+
+  expect(probe.httpStatus).toBe(200);
+  expect(probe.body).toMatchObject({ status: 400, code: 'invalid_plan' });
+  expect(probe.body.probeId).toMatch(/^[0-9a-f-]{36}$/i);
+});
+
 test('live fixture reset cancels only explicitly owned staging fixtures through authenticated routes', async ({
   page,
 }) => {
