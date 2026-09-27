@@ -62,6 +62,39 @@ test('accepts same release bundle attestations while ignoring deployment version
   assert.deepEqual(compareInventory(inventory, production, ['staging', 'production']), []);
 });
 
+test('permits only the documented AI-15 staging-only WORKER_SECRET exception', () => {
+  const withoutWorkerSecret = {
+    ...inventory,
+    secrets: inventory.secrets.filter((name) => name !== 'WORKER_SECRET'),
+  };
+  const approved = { stagingOnly: ['WORKER_SECRET'], productionOnly: [] };
+  assert.deepEqual(
+    compareInventory(
+      { ...inventory, secrets: [...inventory.secrets, 'WORKER_SECRET'] },
+      withoutWorkerSecret,
+      ['staging', 'production'],
+      approved,
+    ),
+    [],
+  );
+  assert.ok(
+    compareInventory(
+      { ...inventory, secrets: [...inventory.secrets, 'UNEXPECTED_SECRET'] },
+      withoutWorkerSecret,
+      ['staging', 'production'],
+      approved,
+    ).some((mismatch) => mismatch.includes('outside the approved environment-specific exception')),
+  );
+  assert.ok(
+    compareInventory(
+      inventory,
+      { ...withoutWorkerSecret, secrets: [...withoutWorkerSecret.secrets, 'WORKER_SECRET'] },
+      ['staging', 'production'],
+      approved,
+    ).some((mismatch) => mismatch.includes('outside the approved environment-specific exception')),
+  );
+});
+
 test('detects migration expectation drift before deployment', () => {
   assert.deepEqual(
     compareMigrations(
