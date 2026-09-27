@@ -9,6 +9,7 @@ import {
   hasExactScopes,
   isGoogleAccountRole,
   isGoogleRoleAvailableInEnvironment,
+  normalizeGoogleGrantedScopes,
   scopesForGoogleRole,
 } from "./google-account-config.ts";
 
@@ -113,4 +114,35 @@ Deno.test("Google role and scope validators reject unapproved values", () => {
   assert(hasExactScopes(["openid", "email"], ["email", "openid"]));
   assertEquals(hasExactScopes(["openid", "openid"], ["openid"]), false);
   assertEquals(hasExactScopes(["openid", "email"], ["openid"]), false);
+});
+
+Deno.test("Google granted email URI normalizes to the exact OIDC email capability", () => {
+  const expected = scopesForGoogleRole("personal_data_source");
+  const actual = expected.map((scope) =>
+    scope === "email" ? "https://www.googleapis.com/auth/userinfo.email" : scope
+  );
+  const normalized = normalizeGoogleGrantedScopes(actual);
+
+  assertEquals(normalized, expected);
+  assert(hasExactScopes(normalized, expected));
+  assertEquals(
+    hasExactScopes(
+      normalizeGoogleGrantedScopes([
+        ...actual,
+        "https://www.googleapis.com/auth/userinfo.email",
+      ]),
+      expected,
+    ),
+    false,
+  );
+  assertEquals(
+    hasExactScopes(
+      normalizeGoogleGrantedScopes([
+        ...actual,
+        "https://www.googleapis.com/auth/userinfo.profile",
+      ]),
+      expected,
+    ),
+    false,
+  );
 });

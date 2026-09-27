@@ -171,6 +171,12 @@ export const GOOGLE_SCOPE_DETAILS: Readonly<
     reason:
       'Confirms the verified account address for this role; it does not read mailbox contents.',
   },
+  'https://www.googleapis.com/auth/userinfo.email': {
+    label: 'Google email identity',
+    access: 'Identity only',
+    reason:
+      'Confirms the verified account address for this role; it does not read mailbox contents.',
+  },
   'https://www.googleapis.com/auth/gmail.readonly': {
     label: 'Gmail',
     access: 'Read-only',

@@ -4,6 +4,7 @@ import {
   hasExactScopes,
   isGoogleAccountRole,
   isGoogleRoleAvailableInEnvironment,
+  normalizeGoogleGrantedScopes,
   scopesForGoogleRole,
 } from "../_shared/google-account-config.ts";
 import {
@@ -470,8 +471,9 @@ Deno.serve(async (request) => {
       );
     }
     const grantedScopes = tokens.scope?.split(/\s+/).filter(Boolean) ?? [];
+    const normalizedGrantedScopes = normalizeGoogleGrantedScopes(grantedScopes);
     const approvedScopeSet = new Set<string>(expectedScopes);
-    if (!hasExactScopes(grantedScopes, expectedScopes)) {
+    if (!hasExactScopes(normalizedGrantedScopes, expectedScopes)) {
       await revokeAccessToken(tokens.access_token!);
       return respondFailure(
         failure(correlationId, {
@@ -480,11 +482,12 @@ Deno.serve(async (request) => {
           reason: "scope_set_mismatch",
           details: {
             missing_scopes: expectedScopes.filter(
-              (scope) => !grantedScopes.includes(scope),
+              (scope) => !normalizedGrantedScopes.includes(scope),
             ),
-            unexpected_scopes: grantedScopes.filter((scope) =>
+            unexpected_scopes: normalizedGrantedScopes.filter((scope) =>
               !approvedScopeSet.has(scope)
             ),
+            received_scopes: grantedScopes,
           },
         }),
         422,
@@ -670,7 +673,7 @@ Deno.serve(async (request) => {
         account_role: accountRole,
         environment: runtimeConfig.environment,
         verified_account_match: true,
-        granted_scopes: [...expectedScopes],
+        granted_scopes: grantedScopes,
       },
     });
     const target = new URL("/data-sources", appOrigin);

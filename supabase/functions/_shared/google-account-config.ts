@@ -110,3 +110,11 @@ export function hasExactScopes(
     actualSet.size === expectedSet.size &&
     [...actualSet].every((scope) => expectedSet.has(scope));
 }
+
+export function normalizeGoogleGrantedScopes(
+  received: readonly string[],
+): readonly string[] {
+  return received.map((scope) =>
+    scope === "https://www.googleapis.com/auth/userinfo.email" ? "email" : scope
+  );
+}

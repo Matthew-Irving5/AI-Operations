@@ -11,6 +11,8 @@ Google accounts have fixed, separate roles. Complete the real-account steps belo
 
 ## Google Cloud setup
 
+Every role requests the identity scopes `openid` and `email`. Google may return the equivalent canonical `https://www.googleapis.com/auth/userinfo.email` URI in the token response. The callback accepts only this identity alias, normalizes it to the `email` capability for exact role validation, and rejects duplicate aliases or any other unexpected scope.
+
 - [ ] Create and verify separate OAuth clients in the staging and production Google Cloud projects. Never share client credentials between environments.
 - [ ] Register the exact redirect URI `https://jqtssfrfocnibffdkqch.supabase.co/functions/v1/google-oauth-callback` in the staging OAuth client and `https://epmgvknrydadzitzupzx.supabase.co/functions/v1/google-oauth-callback` in the production OAuth client.
 - [ ] Enable Google Calendar API, Google Tasks API, Google Drive API, and Gmail API only in the project that needs them. Enable Gmail API in the corresponding production or staging project before mailbox consent.
