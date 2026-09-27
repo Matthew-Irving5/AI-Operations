@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  GOOGLE_DRIVE_EMPTY_STATE,
   actionMessage,
   cadenceLabel,
   googleFreshnessLabel,
@@ -11,6 +12,12 @@ import {
 } from './source-permissions';
 
 describe('source permission explanations', () => {
+  it('explains an empty Drive list without implying a broken connection or broader access need', () => {
+    expect(GOOGLE_DRIVE_EMPTY_STATE).toMatch(/connection is healthy/i);
+    expect(GOOGLE_DRIVE_EMPTY_STATE).toMatch(/Drive Picker/i);
+    expect(GOOGLE_DRIVE_EMPTY_STATE).toMatch(/do not need to reconnect or grant broader access/i);
+  });
+
   it('keeps Gmail send scoped to communication mailboxes', () => {
     const detail = googleScopeDetail('https://www.googleapis.com/auth/gmail.send');
     expect(detail.access).toBe('Read/write');

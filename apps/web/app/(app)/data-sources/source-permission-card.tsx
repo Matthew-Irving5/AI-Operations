@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { GoogleConnect } from './google-connect';
 import {
+  GOOGLE_DRIVE_EMPTY_STATE,
   actionMessage,
   cadenceLabel,
   freshnessLabel,
@@ -497,7 +498,7 @@ export function GoogleSourceCard({
                     </label>
                   ))
                 ) : (
-                  <p>No Drive files were returned. Reconnect Google and review Drive access.</p>
+                  <p>{GOOGLE_DRIVE_EMPTY_STATE}</p>
                 )}
               </div>
             </fieldset>

@@ -211,6 +211,9 @@ export const GOOGLE_SCOPE_DETAILS: Readonly<
   },
 };
 
+export const GOOGLE_DRIVE_EMPTY_STATE =
+  'Your Google connection is healthy, but no Drive files have been shared with or selected for AI Operations yet. File selection depends on the Drive Picker, which is not available yet. Keep the limited Drive permission; you do not need to reconnect or grant broader access just because this list is empty.';
+
 export function googleScopeDetail(scope: string) {
   return (
     GOOGLE_SCOPE_DETAILS[scope] ?? {
