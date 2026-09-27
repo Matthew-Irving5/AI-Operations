@@ -14,6 +14,23 @@ The GitHub Environment `staging` requires these additional protected values befo
 
 The staging app account must exist in Auth, have a verified TOTP factor, and have an enabled `app_users` row matching the repository’s locked identity. The test runs the actual password and fresh TOTP flow; it does not forge sessions, bypass MFA, or add an alternate test account. Configure these values only in the GitHub `staging` environment (or provide equivalent process environment values for a controlled local run). Do not put them in `.env`, shell history, source, test fixtures, logs, screenshots, or artifacts.
 
+## Safe live AAL2 probe
+
+After the probe route is deployed to staging, an operator can verify the Edge Function bearer-JWT AAL2 gate without creating or changing a workflow, schedule, or provider call:
+
+1. Sign in at `https://ai-operations-staging.ai-operations.workers.dev/login` and complete the existing six-digit TOTP challenge at `/mfa`.
+2. In the same authenticated staging tab, run:
+
+   ```js
+   await fetch('/api/auth/mfa/aal2-probe', {
+     method: 'POST',
+     headers: { 'content-type': 'application/json' },
+     body: '{}',
+   }).then((response) => response.json());
+   ```
+
+3. Expect `{ status: 400, code: 'invalid_plan', probeId: '<uuid>' }`. The probe forwards a fixed empty object to the existing `digital-plan-approve` Edge Function. That function authenticates the forwarded session and returns `invalid_plan` before any database access or mutation. The pre-fix stateless assurance check returns `403`, so this status/code pair distinguishes the deployed fix. The app route requires the exact staging app origin, exact staging Supabase URL, same-origin request, and a validated cookie-backed session; it never accepts an arbitrary Edge URL/body or returns/logs the bearer token. The route returns 404 outside the pinned staging target.
+
 ## Run modes
 
 - `suite`: validates the profile prerequisite, then runs desktop Chromium and iPhone-sized WebKit browser scenarios against deployed staging.
