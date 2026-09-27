@@ -37,6 +37,9 @@ export async function POST(request: Request) {
   const accessToken = await getAuthenticatedServerAccessToken();
   if (!accessToken) return response(401, 'unauthorised', undefined, 401);
 
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!anonKey) return response(503, 'probe_configuration_unavailable', undefined, 503);
+
   const probeId = crypto.randomUUID();
   try {
     const edgeResponse = await fetch(
@@ -44,18 +47,29 @@ export async function POST(request: Request) {
       {
         method: 'POST',
         headers: {
+          apikey: anonKey,
           authorization: `Bearer ${accessToken}`,
           'content-type': 'application/json',
         },
         body: '{}',
         cache: 'no-store',
-        redirect: 'error',
+        // Do not follow redirects from the fixed provider endpoint. Manual mode
+        // lets us return a safe status/code diagnostic instead of collapsing a
+        // 3xx into an opaque fetch exception.
+        redirect: 'manual',
       },
     );
     const edgeBody = await edgeResponse.json().catch(() => null);
     const result = parseAal2ProbeEdgeResponse(edgeResponse.status, edgeBody);
     return response(result.status, result.code, probeId);
-  } catch {
+  } catch (error) {
+    // Keep provider credentials and raw exception text out of logs. The
+    // correlation ID and error class are enough to distinguish a transport
+    // failure from an HTTP response without exposing request data.
+    console.error('staging_aal2_probe_fetch_failed', {
+      probeId,
+      errorType: error instanceof Error ? error.name : 'UnknownError',
+    });
     return response(502, 'edge_probe_unavailable', probeId, 502);
   }
 }
