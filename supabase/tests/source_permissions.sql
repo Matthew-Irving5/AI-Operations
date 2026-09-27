@@ -1,5 +1,5 @@
 begin;
-select plan(40);
+select plan(42);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password,
   email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -67,6 +67,10 @@ select ok(has_table_privilege('service_role', 'public.google_drive_files', 'INSE
   'service role can persist Drive records');
 select ok(not has_table_privilege('authenticated', 'public.connection_credentials', 'SELECT'),
   'encrypted Google credentials are never readable by the browser');
+select ok(not has_table_privilege('authenticated', 'public.connection_credentials', 'DELETE'),
+  'encrypted Google credentials cannot be deleted by the browser');
+select ok(has_table_privilege('service_role', 'public.connection_credentials', 'DELETE'),
+  'service role can delete encrypted credentials during provider revocation');
 
 select throws_ok($$
   insert into public.connections(user_id, provider, account_label, account_role, environment, scopes)
