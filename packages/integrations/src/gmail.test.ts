@@ -1,10 +1,10 @@
 import { expect, it } from 'vitest';
-import { GmailApiNotifier, MockGmailNotifier } from './gmail';
+import { GmailApiNotifier, MockGmailNotifier, notificationRecipient } from './gmail';
 
 it('records a Gmail message ID and deduplicates the notification', async () => {
   const notifier = new MockGmailNotifier();
   const message = {
-    to: 'Matthew.irving.ai@gmail.com',
+    to: notificationRecipient,
     subject: '[AI Operations] Synthetic report',
     html: '<p>safe summary</p>',
     dedupeKey: 'synthetic-report-2026-08-03',
@@ -25,11 +25,23 @@ it('uses the Gmail send endpoint with the fixed recipient', async () => {
   });
   await expect(
     notifier.send({
-      to: 'matthew.irving.ai@gmail.com',
+      to: notificationRecipient,
       subject: '[AI Operations] Synthetic report',
       html: '<p>safe summary</p>',
       dedupeKey: 'gmail-api-synthetic',
     }),
   ).resolves.toEqual({ messageId: 'gmail-synthetic' });
   expect(request).toContain('gmail.googleapis.com/gmail/v1/users/me/messages/send');
+});
+
+it('rejects delivery to the communication mailbox or another recipient', async () => {
+  const notifier = new MockGmailNotifier();
+  await expect(
+    notifier.send({
+      to: 'matthew.irving.ai@gmail.com',
+      subject: '[AI Operations] Synthetic report',
+      html: '<p>safe summary</p>',
+      dedupeKey: 'forbidden-recipient',
+    }),
+  ).rejects.toThrow('notification_recipient_forbidden');
 });
