@@ -8,7 +8,13 @@ export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return NextResponse.json({ code: 'unauthorised' }, { status: 401 });
-  const { data: factors } = await supabase.auth.mfa.listFactors();
+  const { data: factors, error: factorsError } = await supabase.auth.mfa.listFactors();
+  if (factorsError || !factors) {
+    return NextResponse.json(
+      { code: 'factor_list_unavailable' },
+      { status: 503, headers: { 'cache-control': 'no-store' } },
+    );
+  }
   if ((factors?.all.length ?? 0) > 0) {
     const { data: assurance, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     if (error || assurance?.currentLevel !== 'aal2') {
