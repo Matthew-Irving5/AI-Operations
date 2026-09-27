@@ -106,6 +106,7 @@ async function signInWithFreshMfa(page: import('@playwright/test').Page): Promis
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/mfa(?:\?|$)/, { timeout: 20_000 });
   await expect(page.getByRole('heading', { name: 'Verify your identity' })).toBeVisible();
+  await page.getByLabel('Authenticator factor').selectOption(env.LIVE_E2E_TOTP_FACTOR_ID);
   await expect(page.getByLabel('Six-digit code')).toBeVisible({ timeout: 15_000 });
   const currentPeriodMs = Date.now() % 30_000;
   if (currentPeriodMs > 26_000) await page.waitForTimeout(5_000);

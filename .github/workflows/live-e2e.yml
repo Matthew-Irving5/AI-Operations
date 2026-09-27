@@ -30,6 +30,7 @@ jobs:
       LIVE_E2E_EMAIL: ${{ secrets.LIVE_E2E_EMAIL }}
       LIVE_E2E_PASSWORD: ${{ secrets.LIVE_E2E_PASSWORD }}
       LIVE_E2E_TOTP_SECRET: ${{ secrets.LIVE_E2E_TOTP_SECRET }}
+      LIVE_E2E_TOTP_FACTOR_ID: ${{ vars.LIVE_E2E_TOTP_FACTOR_ID }}
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -45,6 +46,7 @@ jobs:
           test -n "$LIVE_E2E_EMAIL" || { echo "Missing staging secret: LIVE_E2E_EMAIL"; exit 1; }
           test -n "$LIVE_E2E_PASSWORD" || { echo "Missing staging secret: LIVE_E2E_PASSWORD"; exit 1; }
           test -n "$LIVE_E2E_TOTP_SECRET" || { echo "Missing staging secret: LIVE_E2E_TOTP_SECRET"; exit 1; }
+          test -n "$LIVE_E2E_TOTP_FACTOR_ID" || { echo "Missing staging variable: LIVE_E2E_TOTP_FACTOR_ID"; exit 1; }
           pnpm test:e2e:live:mismatch
       - name: Verify staging app identity and fixture prerequisites
         if: inputs.mode == 'suite' || inputs.mode == 'fixtures'

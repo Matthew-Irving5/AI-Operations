@@ -6,6 +6,22 @@ export const stagingTarget = {
   projectRef: 'jqtssfrfocnibffdkqch',
 } as const;
 
+export const stagingE2eTotpFactorName = 'AI Operations staging live E2E';
+
+export function isStagingE2eMfaTarget(
+  requestOrigin: string | null,
+  appEnvironment: string | undefined,
+  configuredAppOrigin: string | undefined,
+  configuredSupabaseUrl: string | undefined,
+): boolean {
+  return (
+    requestOrigin === stagingTarget.origin &&
+    appEnvironment === 'staging' &&
+    configuredAppOrigin === stagingTarget.origin &&
+    configuredSupabaseUrl === stagingTarget.supabaseUrl
+  );
+}
+
 const environmentSchema = z.object({
   LIVE_E2E_BASE_URL: z.string().url(),
   LIVE_E2E_SUPABASE_URL: z.string().url(),
@@ -13,6 +29,7 @@ const environmentSchema = z.object({
   LIVE_E2E_EMAIL: z.string().email(),
   LIVE_E2E_PASSWORD: z.string().min(1),
   LIVE_E2E_TOTP_SECRET: z.string().min(16),
+  LIVE_E2E_TOTP_FACTOR_ID: z.string().uuid(),
 });
 
 export type LiveE2eEnvironment = z.infer<typeof environmentSchema>;
@@ -28,6 +45,7 @@ export function parseLiveE2eEnvironment(
     LIVE_E2E_EMAIL: env.LIVE_E2E_EMAIL,
     LIVE_E2E_PASSWORD: env.LIVE_E2E_PASSWORD,
     LIVE_E2E_TOTP_SECRET: env.LIVE_E2E_TOTP_SECRET,
+    LIVE_E2E_TOTP_FACTOR_ID: env.LIVE_E2E_TOTP_FACTOR_ID,
   });
   if (!parsed.success) {
     const missing = parsed.error.issues.map((issue) => issue.path.join('.')).join(', ');
