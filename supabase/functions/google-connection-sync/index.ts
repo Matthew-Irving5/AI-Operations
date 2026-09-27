@@ -63,11 +63,14 @@ Deno.serve(async (request) => {
   );
   if (!parsed.success) return json({ code: "invalid_request" }, 400);
   const body = parsed.data;
-  const connection = await service.from("connections").select("id")
+  const connection = await service.from("connections").select("id,account_role")
     .eq("id", body.connectionId).eq("user_id", user.id).eq("provider", "google")
     .maybeSingle();
   if (connection.error || !connection.data) {
     return json({ code: "connection_unavailable" }, 404);
+  }
+  if (connection.data.account_role !== "personal_data_source") {
+    return json({ code: "connection_role_forbidden" }, 403);
   }
   if (!await consumeRateLimit(user.id, "google_connection_sync", 3)) {
     return json({ code: "rate_limited" }, 429);

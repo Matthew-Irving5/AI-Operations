@@ -1,5 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
-import { hasExactGoogleScopes } from "../_shared/google-sync.ts";
+import { z } from "https://esm.sh/zod@4.1.5";
+import {
+  GOOGLE_ACCOUNT_ROLES,
+  googleAccountConfig,
+  isGoogleRoleAvailableInEnvironment,
+  scopesForGoogleRole,
+} from "../_shared/google-account-config.ts";
 
 const service = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
@@ -8,12 +14,9 @@ const service = createClient(
 const allowedEmail = "matthewirving99@gmail.com";
 const env = (preferred: string, compatibility: string) =>
   Deno.env.get(preferred) ?? Deno.env.get(compatibility);
-const scopes = [
-  "https://www.googleapis.com/auth/gmail.readonly",
-  "https://www.googleapis.com/auth/gmail.send",
-  "https://www.googleapis.com/auth/calendar.readonly",
-  "https://www.googleapis.com/auth/drive.readonly",
-];
+const requestSchema = z.object({
+  account_role: z.enum(GOOGLE_ACCOUNT_ROLES),
+}).strict();
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -58,6 +61,21 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") {
     return json({ code: "method_not_allowed" }, 405);
   }
+  const parsed = requestSchema.safeParse(
+    await request.json().catch(() => null),
+  );
+  if (!parsed.success) return json({ code: "invalid_request" }, 400);
+  const role = parsed.data.account_role;
+  const config = googleAccountConfig(
+    Deno.env.get("AI_OPERATIONS_ENVIRONMENT"),
+    env("PUBLIC_APP_ORIGIN", "APP_PUBLIC_ORIGIN"),
+  );
+  if (!config) {
+    return json({ code: "google_environment_configuration_invalid" }, 503);
+  }
+  if (!isGoogleRoleAvailableInEnvironment(role, config.environment)) {
+    return json({ code: "google_account_role_unavailable" }, 403);
+  }
   const token = request.headers.get("authorization");
   if (!token?.startsWith("Bearer ")) return json({ code: "unauthorised" }, 401);
   const caller = createClient(
@@ -70,9 +88,10 @@ Deno.serve(async (request) => {
     return json({ code: "forbidden" }, 403);
   }
   const { data: aal2 } = await caller.rpc("is_allowed_aal2");
-  if (aal2 !== true || !hasExactGoogleScopes(scopes)) {
+  if (aal2 !== true) {
     return json({ code: "aal2_required" }, 403);
   }
+  const scopes = scopesForGoogleRole(role);
 
   const clientId = env("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_CLOUD_CLIENT_ID"),
     redirectUri = env("GOOGLE_OAUTH_REDIRECT_URI", "GOOGLE_CLOUD_REDIRECT_URI");
@@ -90,6 +109,8 @@ Deno.serve(async (request) => {
     state_hash: await sha(state),
     pkce_verifier_encrypted: await encrypt(verifier),
     requested_scopes: scopes,
+    account_role: role,
+    environment: config.environment,
     redirect_uri: redirectUri,
     expires_at: new Date(Date.now() + 600_000).toISOString(),
   });
@@ -106,7 +127,7 @@ Deno.serve(async (request) => {
     response_type: "code",
     access_type: "offline",
     prompt: "consent",
-    include_granted_scopes: "true",
+    include_granted_scopes: "false",
     scope: scopes.join(" "),
     state,
     code_challenge: b64(

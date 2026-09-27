@@ -93,6 +93,8 @@ const routineSchema = z.object({
 const connectionSchema = z.object({
   id: z.string().uuid(),
   provider: z.string(),
+  account_role: z.string(),
+  environment: z.enum(['staging', 'production']),
   account_label: z.string(),
   status: z.string(),
   scopes: z.array(z.string()),
@@ -414,7 +416,9 @@ export async function connectionsData(): Promise<PageData<z.infer<typeof connect
   const client = await createSupabaseServerClient();
   const { data, error } = await client
     .from('connections')
-    .select('id,provider,account_label,status,scopes,created_at,configuration')
+    .select(
+      'id,provider,account_role,environment,account_label,status,scopes,created_at,configuration',
+    )
     .order('created_at', { ascending: false });
   return error
     ? { data: [], error: 'Connections could not be loaded.' }
@@ -454,12 +458,14 @@ export async function sourcePermissionsData(): Promise<
     : freshnessQuery;
   const connectionsQuery = await client
     .from('connections')
-    .select('id,provider,account_label,status,scopes,created_at,configuration')
+    .select(
+      'id,provider,account_role,environment,account_label,status,scopes,created_at,configuration',
+    )
     .order('created_at', { ascending: false });
   const connections = connectionsQuery.error
     ? await client
         .from('connections')
-        .select('id,provider,account_label,status,scopes,created_at')
+        .select('id,provider,account_role,environment,account_label,status,scopes,created_at')
         .order('created_at', { ascending: false })
     : connectionsQuery;
   const [appleDevices] = await Promise.all([

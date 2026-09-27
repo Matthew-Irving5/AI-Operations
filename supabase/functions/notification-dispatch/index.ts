@@ -1,10 +1,15 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
+import {
+  GOOGLE_ACCOUNT_EMAILS,
+  googleAccountConfig,
+} from "../_shared/google-account-config.ts";
+import { getGoogleMailboxAccessToken } from "../_shared/google-sync.ts";
 
 const service = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
 );
-const recipient = "matthew.irving.ai@gmail.com";
+const recipient = GOOGLE_ACCOUNT_EMAILS.personal_data_source;
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -30,8 +35,26 @@ Deno.serve(async (request) => {
   ) {
     return json({ code: "unauthorised" }, 401);
   }
-  const accessToken = Deno.env.get("GMAIL_ACCESS_TOKEN");
-  if (!accessToken) return json({ code: "gmail_not_configured" }, 503);
+  const environment = Deno.env.get("AI_OPERATIONS_ENVIRONMENT");
+  const appOrigin = Deno.env.get("PUBLIC_APP_ORIGIN") ??
+    Deno.env.get("APP_PUBLIC_ORIGIN");
+  const config = googleAccountConfig(environment, appOrigin);
+  if (!config) {
+    return json({ code: "google_environment_configuration_invalid" }, 503);
+  }
+  const mailboxRole = config.environment === "staging"
+    ? "ai_operations_mailbox_staging"
+    : "ai_operations_mailbox";
+  let accessToken: string;
+  try {
+    ({ accessToken } = await getGoogleMailboxAccessToken(
+      service,
+      mailboxRole,
+      config.environment,
+    ));
+  } catch {
+    return json({ code: "gmail_mailbox_not_configured" }, 503);
+  }
   const workerId = request.headers.get("x-notification-worker-id")?.slice(
     0,
     100,

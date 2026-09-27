@@ -153,30 +153,55 @@ export function parseGoogleSourceResources(value: unknown): GoogleSourceResource
 export const GOOGLE_SCOPE_DETAILS: Readonly<
   Record<
     string,
-    Readonly<{ label: string; access: 'Read-only' | 'Notification only'; reason: string }>
+    Readonly<{
+      label: string;
+      access: 'Read-only' | 'Read/write' | 'Identity only';
+      reason: string;
+    }>
   >
 > = {
+  openid: {
+    label: 'Google identity',
+    access: 'Identity only',
+    reason: 'Confirms which Google account granted this role; it does not access Workspace data.',
+  },
+  email: {
+    label: 'Google email identity',
+    access: 'Identity only',
+    reason:
+      'Confirms the verified account address for this role; it does not read mailbox contents.',
+  },
   'https://www.googleapis.com/auth/gmail.readonly': {
     label: 'Gmail',
     access: 'Read-only',
-    reason: 'Reads message metadata for personal, career, and finance workflows.',
+    reason:
+      'Reads messages and attachments for AI Operations conversations; mail is never changed by sync.',
   },
   'https://www.googleapis.com/auth/gmail.send': {
     label: 'Gmail send',
-    access: 'Notification only',
-    reason:
-      'Needed only to send configured notifications; the app never uses it to read, delete, or alter mail.',
+    access: 'Read/write',
+    reason: 'Sends replies and configured notifications from the AI Operations mailbox.',
   },
   'https://www.googleapis.com/auth/calendar.readonly': {
     label: 'Google Calendar',
     access: 'Read-only',
-    reason:
-      'Reads events and availability for planning. Calendar events are never changed by sync.',
+    reason: 'Reads calendars selected for planning.',
   },
-  'https://www.googleapis.com/auth/drive.readonly': {
+  'https://www.googleapis.com/auth/calendar.events.owned': {
+    label: 'Google Calendar events',
+    access: 'Read/write',
+    reason: 'Creates and edits events only on calendars owned by the personal data account.',
+  },
+  'https://www.googleapis.com/auth/drive.file': {
     label: 'Google Drive',
-    access: 'Read-only',
-    reason: 'Lists existing files for ingestion; it is not primary archival storage.',
+    access: 'Read/write',
+    reason: 'Reads and processes files individually selected for AI Operations.',
+  },
+  'https://www.googleapis.com/auth/tasks': {
+    label: 'Google Tasks',
+    access: 'Read/write',
+    reason:
+      'Reads, creates, updates, completes, and deletes Planner tasks on the personal data account.',
   },
 };
 

@@ -5,18 +5,37 @@ import {
 import {
   APPROVED_GOOGLE_SCOPES,
   GoogleSyncError,
+  hasExactGoogleRoleScopes,
   hasExactGoogleScopes,
   shouldRecoverGmailHistoryCursor,
   shouldSeedGmailCursor,
 } from "./google-sync.ts";
 
-Deno.test("Google scope contract accepts exactly the four approved scopes", () => {
+Deno.test("Google personal-data scope contract accepts exactly its six approved scopes", () => {
   assert(hasExactGoogleScopes([...APPROVED_GOOGLE_SCOPES]));
   assert(hasExactGoogleScopes([...APPROVED_GOOGLE_SCOPES].reverse()));
 });
 
+Deno.test("Google communication roles permit Gmail only and share a distinct environment binding", () => {
+  const scopes = [
+    "openid",
+    "email",
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+  ];
+  assert(hasExactGoogleRoleScopes("ai_operations_mailbox", scopes));
+  assert(hasExactGoogleRoleScopes("ai_operations_mailbox_staging", scopes));
+  assertEquals(
+    hasExactGoogleRoleScopes("ai_operations_mailbox", [
+      ...scopes,
+      "https://www.googleapis.com/auth/calendar.readonly",
+    ]),
+    false,
+  );
+});
+
 Deno.test("Google scope contract rejects missing, extra, and duplicate scopes", () => {
-  assertEquals(hasExactGoogleScopes(APPROVED_GOOGLE_SCOPES.slice(0, 3)), false);
+  assertEquals(hasExactGoogleScopes(APPROVED_GOOGLE_SCOPES.slice(0, 5)), false);
   assertEquals(
     hasExactGoogleScopes([
       ...APPROVED_GOOGLE_SCOPES,

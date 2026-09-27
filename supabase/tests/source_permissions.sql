@@ -44,8 +44,8 @@ select ok(exists(
   select 1 from pg_trigger where tgname = 'apple_bridge_receipt_freshness'
 ), 'legacy Apple bridge receipts update freshness');
 select ok(exists(
-  select 1 from pg_constraint where conname = 'connections_google_scopes_check'
-), 'Google connections enforce the approved scope set');
+  select 1 from pg_constraint where conname = 'connections_google_role_scope_check'
+), 'Google connections enforce role-specific approved scopes');
 select ok(exists(
   select 1 from pg_constraint where conname = 'apple_bridge_devices_enabled_lists_check'
 ), 'Apple bridge lists are restricted to the exact approved allowlist');
@@ -69,21 +69,21 @@ select ok(not has_table_privilege('authenticated', 'public.connection_credential
   'encrypted Google credentials are never readable by the browser');
 
 select throws_ok($$
-  insert into public.connections(user_id, provider, account_label, scopes)
-  values ('00000000-0000-0000-0000-000000000101', 'google', 'Synthetic invalid', '{}')
-$$, 'new row for relation "connections" violates check constraint "connections_google_scopes_check"',
+  insert into public.connections(user_id, provider, account_label, account_role, environment, scopes)
+  values ('00000000-0000-0000-0000-000000000101', 'google', 'Synthetic invalid', 'personal_data_source', 'production', '{}')
+$$, 'new row for relation "connections" violates check constraint "connections_google_role_scope_check"',
   'a Google connection cannot omit an approved scope');
 select throws_ok($$
-  insert into public.connections(user_id, provider, account_label, scopes)
-  values ('00000000-0000-0000-0000-000000000101', 'google', 'Synthetic duplicate', array[
-    'https://www.googleapis.com/auth/gmail.readonly',
-    'https://www.googleapis.com/auth/gmail.readonly',
-    'https://www.googleapis.com/auth/gmail.send',
+  insert into public.connections(user_id, provider, account_label, account_role, environment, scopes)
+  values ('00000000-0000-0000-0000-000000000101', 'google', 'Synthetic duplicate', 'personal_data_source', 'production', array[
+    'openid', 'email',
+    'https://www.googleapis.com/auth/drive.file',
     'https://www.googleapis.com/auth/calendar.readonly',
-    'https://www.googleapis.com/auth/drive.readonly'
+    'https://www.googleapis.com/auth/calendar.readonly',
+    'https://www.googleapis.com/auth/tasks'
   ])
-$$, 'new row for relation "connections" violates check constraint "connections_google_scopes_check"',
-  'a Google connection cannot contain duplicate scopes');
+$$, 'new row for relation "connections" violates check constraint "connections_google_role_scope_check"',
+  'a Google connection cannot contain duplicate or omitted scopes');
 
 select lives_ok($$
   select public.record_source_freshness(
@@ -163,15 +163,16 @@ values
   ('50000000-0000-4000-8000-000000000004', '00000000-0000-0000-0000-000000000101', 'connection_scope_change', now() + interval '2 minutes', now()),
   ('50000000-0000-4000-8000-000000000005', '00000000-0000-0000-0000-000000000101', 'apple_bridge_create', now() + interval '2 minutes', now()),
   ('50000000-0000-4000-8000-000000000006', '00000000-0000-0000-0000-000000000101', 'connection_scope_change', now() + interval '2 minutes', now());
-insert into public.connections(id, user_id, provider, account_label, status, sync_enabled, scopes)
+insert into public.connections(id, user_id, provider, account_label, account_role, environment, status, sync_enabled, scopes)
 values (
   '60000000-0000-4000-8000-000000000001',
-  '00000000-0000-0000-0000-000000000101', 'google', 'Synthetic Google',
+  '00000000-0000-0000-0000-000000000101', 'google', 'matthewirving99@gmail.com', 'personal_data_source', 'production',
   'connected', true, array[
-    'https://www.googleapis.com/auth/gmail.readonly',
-    'https://www.googleapis.com/auth/gmail.send',
+    'openid', 'email',
+    'https://www.googleapis.com/auth/drive.file',
     'https://www.googleapis.com/auth/calendar.readonly',
-    'https://www.googleapis.com/auth/drive.readonly'
+    'https://www.googleapis.com/auth/calendar.events.owned',
+    'https://www.googleapis.com/auth/tasks'
   ]
 );
 update public.mfa_action_gates

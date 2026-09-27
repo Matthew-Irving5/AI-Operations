@@ -11,20 +11,20 @@ import {
 } from './source-permissions';
 
 describe('source permission explanations', () => {
-  it('keeps Gmail send explicitly limited to notifications', () => {
+  it('keeps Gmail send scoped to communication mailboxes', () => {
     const detail = googleScopeDetail('https://www.googleapis.com/auth/gmail.send');
-    expect(detail.access).toBe('Notification only');
-    expect(detail.reason).toMatch(/only to send configured notifications/i);
-    expect(detail.reason).toMatch(/never uses it to read/i);
+    expect(detail.access).toBe('Read/write');
+    expect(detail.reason).toMatch(/AI Operations mailbox/i);
   });
 
   it('labels documented source scopes as read-only', () => {
     expect(googleScopeDetail('https://www.googleapis.com/auth/calendar.readonly').access).toBe(
       'Read-only',
     );
-    expect(googleScopeDetail('https://www.googleapis.com/auth/drive.readonly').access).toBe(
-      'Read-only',
+    expect(googleScopeDetail('https://www.googleapis.com/auth/drive.file').access).toBe(
+      'Read/write',
     );
+    expect(googleScopeDetail('https://www.googleapis.com/auth/tasks').access).toBe('Read/write');
   });
 
   it('derives stale state from the expected cadence', () => {

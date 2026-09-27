@@ -116,11 +116,12 @@ async function authenticate(request: Request) {
 
 async function ownedConnection(connectionId: string, userId: string) {
   const result = await service.from("connections").select(
-    "id,provider,status,sync_enabled,configuration",
+    "id,provider,account_role,status,sync_enabled,configuration",
   ).eq("id", connectionId).eq("user_id", userId).eq("provider", "google")
     .maybeSingle().returns<{
     id: string;
     provider: string;
+    account_role: string;
     status: string;
     sync_enabled: boolean;
     configuration: Record<string, unknown>;
@@ -151,6 +152,9 @@ Deno.serve(async (request) => {
   }
   const connection = await ownedConnection(connectionId, user.id);
   if (!connection) return json({ code: "connection_unavailable" }, 404);
+  if (connection.account_role !== "personal_data_source") {
+    return json({ code: "connection_role_forbidden" }, 403);
+  }
   if (request.method === "GET") {
     try {
       const discovered = await discoverGoogleSources(service, connectionId);
