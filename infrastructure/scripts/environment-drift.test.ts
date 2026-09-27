@@ -7,6 +7,7 @@ import {
   compareInventory,
   compareMigrations,
   compareSourceDigests,
+  deployedFunctionRelativePath,
   sourceFileDigests,
   validateConfig,
   missingGitHubEnvironmentNames,
@@ -90,6 +91,19 @@ test('fingerprints runtime TypeScript while excluding test-only source files', (
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('maps deployed function body paths safely into a local function tree', () => {
+  assert.equal(
+    deployedFunctionRelativePath('functions/approval-decide/index.ts'),
+    join('approval-decide', 'index.ts'),
+  );
+  assert.equal(
+    deployedFunctionRelativePath('supabase/functions/_shared/auth-assurance.ts'),
+    join('_shared', 'auth-assurance.ts'),
+  );
+  assert.throws(() => deployedFunctionRelativePath('functions/../secrets.txt'));
+  assert.throws(() => deployedFunctionRelativePath('outside/functions/index.ts'));
 });
 
 test('detects schema, function inventory, auth, source, and worker configuration drift', () => {

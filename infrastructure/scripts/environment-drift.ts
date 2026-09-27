@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import {
-  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -37,6 +36,9 @@ const FunctionSchema = z.object({
   version: z.number(),
   ezbr_sha256: z.string().min(1),
 });
+const FunctionBodySchema = z.object({
+  files: z.array(z.object({ name: z.string(), content: z.string() })).min(1),
+});
 const FunctionsSchema = z.array(FunctionSchema);
 const MigrationRowsSchema = z.array(z.object({ version: z.string() }));
 const DigestRowsSchema = z.array(z.object({ schema_digest: z.string() })).length(1);
@@ -70,6 +72,22 @@ const SnapshotReportSchema = z.object({
 export type EnvironmentName = 'staging' | 'production';
 export type FunctionInventory = z.infer<typeof FunctionSchema>[];
 export type DriftReport = { ok: boolean; mismatches: string[]; evidence: Record<string, unknown> };
+
+export function deployedFunctionRelativePath(fileName: string): string {
+  const normalized = fileName.replaceAll('\\', '/');
+  const relativeName = normalized.startsWith('functions/')
+    ? normalized.slice('functions/'.length)
+    : normalized.startsWith('supabase/functions/')
+      ? normalized.slice('supabase/functions/'.length)
+      : '';
+  const segments = relativeName.split('/');
+  if (
+    !relativeName ||
+    segments.some((segment) => segment.length === 0 || segment === '.' || segment === '..')
+  )
+    throw new Error('Supabase function body returned an invalid runtime source path.');
+  return join(...segments);
+}
 
 export function sourceFileDigests(root: string): Record<string, string> {
   const files: string[] = [];
@@ -341,8 +359,27 @@ async function api<T>(
       ...init?.headers,
     },
   });
-  if (!response.ok)
-    throw new Error(`Provider inventory request failed with HTTP ${response.status}.`);
+  if (!response.ok) {
+    const responseText = await response.text();
+    let providerMessage = '';
+    try {
+      const payload = z
+        .object({ message: z.string().optional(), error: z.string().optional() })
+        .passthrough()
+        .parse(JSON.parse(responseText));
+      providerMessage = payload.message ?? payload.error ?? '';
+    } catch {
+      // Keep non-JSON provider responses out of logs.
+    }
+    const safeMessage = providerMessage
+      .replaceAll(token, '[redacted]')
+      .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+      .replace(/[\r\n\t]+/g, ' ')
+      .slice(0, 500);
+    throw new Error(
+      `Provider inventory request failed with HTTP ${response.status}.${safeMessage ? ` ${safeMessage}` : ''}`,
+    );
+  }
   return schema.parse(await response.json());
 }
 
@@ -365,7 +402,7 @@ async function getMigrations(projectRef: string, token: string): Promise<string[
 async function getSchemaDigest(projectRef: string, token: string): Promise<string> {
   const query = `with objects(kind, identity, definition) as (
     select 'relation', n.nspname || '.' || c.relname,
-      c.relkind || ':' || c.relrowsecurity::text || ':' || c.relforcerowsecurity::text
+      c.relkind::text || ':' || c.relrowsecurity::text || ':' || c.relforcerowsecurity::text
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
     where n.nspname = 'public' and c.relkind in ('r', 'p', 'v', 'm', 'S', 'f')
     union all
@@ -392,7 +429,7 @@ async function getSchemaDigest(projectRef: string, token: string): Promise<strin
     select 'enum', n.nspname || '.' || t.typname, string_agg(e.enumlabel, ',' order by e.enumsortorder)
     from pg_type t join pg_enum e on e.enumtypid = t.oid join pg_namespace n on n.oid = t.typnamespace where n.nspname = 'public' group by n.nspname, t.typname
     union all
-    select 'trigger', n.nspname || '.' || c.relname || '.' || t.tgname, t.tgenabled || ':' || md5(pg_get_triggerdef(t.oid, true))
+    select 'trigger', n.nspname || '.' || c.relname || '.' || t.tgname, t.tgenabled::text || ':' || md5(pg_get_triggerdef(t.oid, true))
     from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and not t.tgisinternal
     union all
     select 'table-grant', table_schema || '.' || table_name || '.' || grantee, privilege_type || ':' || is_grantable
@@ -446,43 +483,49 @@ function generateTypes(projectRef: string, token: string): string {
   }
 }
 
-function downloadFunctionSources(projectRef: string, token: string): Record<string, string> {
+async function downloadFunctionSources(
+  projectRef: string,
+  token: string,
+  functions: FunctionInventory,
+): Promise<Record<string, string>> {
   const workdir = mkdtempSync(join(tmpdir(), 'ai-ops-function-drift-'));
   try {
-    const supabaseDirectory = join(workdir, 'supabase');
-    mkdirSync(join(supabaseDirectory, 'functions'), { recursive: true });
-    copyFileSync('supabase/config.toml', join(supabaseDirectory, 'config.toml'));
-    try {
-      execFileSync(
-        'corepack',
-        [
-          'pnpm',
-          'exec',
-          'supabase',
-          'functions',
-          'download',
-          '--project-ref',
-          projectRef,
-          '--use-api',
-          '--workdir',
-          workdir,
-          '--yes',
-          '--output-format',
-          'json',
-          '--log-level',
-          'none',
-        ],
-        {
-          encoding: 'utf8',
-          shell: process.platform === 'win32',
-          env: { ...process.env, SUPABASE_ACCESS_TOKEN: token },
-          stdio: ['ignore', 'ignore', 'ignore'],
-        },
+    const functionRoot = join(workdir, 'functions');
+    mkdirSync(functionRoot, { recursive: true });
+    const writtenFiles = new Map<string, string>();
+    const batchSize = 5;
+    for (let offset = 0; offset < functions.length; offset += batchSize) {
+      const batch = functions.slice(offset, offset + batchSize);
+      const bodies = await Promise.all(
+        batch.map(({ slug }) =>
+          api(
+            `https://api.supabase.com/v1/projects/${projectRef}/functions/${encodeURIComponent(slug)}/body`,
+            token,
+            FunctionBodySchema,
+          ),
+        ),
       );
-    } catch {
-      throw new Error('Could not download deployed Edge Function sources for comparison.');
+      for (const body of bodies) {
+        for (const file of body.files) {
+          const relativeName = deployedFunctionRelativePath(file.name);
+          const filePath = resolve(functionRoot, relativeName);
+          const relativePath = relative(functionRoot, filePath);
+          if (!relativePath || relativePath === '..' || relativePath.startsWith(`..${sep}`))
+            throw new Error('Supabase function body returned an invalid runtime source path.');
+          const previousContent = writtenFiles.get(relativePath);
+          if (previousContent !== undefined && previousContent !== file.content)
+            throw new Error(
+              `Supabase returned inconsistent shared function source: ${relativePath}.`,
+            );
+          if (previousContent === undefined) {
+            mkdirSync(dirname(filePath), { recursive: true });
+            writeFileSync(filePath, file.content, { encoding: 'utf8', mode: 0o600 });
+            writtenFiles.set(relativePath, file.content);
+          }
+        }
+      }
     }
-    return sourceFileDigests(join(supabaseDirectory, 'functions'));
+    return sourceFileDigests(functionRoot);
   } finally {
     rmSync(workdir, { recursive: true, force: true });
   }
@@ -629,16 +672,14 @@ async function inventory(
   worker: WorkerInventory;
 }> {
   const config = manifest.environments[name];
-  const [migrations, schemaDigest, functions, secrets, worker, functionSources] = await Promise.all(
-    [
-      getMigrations(config.projectRef, accessToken),
-      getSchemaDigest(config.projectRef, accessToken),
-      getFunctions(config.projectRef, accessToken),
-      getSecretNames(config.projectRef, accessToken),
-      getWorkerInventory(name),
-      Promise.resolve(downloadFunctionSources(config.projectRef, accessToken)),
-    ],
-  );
+  const [migrations, schemaDigest, functions, secrets, worker] = await Promise.all([
+    getMigrations(config.projectRef, accessToken),
+    getSchemaDigest(config.projectRef, accessToken),
+    getFunctions(config.projectRef, accessToken),
+    getSecretNames(config.projectRef, accessToken),
+    getWorkerInventory(name),
+  ]);
+  const functionSources = await downloadFunctionSources(config.projectRef, accessToken, functions);
   return { migrations, schemaDigest, functions, functionSources, secrets, worker };
 }
 
