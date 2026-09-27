@@ -3,6 +3,7 @@ import {
   GOOGLE_DRIVE_EMPTY_STATE,
   actionMessage,
   cadenceLabel,
+  consumeSourceRevokeResume,
   googleFreshnessLabel,
   freshnessLabel,
   googleScopeDetail,
@@ -12,6 +13,27 @@ import {
 } from './source-permissions';
 
 describe('source permission explanations', () => {
+  it('keeps a revoke handoff available until the matching source card consumes it', () => {
+    const values = new Map([
+      ['source_revoke_intent', JSON.stringify({ sourceId: 'mailbox-1', provider: 'google' })],
+      ['mfa_job_gate', JSON.stringify({ job: 'connection_revoke', id: 'gate-1' })],
+    ]);
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      removeItem: (key: string) => values.delete(key),
+    };
+
+    expect(consumeSourceRevokeResume(storage, 'personal-1')).toBeNull();
+    expect(values.has('source_revoke_intent')).toBe(true);
+    expect(values.has('mfa_job_gate')).toBe(true);
+    expect(consumeSourceRevokeResume(storage, 'mailbox-1')).toEqual({
+      provider: 'google',
+      gateId: 'gate-1',
+    });
+    expect(values.has('source_revoke_intent')).toBe(false);
+    expect(values.has('mfa_job_gate')).toBe(false);
+  });
+
   it('explains an empty Drive list without implying a broken connection or broader access need', () => {
     expect(GOOGLE_DRIVE_EMPTY_STATE).toMatch(/connection is healthy/i);
     expect(GOOGLE_DRIVE_EMPTY_STATE).toMatch(/Drive Picker/i);

@@ -7,6 +7,7 @@ import {
   GOOGLE_DRIVE_EMPTY_STATE,
   actionMessage,
   cadenceLabel,
+  consumeSourceRevokeResume,
   freshnessLabel,
   googleScopeDetail,
   googleFreshnessLabel,
@@ -122,38 +123,26 @@ function useRevokeFlow(
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('resume') !== 'source_revoke') return;
-    const rawIntent = sessionStorage.getItem('source_revoke_intent');
-    const rawGate = sessionStorage.getItem('mfa_job_gate');
-    sessionStorage.removeItem('source_revoke_intent');
-    sessionStorage.removeItem('mfa_job_gate');
-    if (!rawIntent || !rawGate) return;
-    try {
-      const intent = JSON.parse(rawIntent) as { sourceId?: string; provider?: string };
-      const gate = JSON.parse(rawGate) as { job?: string; id?: string };
-      if (gate.job !== 'connection_revoke' || !gate.id || intent.sourceId !== sourceId) return;
-      window.setTimeout(() => {
-        setBusy(true);
-        void revokeConnection(intent.sourceId!, intent.provider ?? provider, gate.id!).then(
-          ({ response, body }) => {
-            setBusy(false);
-            if (!response.ok) {
-              setStatus(
-                actionMessage(body.code, `Revoke failed (${body.code ?? response.status}).`),
-              );
-              return;
-            }
-            setStatus(
-              body.provider_revoked === false
-                ? `Local access was disabled, but ${provider === 'google' ? 'Google' : 'the Apple provider'} did not confirm credential revocation. Open the provider security settings, revoke AI Operations access, and rotate the credential before reconnecting. Existing retained data is unchanged.`
-                : 'Source revoked. Existing retained data is unchanged, and future syncs are blocked.',
-            );
-            onComplete();
-          },
-        );
-      }, 0);
-    } catch {
-      setStatus('The saved revoke request was invalid. Start revoke again.');
-    }
+    const resume = consumeSourceRevokeResume(sessionStorage, sourceId);
+    if (!resume) return;
+    window.setTimeout(() => {
+      setBusy(true);
+      void revokeConnection(sourceId, resume.provider || provider, resume.gateId).then(
+        ({ response, body }) => {
+          setBusy(false);
+          if (!response.ok) {
+            setStatus(actionMessage(body.code, `Revoke failed (${body.code ?? response.status}).`));
+            return;
+          }
+          setStatus(
+            body.provider_revoked === false
+              ? `Local access was disabled, but ${provider === 'google' ? 'Google' : 'the Apple provider'} did not confirm credential revocation. Open the provider security settings, revoke AI Operations access, and rotate the credential before reconnecting. Existing retained data is unchanged.`
+              : 'Source revoked. Existing retained data is unchanged, and future syncs are blocked.',
+          );
+          onComplete();
+        },
+      );
+    }, 0);
   }, [onComplete, provider, setStatus, sourceId]);
 
   return { confirming, busy, revoke };

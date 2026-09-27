@@ -37,6 +37,61 @@ export type GoogleSourceDiscoveryDiagnostic = Readonly<{
   requestId: string | null;
 }>;
 
+export type SourceRevokeResume = Readonly<{ provider: string; gateId: string }>;
+
+/**
+ * Consume a pending revoke handoff only in the card that owns its source.
+ * Multiple source cards mount on the same page and share sessionStorage.
+ */
+export function consumeSourceRevokeResume(
+  storage: Pick<Storage, 'getItem' | 'removeItem'>,
+  sourceId: string,
+): SourceRevokeResume | null {
+  const rawIntent = storage.getItem('source_revoke_intent');
+  if (!rawIntent) return null;
+
+  let intent: unknown;
+  try {
+    intent = JSON.parse(rawIntent);
+  } catch {
+    return null;
+  }
+  if (
+    typeof intent !== 'object' ||
+    intent === null ||
+    !('sourceId' in intent) ||
+    intent.sourceId !== sourceId
+  ) {
+    return null;
+  }
+
+  const rawGate = storage.getItem('mfa_job_gate');
+  storage.removeItem('source_revoke_intent');
+  storage.removeItem('mfa_job_gate');
+  if (!rawGate) return null;
+
+  try {
+    const gate: unknown = JSON.parse(rawGate);
+    if (
+      typeof gate !== 'object' ||
+      gate === null ||
+      !('job' in gate) ||
+      gate.job !== 'connection_revoke' ||
+      !('id' in gate) ||
+      typeof gate.id !== 'string' ||
+      !gate.id
+    ) {
+      return null;
+    }
+    return {
+      provider: 'provider' in intent && typeof intent.provider === 'string' ? intent.provider : '',
+      gateId: gate.id,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function recordValue(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
 }
