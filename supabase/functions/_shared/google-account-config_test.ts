@@ -62,9 +62,14 @@ Deno.test("Google account configuration rejects missing, swapped, and unknown en
 Deno.test("Google role scope sets isolate personal data from communication mailboxes", () => {
   const personal = scopesForGoogleRole("personal_data_source");
   const mailbox = scopesForGoogleRole("ai_operations_mailbox");
-  assert(personal.includes("https://www.googleapis.com/auth/drive.file"));
-  assert(personal.includes("https://www.googleapis.com/auth/tasks"));
-  assert(!personal.some((scope) => scope.includes("gmail.")));
+  assertEquals(personal, [
+    "openid",
+    "email",
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/calendar.events.owned",
+    "https://www.googleapis.com/auth/tasks",
+  ]);
   assertEquals(mailbox, [
     "openid",
     "email",
