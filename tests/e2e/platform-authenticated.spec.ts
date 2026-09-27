@@ -102,12 +102,17 @@ test('Personal Operations and connection empty states remain available to an AAL
   await expect(page.getByText('No open reminders have been imported.')).toBeVisible();
   await page.goto('/data-sources');
   await expect(page.getByRole('heading', { name: 'Data Sources' })).toBeVisible();
-  await expect(page.getByText('No Google account is connected.')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'No personal Google data account is connected.' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'No AI Operations mailbox is connected.' }),
+  ).toBeVisible();
   await expect(
     page.getByRole('heading', { name: 'Apple Shortcut bridge', exact: true }),
   ).toBeVisible();
   await expect(page.getByText('No Apple Shortcut bridge device is registered.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Connect Google' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Connect personal Google data' })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(
     page.evaluate(() => document.documentElement.scrollWidth),
