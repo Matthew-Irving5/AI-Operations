@@ -4,9 +4,15 @@ on:
     workflows: [Deploy staging]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      staging_run_id:
+        description: Successful staging workflow run that produced the inventory to promote
+        required: true
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: production-deployment
@@ -17,12 +23,46 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - name: Resolve successful staging release
+        id: staging-run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STAGING_RUN_ID: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || inputs.staging_run_id }}
+        run: |
+          details="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$STAGING_RUN_ID" --jq '[.name, .head_branch, .head_sha, .status, .conclusion] | @tsv')"
+          IFS=$'\t' read -r name branch sha status conclusion <<< "$details"
+          test "$name" = "Deploy staging" || { echo "Selected run is not Deploy staging."; exit 1; }
+          test "$branch" = "main" || { echo "Selected staging run did not come from main."; exit 1; }
+          test "$status" = "completed" && test "$conclusion" = "success" || { echo "Selected staging run did not complete successfully."; exit 1; }
+          printf 'sha=%s\nrun_id=%s\n' "$sha" "$STAGING_RUN_ID" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.staging-run.outputs.sha }}
       - uses: pnpm/action-setup@v4
         with: { version: 10.18.2 }
       - uses: actions/setup-node@v5
         with: { node-version: 22.18.0, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - name: Download staging environment inventory
+        uses: actions/download-artifact@v4
+        with:
+          name: staging-environment-inventory
+          run-id: ${{ steps.staging-run.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: staging-parity
+      - name: Validate production environment identity
+        env:
+          GITHUB_CONFIG_SECRET_NAMES: ${{ secrets.CLOUDFLARE_ACCOUNT_ID != '' && 'CLOUDFLARE_ACCOUNT_ID,' || '' }}${{ secrets.CLOUDFLARE_API_TOKEN != '' && 'CLOUDFLARE_API_TOKEN,' || '' }}${{ secrets.FINANCE_ARCHIVE_GATEWAY_SECRET != '' && 'FINANCE_ARCHIVE_GATEWAY_SECRET,' || '' }}${{ secrets.PRODUCTION_SUPABASE_ACCESS_TOKEN != '' && 'PRODUCTION_SUPABASE_ACCESS_TOKEN,' || '' }}${{ secrets.PRODUCTION_SUPABASE_ANON_KEY != '' && 'PRODUCTION_SUPABASE_ANON_KEY,' || '' }}${{ secrets.PRODUCTION_SUPABASE_DB_PASSWORD != '' && 'PRODUCTION_SUPABASE_DB_PASSWORD,' || '' }}${{ secrets.PRODUCTION_SUPABASE_PROJECT_REF != '' && 'PRODUCTION_SUPABASE_PROJECT_REF,' || '' }}${{ secrets.PRODUCTION_SUPABASE_URL != '' && 'PRODUCTION_SUPABASE_URL' || '' }}
+          GITHUB_CONFIG_VARIABLE_NAMES: ${{ vars.FINANCE_ARCHIVE_GATEWAY_URL != '' && 'FINANCE_ARCHIVE_GATEWAY_URL' || '' }}
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ secrets.PRODUCTION_SUPABASE_PROJECT_REF }}
+          PRODUCTION_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          PRODUCTION_PUBLIC_APP_ORIGIN: https://ai-operations-production.ai-operations.workers.dev
+          APP_ENV: production
+          WORKER_NAME: ai-operations-production
+          ARCHIVE_BUCKET_NAME: ai-operations-production
+          STAGING_INVENTORY_PATH: staging-parity/environment-drift.json
+          RELEASE_SHA: ${{ steps.staging-run.outputs.sha }}
+        run: pnpm environment:drift -- validate-production
       - name: Validate production Supabase release secrets
         env:
           PRODUCTION_SUPABASE_ACCESS_TOKEN: ${{ secrets.PRODUCTION_SUPABASE_ACCESS_TOKEN }}
@@ -96,6 +136,19 @@ jobs:
               exit 1
             fi
           done
+      - name: Check staging to production drift
+        env:
+          GITHUB_CONFIG_SECRET_NAMES: ${{ secrets.CLOUDFLARE_ACCOUNT_ID != '' && 'CLOUDFLARE_ACCOUNT_ID,' || '' }}${{ secrets.CLOUDFLARE_API_TOKEN != '' && 'CLOUDFLARE_API_TOKEN,' || '' }}${{ secrets.FINANCE_ARCHIVE_GATEWAY_SECRET != '' && 'FINANCE_ARCHIVE_GATEWAY_SECRET,' || '' }}${{ secrets.PRODUCTION_SUPABASE_ACCESS_TOKEN != '' && 'PRODUCTION_SUPABASE_ACCESS_TOKEN,' || '' }}${{ secrets.PRODUCTION_SUPABASE_ANON_KEY != '' && 'PRODUCTION_SUPABASE_ANON_KEY,' || '' }}${{ secrets.PRODUCTION_SUPABASE_DB_PASSWORD != '' && 'PRODUCTION_SUPABASE_DB_PASSWORD,' || '' }}${{ secrets.PRODUCTION_SUPABASE_PROJECT_REF != '' && 'PRODUCTION_SUPABASE_PROJECT_REF,' || '' }}${{ secrets.PRODUCTION_SUPABASE_URL != '' && 'PRODUCTION_SUPABASE_URL' || '' }}
+          GITHUB_CONFIG_VARIABLE_NAMES: ${{ vars.FINANCE_ARCHIVE_GATEWAY_URL != '' && 'FINANCE_ARCHIVE_GATEWAY_URL' || '' }}
+          PRODUCTION_SUPABASE_ACCESS_TOKEN: ${{ secrets.PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+          PRODUCTION_SUPABASE_PROJECT_REF: ${{ secrets.PRODUCTION_SUPABASE_PROJECT_REF }}
+          PRODUCTION_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          STAGING_INVENTORY_PATH: staging-parity/environment-drift.json
+          RELEASE_SHA: ${{ steps.staging-run.outputs.sha }}
+          DRIFT_REPORT_PATH: production-environment-drift.json
+        run: pnpm environment:drift -- staging-production
       - name: Safe production smoke test
         run: |
           for attempt in {1..18}; do
@@ -106,3 +159,11 @@ jobs:
           done
           echo "Production Worker did not return HTTP 200 within 90 seconds."
           exit 1
+      - name: Upload production environment parity report
+        if: always() && hashFiles('production-environment-drift.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-environment-parity
+          path: production-environment-drift.json
+          if-no-files-found: error
+          retention-days: 30

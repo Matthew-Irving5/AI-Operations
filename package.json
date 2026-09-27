@@ -13,7 +13,7 @@
     "format:check": "prettier --check .github apps/web packages docs infrastructure supabase/migrations supabase/tests tests package.json pnpm-workspace.yaml turbo.json tsconfig.base.json playwright.config.ts playwright.live.config.ts README.md .prettierrc.json",
     "lint": "corepack pnpm -r --if-present run lint",
     "typecheck": "corepack pnpm -r --if-present run typecheck",
-    "test": "corepack pnpm -r --if-present run test && corepack pnpm exec tsx --test infrastructure/scripts/required-specs.test.ts",
+    "test": "corepack pnpm -r --if-present run test && corepack pnpm exec tsx --test infrastructure/scripts/required-specs.test.ts infrastructure/scripts/environment-drift.test.ts",
     "test:db": "supabase test db",
     "test:e2e": "tsx infrastructure/scripts/run-e2e.ts",
     "test:e2e:live": "tsx infrastructure/scripts/run-live-e2e.ts suite",
@@ -23,6 +23,7 @@
     "verify": "corepack pnpm format:check && corepack pnpm lint && corepack pnpm typecheck && corepack pnpm test && corepack pnpm build",
     "cloudflare:check": "corepack pnpm --dir apps/web run deploy -- --dry-run",
     "verify:ci": "tsx infrastructure/scripts/verify-ci.ts",
+    "environment:drift": "tsx infrastructure/scripts/environment-drift.ts",
     "preflight": "tsx infrastructure/scripts/pass-preflight.ts",
     "finish-pass": "tsx infrastructure/scripts/pass-finish.ts"
   },
@@ -36,7 +37,8 @@
     "tsx": "4.20.3",
     "turbo": "2.9.14",
     "typescript": "5.8.3",
-    "vitest": "4.1.11"
+    "vitest": "4.1.11",
+    "zod": "4.1.5"
   },
   "pnpm": {
     "overrides": {

@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: staging-deployment
@@ -21,6 +22,17 @@ jobs:
       - uses: actions/setup-node@v5
         with: { node-version: 22.18.0, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - name: Validate staging environment identity
+        env:
+          GITHUB_CONFIG_SECRET_NAMES: ${{ secrets.CLOUDFLARE_ACCOUNT_ID != '' && 'CLOUDFLARE_ACCOUNT_ID,' || '' }}${{ secrets.CLOUDFLARE_API_TOKEN != '' && 'CLOUDFLARE_API_TOKEN,' || '' }}${{ secrets.FINANCE_ARCHIVE_GATEWAY_SECRET != '' && 'FINANCE_ARCHIVE_GATEWAY_SECRET,' || '' }}${{ secrets.STAGING_SUPABASE_ACCESS_TOKEN != '' && 'STAGING_SUPABASE_ACCESS_TOKEN,' || '' }}${{ secrets.STAGING_SUPABASE_ANON_KEY != '' && 'STAGING_SUPABASE_ANON_KEY,' || '' }}${{ secrets.STAGING_SUPABASE_DB_PASSWORD != '' && 'STAGING_SUPABASE_DB_PASSWORD,' || '' }}${{ secrets.STAGING_SUPABASE_PROJECT_REF != '' && 'STAGING_SUPABASE_PROJECT_REF,' || '' }}${{ secrets.STAGING_SUPABASE_URL != '' && 'STAGING_SUPABASE_URL' || '' }}
+          GITHUB_CONFIG_VARIABLE_NAMES: ${{ vars.FINANCE_ARCHIVE_GATEWAY_URL != '' && 'FINANCE_ARCHIVE_GATEWAY_URL' || '' }}
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          STAGING_PUBLIC_APP_ORIGIN: https://ai-operations-staging.ai-operations.workers.dev
+          APP_ENV: staging
+          WORKER_NAME: ai-operations-staging
+          ARCHIVE_BUCKET_NAME: ai-operations-staging
+        run: pnpm environment:drift -- validate-staging
       - name: Deploy Worker
         working-directory: apps/web
         env:
@@ -76,11 +88,22 @@ jobs:
               echo "Function $(basename "$function") deployment attempt $attempt failed; retrying if attempts remain."
               sleep $((attempt * 10))
             done
-            if [[ "$deployed" != true ]]; then
+          if [[ "$deployed" != true ]]; then
               echo "Function $(basename "$function") failed after three bounded attempts."
               exit 1
             fi
           done
+      - name: Check repo to staging drift
+        env:
+          GITHUB_CONFIG_SECRET_NAMES: ${{ secrets.CLOUDFLARE_ACCOUNT_ID != '' && 'CLOUDFLARE_ACCOUNT_ID,' || '' }}${{ secrets.CLOUDFLARE_API_TOKEN != '' && 'CLOUDFLARE_API_TOKEN,' || '' }}${{ secrets.FINANCE_ARCHIVE_GATEWAY_SECRET != '' && 'FINANCE_ARCHIVE_GATEWAY_SECRET,' || '' }}${{ secrets.STAGING_SUPABASE_ACCESS_TOKEN != '' && 'STAGING_SUPABASE_ACCESS_TOKEN,' || '' }}${{ secrets.STAGING_SUPABASE_ANON_KEY != '' && 'STAGING_SUPABASE_ANON_KEY,' || '' }}${{ secrets.STAGING_SUPABASE_DB_PASSWORD != '' && 'STAGING_SUPABASE_DB_PASSWORD,' || '' }}${{ secrets.STAGING_SUPABASE_PROJECT_REF != '' && 'STAGING_SUPABASE_PROJECT_REF,' || '' }}${{ secrets.STAGING_SUPABASE_URL != '' && 'STAGING_SUPABASE_URL' || '' }}
+          GITHUB_CONFIG_VARIABLE_NAMES: ${{ vars.FINANCE_ARCHIVE_GATEWAY_URL != '' && 'FINANCE_ARCHIVE_GATEWAY_URL' || '' }}
+          STAGING_SUPABASE_ACCESS_TOKEN: ${{ secrets.STAGING_SUPABASE_ACCESS_TOKEN }}
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+          STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DRIFT_REPORT_PATH: environment-drift.json
+        run: pnpm environment:drift -- repo-staging
       - name: Smoke test staging Worker
         run: |
           for attempt in {1..18}; do
@@ -95,3 +118,11 @@ jobs:
           done
           echo "Staging Worker did not return HTTP 200 within 90 seconds."
           exit 1
+      - name: Upload staging environment inventory
+        if: always() && hashFiles('environment-drift.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-environment-inventory
+          path: environment-drift.json
+          if-no-files-found: error
+          retention-days: 7
