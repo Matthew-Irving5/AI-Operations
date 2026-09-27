@@ -19,6 +19,12 @@ const EnvironmentSchema = z.object({
 const ManifestSchema = z.object({
   environments: z.object({ staging: EnvironmentSchema, production: EnvironmentSchema }),
   allowedDifferences: z.array(z.string()),
+  edgeSecretNameException: z.object({
+    ownerIssue: z.literal('AI-15'),
+    stagingOnly: z.array(z.string()),
+    productionOnly: z.array(z.string()),
+    removalCondition: z.string().min(1),
+  }),
   requiredEdgeSecrets: z.array(z.string()),
   requiredWorkerSecrets: z.array(z.string()),
 });
@@ -156,6 +162,10 @@ export function compareInventory(
     worker: WorkerInventory;
   },
   labels: [string, string],
+  edgeSecretNameException: { stagingOnly: string[]; productionOnly: string[] } = {
+    stagingOnly: [],
+    productionOnly: [],
+  },
 ): string[] {
   const mismatches: string[] = [];
   if (JSON.stringify(sorted(left.migrations)) !== JSON.stringify(sorted(right.migrations))) {
@@ -164,8 +174,21 @@ export function compareInventory(
   if (left.schemaDigest !== right.schemaDigest) {
     mismatches.push(`${labels[0]} ↔ ${labels[1]}: live database schema objects differ`);
   }
-  if (JSON.stringify(sorted(left.secrets)) !== JSON.stringify(sorted(right.secrets))) {
-    mismatches.push(`${labels[0]} ↔ ${labels[1]}: Edge Function secret names differ`);
+  const stagingOnlySecrets = sorted(
+    left.secrets.filter((secret) => !right.secrets.includes(secret)),
+  );
+  const productionOnlySecrets = sorted(
+    right.secrets.filter((secret) => !left.secrets.includes(secret)),
+  );
+  if (
+    JSON.stringify(stagingOnlySecrets) !==
+      JSON.stringify(sorted(edgeSecretNameException.stagingOnly)) ||
+    JSON.stringify(productionOnlySecrets) !==
+      JSON.stringify(sorted(edgeSecretNameException.productionOnly))
+  ) {
+    mismatches.push(
+      `${labels[0]} ↔ ${labels[1]}: Edge Function secret names differ outside the approved environment-specific exception`,
+    );
   }
   if (left.sourceDigest !== right.sourceDigest)
     mismatches.push(`${labels[0]} ↔ ${labels[1]}: release source attestations differ`);
@@ -839,7 +862,12 @@ export async function runPairCheck(): Promise<DriftReport> {
   const stagingGithub = stagingArtifact.evidence.githubEnvironment;
   const productionGithub = listGitHubEnvironmentNames();
   const mismatches = [
-    ...compareInventory(staging, production, ['staging', 'production']),
+    ...compareInventory(
+      staging,
+      production,
+      ['staging', 'production'],
+      manifest.edgeSecretNameException,
+    ),
     ...compareWorkerToExpected('staging', staging.worker),
     ...compareWorkerToExpected('production', production.worker),
     ...deploymentWorkflowMismatches('staging'),
@@ -879,6 +907,7 @@ export async function runPairCheck(): Promise<DriftReport> {
         providerSourceBytesAvailable: false,
       },
       allowedDifferences: manifest.allowedDifferences,
+      edgeSecretNameException: manifest.edgeSecretNameException,
       mismatches,
     },
   };

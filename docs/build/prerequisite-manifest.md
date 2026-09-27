@@ -88,3 +88,7 @@ The scoped Cloudflare connector's write attempt returned authentication error `1
 - The internal `ai-execute` call, trace, and cost reconciliation are owned by AI-15 and are not an AI-65 completion gate. It was not invoked directly because that would bypass the canonical queue lease/orchestration path. The observed HTTP 201 proves AAL2 launch acceptance only; it does not claim a model call or cost.
 
 AI-65's revised prerequisite audit is complete for the current deployment and smoke path. The remaining provider hard-limit check, future production worker credential, automated cross-environment drift rejection, and canonical Responses execution are tracked respectively by AI-20, AI-15, AI-9 and AI-15; they are not claimed as passed here. Do not dispatch or merge a production deployment as part of this staging verification. R2 direct canaries and infrastructure inventories passed.
+
+### AI-9 parity exception — production worker credential
+
+The [AI-65 completion record](https://linear.app/ai-operations-mi/issue/AI-65/verify-external-runtime-prerequisites-secrets-environment-isolation) explicitly records that the future production worker caller/secret is not present and assigns the paired production credential to AI-15. AI-9's parity manifest therefore allows exactly the name `WORKER_SECRET` in staging only; it never reads or compares its value. This exception expires when AI-15 implements the production caller and configures its paired credential through that caller's secure handoff. The staging value must never be copied to production.

@@ -51,6 +51,12 @@
     "deployment version numbers and timestamps",
     "secret values (values are never read or compared)"
   ],
+  "edgeSecretNameException": {
+    "ownerIssue": "AI-15",
+    "stagingOnly": ["WORKER_SECRET"],
+    "productionOnly": [],
+    "removalCondition": "Remove this exception when AI-15 implements the production worker caller and configures its paired WORKER_SECRET through that caller's secure handoff. Never copy the staging value."
+  },
   "requiredEdgeSecrets": [
     "PUBLIC_APP_ORIGIN",
     "FINANCE_ARCHIVE_GATEWAY_URL",
