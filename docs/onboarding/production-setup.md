@@ -24,6 +24,25 @@ Google. Google access is read-only for Gmail, Calendar, and Drive; no Gmail mess
 archived, or deleted. The server refreshes encrypted credentials, records reauthentication failures,
 and keeps Drive as a selected source rather than the archive of record.
 
+## Authenticated application profile prerequisite
+
+The Supabase Auth identity and `public.app_users` profile are separate records. The allowlisted
+owner must be provisioned through the approved secure invite or administrator seed process before
+using MFA-gated application features. A successful password or TOTP challenge does not create the
+application profile; profile-dependent RLS checks and the MFA reauthentication audit insert require
+it to exist.
+
+For staging recovery, first confirm the staging Auth identity is the verified allowlisted owner, then
+have an authorized project administrator use the approved seed process to provision its matching
+`public.app_users` row. If the row already exists, preserve its current `is_allowed` value; never
+turn a denied profile into an allowed one as part of recovery. Do not create a runtime self-service
+bootstrap or bypass RLS. Verify the resulting row and authorization state with a read-only check,
+then repeat sign-in, TOTP verification, and confirm the reauthentication audit record is written.
+Keep this procedure scoped to staging; do not modify production, where the existing profile and
+authorization state must remain unchanged. If the approved administrator seed process is
+unavailable, stop before MFA-gated staging acceptance and have the project administrator restore
+the supported provisioning path.
+
 For Pass 4, configure separate private Health and Finance archive gateways plus their matching
 secrets: `HEALTH_ARCHIVE_GATEWAY_URL`, `HEALTH_ARCHIVE_GATEWAY_SECRET`, `HEALTH_INGEST_SECRET`,
 `FINANCE_ARCHIVE_GATEWAY_URL`, and `FINANCE_ARCHIVE_GATEWAY_SECRET`. The Finance gateway is the
