@@ -10,15 +10,24 @@
 
 ## Authoritative files
 
-Before doing work, read:
+Before editing any production code or governance artifact, read the active Linear issue, its linked dependencies and completion evidence, and all three root specifications:
 
-1. `AI_OPERATIONS_BUILD_SPEC.md`
-2. `CODEX_PASS_PROMPTS.md`
-3. `docs/build/PASS_LEDGER.md`
-4. Relevant ADRs and architecture documents
-5. The tests and workflows covering the area being changed
+1. `AI_OPERATIONS_AGENT_SPEC.md` — authoritative for manager identities, responsibilities, ownership, communication, command authority, handoffs, and agent capabilities.
+2. `AI_OPERATIONS_BUILD_SPEC.md` — authoritative for platform/product architecture, infrastructure, security, data, integrations, testing, and delivery.
+3. `AI_OPERATIONS_FRONTEND_DESIGN_CONSTITUTION.md` — authoritative for visual design, interaction, accessibility, frontend architecture, and frontend review.
+4. `CODEX_PASS_PROMPTS.md` and `docs/build/PASS_LEDGER.md` when working on a historical build pass.
+5. Relevant ADRs, architecture documents, tests, and workflows for the changed area.
 
-The build specification is authoritative. Do not reduce scope, replace locked architecture, or create an MVP.
+Apply authority by subject: the Agent Spec controls agent behavior and provider ownership; the Build Spec controls platform, security, data, integrations, and delivery; the Frontend Constitution controls visual and interaction quality. Current code and deployed infrastructure are evidence of implementation, not authority to change these contracts. Preserve each specification's authority within its subject; where a cross-domain conflict remains, identify it in the issue evidence and follow the explicit issue/project decision rather than silently changing a contract. Do not reduce scope, replace locked architecture, or create an MVP.
+
+## Linear issue execution and completion
+
+- Use the project workflow: **Backlog** means not ready or deferred; move dependency-ready work to **Todo**; use **In Progress** for the single session that owns implementation and QA; use **Done** only after required live E2E and production acceptance evidence is truthful and posted. Unit or mocked tests alone never justify Done.
+- Before editing, define the issue's live happy path, acceptance branches, relevant permission/failure/empty/degraded/retry/recovery paths, and the real boundaries the proof must cross. Keep the issue In Progress through implementation, debugging, deployment, and QA.
+- Prefer Playwright against a deployed staging scene. If the relevant boundary cannot be exercised in a browser, use its closest real interface (for example the staging endpoint, provider test account, worker, scheduler, webhook, or provider API) and record the method and evidence. Mock-only E2E is not sign-off.
+- Before Done, post one issue comment containing branch, PR and merge commit; changed files/modules; implementation summary and deviations; automated checks and results; exact live scenarios; environment and deployment/version; browser/provider/backend evidence; defects found and fixed; earlier issues touched and their regression proof; production smoke result; and the exact line `LIVE E2E SIGN-OFF: PASS`.
+- If QA exposes a regression in an earlier Done issue, the active session may fix it. Reference that issue in the current completion evidence and rerun its original relevant live E2E scenarios. Preserve the earlier contract; do not defer a required defect.
+- Keep these detailed project rules canonical in the Linear **Execution & Live E2E QA Standard** and **Architecture Compatibility & Dependency Rules**. This repository guidance points sessions to those rules and enforces the root specification prerequisites through `pnpm preflight`.
 
 ## Codex configuration
 
