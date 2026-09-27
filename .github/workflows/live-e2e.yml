@@ -1,0 +1,66 @@
+name: Live staging E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Live scenario to run
+        type: choice
+        required: true
+        default: suite
+        options: [suite, fixtures, mismatch]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-staging-e2e
+  cancel-in-progress: false
+
+jobs:
+  live-e2e:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 20
+    env:
+      LIVE_E2E_BASE_URL: https://ai-operations-staging.ai-operations.workers.dev
+      LIVE_E2E_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY }}
+      LIVE_E2E_EMAIL: ${{ secrets.LIVE_E2E_EMAIL }}
+      LIVE_E2E_PASSWORD: ${{ secrets.LIVE_E2E_PASSWORD }}
+      LIVE_E2E_TOTP_SECRET: ${{ secrets.LIVE_E2E_TOTP_SECRET }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.18.2 }
+      - uses: actions/setup-node@v5
+        with: { node-version: 22.18.0, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Validate protected staging E2E credentials
+        shell: bash
+        run: |
+          test -n "$LIVE_E2E_SUPABASE_URL" || { echo "Missing staging variable: STAGING_SUPABASE_URL"; exit 1; }
+          test -n "$LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY" || { echo "Missing staging secret: LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY"; exit 1; }
+          test -n "$LIVE_E2E_EMAIL" || { echo "Missing staging secret: LIVE_E2E_EMAIL"; exit 1; }
+          test -n "$LIVE_E2E_PASSWORD" || { echo "Missing staging secret: LIVE_E2E_PASSWORD"; exit 1; }
+          test -n "$LIVE_E2E_TOTP_SECRET" || { echo "Missing staging secret: LIVE_E2E_TOTP_SECRET"; exit 1; }
+          pnpm test:e2e:live:mismatch
+      - name: Verify staging app identity and fixture prerequisites
+        if: inputs.mode == 'suite' || inputs.mode == 'fixtures'
+        run: pnpm test:e2e:live:fixtures
+      - name: Install Chromium and WebKit
+        if: inputs.mode == 'suite'
+        run: pnpm exec playwright install --with-deps chromium webkit
+      - name: Run authenticated hosted browser scenarios
+        if: inputs.mode == 'suite'
+        run: pnpm test:e2e:live
+      - name: Run staging safety guard unit tests
+        run: pnpm --filter @ai-operations/web exec vitest run lib/live-e2e-safety.test.ts
+      - uses: actions/upload-artifact@v4
+        if: failure() && (inputs.mode == 'suite' || inputs.mode == 'fixtures')
+        with:
+          name: redacted-live-e2e-diagnostics
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 2
