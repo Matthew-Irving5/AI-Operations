@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseLiveE2eEnvironment, stagingTarget } from './live-e2e-safety';
+import { isStagingE2eMfaTarget, parseLiveE2eEnvironment, stagingTarget } from './live-e2e-safety';
 
 const valid = {
   LIVE_E2E_BASE_URL: stagingTarget.origin,
@@ -8,9 +8,36 @@ const valid = {
   LIVE_E2E_EMAIL: 'qa@example.test',
   LIVE_E2E_PASSWORD: 'synthetic-test-password',
   LIVE_E2E_TOTP_SECRET: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+  LIVE_E2E_TOTP_FACTOR_ID: 'f0000000-0000-4000-8000-000000000001',
 };
 
 describe('live E2E staging target guard', () => {
+  it('allows the exact staging MFA target only', () => {
+    expect(
+      isStagingE2eMfaTarget(
+        stagingTarget.origin,
+        'staging',
+        stagingTarget.origin,
+        stagingTarget.supabaseUrl,
+      ),
+    ).toBe(true);
+    expect(
+      isStagingE2eMfaTarget(
+        'https://ai-operations.workers.dev',
+        'production',
+        'https://ai-operations.workers.dev',
+        'https://production.supabase.co',
+      ),
+    ).toBe(false);
+    expect(
+      isStagingE2eMfaTarget(
+        `${stagingTarget.origin}.evil.example`,
+        'staging',
+        stagingTarget.origin,
+        stagingTarget.supabaseUrl,
+      ),
+    ).toBe(false);
+  });
   it('accepts only the explicitly configured staging app and Supabase project', () => {
     expect(parseLiveE2eEnvironment(valid, 'suite')).toMatchObject(valid);
   });

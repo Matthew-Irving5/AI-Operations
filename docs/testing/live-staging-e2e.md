@@ -10,9 +10,14 @@ The GitHub Environment `staging` requires these additional protected values befo
 - Secret `LIVE_E2E_EMAIL`: the repository’s locked application identity.
 - Secret `LIVE_E2E_PASSWORD`: operator-created staging sign-in credential for that account.
 - Secret `LIVE_E2E_TOTP_SECRET`: the account’s operator-enrolled Microsoft Authenticator TOTP seed, stored only in the protected staging environment.
+- Variable `LIVE_E2E_TOTP_FACTOR_ID`: the UUID of the dedicated verified factor named `AI Operations staging live E2E`. The browser harness explicitly selects this ID; it never chooses by provider array order.
 - Existing secret `STAGING_SUPABASE_URL`: must identify the pinned staging Supabase project.
 
 The staging app account must exist in Auth, have a verified TOTP factor, and have an enabled `app_users` row matching the repository’s locked identity. The test runs the actual password and fresh TOTP flow; it does not forge sessions, bypass MFA, or add an alternate test account. Configure these values only in the GitHub `staging` environment (or provide equivalent process environment values for a controlled local run). Do not put them in `.env`, shell history, source, test fixtures, logs, screenshots, or artifacts.
+
+### Separate E2E factor enrollment
+
+After the staging-only factor setup page is deployed, an operator with the locked account and a current AAL2 session opens `https://ai-operations-staging.ai-operations.workers.dev/mfa/staging-e2e-factor`. Choose **Add staging E2E factor**, scan the one-time QR code using a separate authenticator entry, and enter a current code to verify it. This adds a second TOTP factor; it does not remove or replace the operator’s existing factor. Copy the seed directly into the GitHub `staging` environment secret `LIVE_E2E_TOTP_SECRET` and the displayed UUID into the staging environment variable `LIVE_E2E_TOTP_FACTOR_ID`. Never send either value in chat or place them in logs. The setup response is no-store and the page keeps setup material only in memory until verification or cancellation. Normal `/mfa` defaults to the existing non-E2E verified factor, while the live harness explicitly selects the configured E2E factor ID. See AI-13 for the follow-up auth-factor ownership contract.
 
 ## Safe live AAL2 probe
 

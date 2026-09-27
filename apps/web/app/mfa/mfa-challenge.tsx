@@ -30,11 +30,15 @@ function storeMfaGate(value: string) {
 
 export function MfaChallenge({
   factorId,
+  defaultFactorId,
+  availableFactors = [],
   returnTo = '/overview',
   job,
   onVerified,
 }: {
   factorId?: string;
+  defaultFactorId?: string;
+  availableFactors?: Array<{ id: string; friendlyName: string }>;
   returnTo?: string;
   job?:
     | 'apple_bridge'
@@ -51,6 +55,9 @@ export function MfaChallenge({
 }) {
   const [code, setCode] = useState('');
   const [message, setMessage] = useState('');
+  const [selectedFactorId, setSelectedFactorId] = useState(
+    factorId ?? defaultFactorId ?? availableFactors[0]?.id,
+  );
   const [enrolment, setEnrolment] = useState<{
     factorId: string;
     qrCode: string;
@@ -58,7 +65,7 @@ export function MfaChallenge({
   }>();
 
   useEffect(() => {
-    if (factorId) return;
+    if (factorId || availableFactors.length > 0) return;
     void fetch('/api/auth/mfa/enroll', { method: 'POST' })
       .then(async (response) => {
         if (!response.ok) throw new Error('enrolment_failed');
@@ -68,9 +75,9 @@ export function MfaChallenge({
       .catch(() =>
         setMessage('We could not start authenticator enrolment. Refresh and try again.'),
       );
-  }, [factorId]);
+  }, [availableFactors.length, factorId]);
 
-  const activeFactorId = factorId ?? enrolment?.factorId;
+  const activeFactorId = factorId ?? selectedFactorId ?? enrolment?.factorId;
   const workerReturnTo =
     job === 'worker_device_register'
       ? '/devices?resume=worker_register'
@@ -149,6 +156,22 @@ export function MfaChallenge({
   return (
     <form className="card" onSubmit={submit}>
       {!factorId && !enrolment && <p>Preparing secure authenticator enrolment…</p>}
+      {availableFactors.length > 0 && !factorId && (
+        <label>
+          Authenticator factor
+          <select
+            aria-label="Authenticator factor"
+            value={selectedFactorId ?? ''}
+            onChange={(event) => setSelectedFactorId(event.target.value)}
+          >
+            {availableFactors.map((factor) => (
+              <option key={factor.id} value={factor.id}>
+                {factor.friendlyName}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {enrolment && (
         <section aria-label="Authenticator enrolment">
           <p>Scan this QR code in Microsoft Authenticator, then enter its current code.</p>

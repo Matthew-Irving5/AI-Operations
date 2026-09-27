@@ -8,14 +8,34 @@ export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return NextResponse.json({ code: 'unauthorised' }, { status: 401 });
+  const { data: factors } = await supabase.auth.mfa.listFactors();
+  if ((factors?.all.length ?? 0) > 0) {
+    const { data: assurance, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (error || assurance?.currentLevel !== 'aal2') {
+      return NextResponse.json({ code: 'aal2_required' }, { status: 403 });
+    }
+  }
   const { data, error } = await supabase.auth.mfa.enroll({
     factorType: 'totp',
     friendlyName: 'AI Operations',
   });
-  if (error) return NextResponse.json({ code: 'mfa_enrolment_failed' }, { status: 400 });
-  return NextResponse.json({
-    factorId: data.id,
-    qrCode: data.totp.qr_code,
-    secret: data.totp.secret,
-  });
+  if (error || !data)
+    return NextResponse.json(
+      { code: 'mfa_enrolment_failed' },
+      { status: 400, headers: { 'cache-control': 'no-store' } },
+    );
+  return NextResponse.json(
+    {
+      factorId: data.id,
+      qrCode: data.totp.qr_code,
+      secret: data.totp.secret,
+    },
+    {
+      headers: {
+        'cache-control': 'no-store',
+        pragma: 'no-cache',
+        'referrer-policy': 'no-referrer',
+      },
+    },
+  );
 }

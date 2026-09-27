@@ -1,5 +1,6 @@
 import { MfaChallenge } from './mfa-challenge';
 import { createSupabaseServerClient } from '../../lib/supabase-server';
+import { stagingE2eTotpFactorName } from '../../lib/live-e2e-safety';
 
 export default async function MfaPage({
   searchParams,
@@ -8,8 +9,16 @@ export default async function MfaPage({
 }) {
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase.auth.mfa.listFactors();
-  const verifiedFactor = data?.totp?.find((factor) => factor.status === 'verified');
+  const verifiedFactors = (data?.totp ?? [])
+    .filter((factor) => factor.status === 'verified')
+    .map((factor) => ({
+      id: factor.id,
+      friendlyName: factor.friendly_name || 'Authenticator',
+    }));
   const params = await searchParams;
+  const defaultFactorId =
+    verifiedFactors.find((factor) => factor.friendlyName !== stagingE2eTotpFactorName)?.id ??
+    verifiedFactors[0]?.id;
   const requestedJob = params.job;
   const job =
     requestedJob === 'apple_bridge' ||
@@ -41,8 +50,13 @@ export default async function MfaPage({
       <p className="label">
         Enter the current code from Microsoft Authenticator to unlock AI Operations.
       </p>
-      {verifiedFactor ? (
-        <MfaChallenge factorId={verifiedFactor.id} returnTo={returnTo} {...(job ? { job } : {})} />
+      {verifiedFactors.length > 0 ? (
+        <MfaChallenge
+          availableFactors={verifiedFactors}
+          {...(defaultFactorId ? { defaultFactorId } : {})}
+          returnTo={returnTo}
+          {...(job ? { job } : {})}
+        />
       ) : (
         <MfaChallenge returnTo={returnTo} {...(job ? { job } : {})} />
       )}
