@@ -257,6 +257,12 @@ export function compareMigrations(expected: string[], applied: string[], label: 
     : [`${label}: applied migration versions differ`];
 }
 
+export function migrationVersionFromFilename(fileName: string): string {
+  const match = /^(\d{12}|\d{14})_[^/\\]+\.sql$/.exec(fileName);
+  if (!match?.[1]) throw new Error(`Invalid Supabase migration filename: ${fileName}`);
+  return match[1];
+}
+
 export function validateConfig(
   name: EnvironmentName,
   actual: {
@@ -490,10 +496,19 @@ function generateTypes(projectRef: string, token: string): string {
   }
 }
 
-function localMigrations(): string[] {
-  return readdirSync('supabase/migrations')
+function localMigrationInventory(): { fileName: string; version: string }[] {
+  const migrations = readdirSync('supabase/migrations')
     .filter((file) => file.endsWith('.sql'))
-    .map((file) => file.slice(0, -4));
+    .map((fileName) => ({ fileName, version: migrationVersionFromFilename(fileName) }))
+    .sort((left, right) => left.version.localeCompare(right.version));
+  const versions = migrations.map(({ version }) => version);
+  if (new Set(versions).size !== versions.length)
+    throw new Error('Duplicate Supabase migration versions exist in the repository.');
+  return migrations;
+}
+
+function localMigrations(): string[] {
+  return localMigrationInventory().map(({ version }) => version);
 }
 
 function deploymentWorkflowMismatches(name: EnvironmentName): string[] {
@@ -515,15 +530,41 @@ function deploymentWorkflowMismatches(name: EnvironmentName): string[] {
     );
 }
 
-function localFunctionAuth(): Map<string, boolean> {
-  const source = readFileSync('supabase/config.toml', 'utf8');
+export function parseFunctionAuth(source: string, directoryNames: string[]): Map<string, boolean> {
   const result = new Map<string, boolean>();
-  for (const block of source.split(/(?=^\[functions\.)/m).slice(1)) {
-    const header = block.match(/^\[functions\.([^\]]+)\]/)?.[1];
-    const value = block.match(/^verify_jwt\s*=\s*(true|false)\s*$/m)?.[1];
-    if (header && value) result.set(header, value === 'true');
+  const sections = source
+    .split(/(?=^\[[^\]]+\])/m)
+    .filter((block) => block.startsWith('[functions.'));
+  for (const block of sections) {
+    const headerMatch = /^\[functions\.([a-zA-Z0-9_-]+)\]\s*(?:#.*)?$/m.exec(block);
+    if (!headerMatch?.[1]) throw new Error('Malformed Supabase function configuration section.');
+    const slug = headerMatch[1];
+    if (result.has(slug)) throw new Error(`Duplicate Supabase function configuration: ${slug}`);
+    const verifyLines = block.match(/^[ \t]*verify_jwt[ \t]*=.*$/gm) ?? [];
+    if (verifyLines.length > 1)
+      throw new Error(`Duplicate verify_jwt setting for Supabase function: ${slug}`);
+    let verifyJwt = true;
+    if (verifyLines.length === 1) {
+      const value = /^[ \t]*verify_jwt[ \t]*=[ \t]*(true|false)[ \t]*(?:#.*)?$/m.exec(block)?.[1];
+      if (!value) throw new Error(`Malformed verify_jwt setting for Supabase function: ${slug}`);
+      verifyJwt = value === 'true';
+    }
+    result.set(slug, verifyJwt);
+  }
+  for (const slug of directoryNames.filter((name) => !name.startsWith('_'))) {
+    if (!/^[a-zA-Z0-9_-]+$/.test(slug))
+      throw new Error(`Invalid local Supabase function directory: ${slug}`);
+    if (!result.has(slug)) result.set(slug, true);
   }
   return result;
+}
+
+function localFunctionAuth(): Map<string, boolean> {
+  const source = readFileSync('supabase/config.toml', 'utf8');
+  const directories = readdirSync('supabase/functions', { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map(({ name }) => name);
+  return parseFunctionAuth(source, directories);
 }
 
 function captureSourceAttestation(): z.infer<typeof SourceAttestationSchema> {
@@ -742,6 +783,7 @@ export async function runDriftCheck(
     environment: name,
     migrationCount: current.migrations.length,
     migrationDigest: stableHash(sorted(current.migrations)),
+    repositoryMigrations: localMigrationInventory(),
     schemaDigest: current.schemaDigest,
     databaseTypesDigest: stableHash(generatedTypes),
     sourceAttestation: {
