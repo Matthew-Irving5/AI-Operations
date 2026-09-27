@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import {
   compareInventory,
   compareMigrations,
+  compareSourceAttestations,
   compareSourceDigests,
-  deployedFunctionRelativePath,
   sourceFileDigests,
   validateConfig,
   missingGitHubEnvironmentNames,
@@ -35,18 +35,17 @@ const inventory = {
   migrations: ['20260101000000_initial', '20260102000000_policy'],
   schemaDigest: 'schema-a',
   functions,
-  functionSources: { 'manager-list/index.ts': 'source-hash-a' },
+  sourceDigest: 'a'.repeat(64),
   secrets: ['FINANCE_ARCHIVE_GATEWAY_SECRET', 'PUBLIC_APP_ORIGIN'],
   worker,
 };
 
-test('accepts same contracts while ignoring deployment versions', () => {
+test('accepts same release bundle attestations while ignoring deployment versions', () => {
   const production = {
     ...inventory,
     functions: functions.map((entry) => ({
       ...entry,
       version: entry.version + 20,
-      ezbr_sha256: `${entry.ezbr_sha256}-provider-rebundle`,
     })),
     worker: {
       ...worker,
@@ -93,20 +92,7 @@ test('fingerprints runtime TypeScript while excluding test-only source files', (
   }
 });
 
-test('maps deployed function body paths safely into a local function tree', () => {
-  assert.equal(
-    deployedFunctionRelativePath('functions/approval-decide/index.ts'),
-    join('approval-decide', 'index.ts'),
-  );
-  assert.equal(
-    deployedFunctionRelativePath('supabase/functions/_shared/auth-assurance.ts'),
-    join('_shared', 'auth-assurance.ts'),
-  );
-  assert.throws(() => deployedFunctionRelativePath('functions/../secrets.txt'));
-  assert.throws(() => deployedFunctionRelativePath('outside/functions/index.ts'));
-});
-
-test('detects schema, function inventory, auth, source, and worker configuration drift', () => {
+test('detects schema, function inventory, auth, release attestation, and worker drift', () => {
   const drifted = {
     migrations: ['20260101000000_initial'],
     schemaDigest: 'schema-b',
@@ -114,7 +100,7 @@ test('detects schema, function inventory, auth, source, and worker configuration
       { ...functions[0]!, verify_jwt: false, ezbr_sha256: 'sha-changed' },
       { slug: 'new-function', verify_jwt: false, version: 1, ezbr_sha256: 'sha-new' },
     ],
-    functionSources: { 'manager-list/index.ts': 'comment-canary-source-hash' },
+    sourceDigest: 'b'.repeat(64),
     worker: {
       ...worker,
       vars: { ...worker.vars, APP_ENV: 'production', FUTURE_FEATURE_FLAG: 'hashed-config-value' },
@@ -128,7 +114,12 @@ test('detects schema, function inventory, auth, source, and worker configuration
     mismatches.some((mismatch) => mismatch.includes('new-function exists in only one environment')),
   );
   assert.ok(mismatches.some((mismatch) => mismatch.includes('manager-list verify_jwt differs')));
-  assert.ok(mismatches.some((mismatch) => mismatch.includes('Edge Function source differs')));
+  assert.ok(
+    mismatches.some((mismatch) =>
+      mismatch.includes('manager-list deployed bundle attestation differs'),
+    ),
+  );
+  assert.ok(mismatches.some((mismatch) => mismatch.includes('release source attestations differ')));
   assert.ok(
     mismatches.some((mismatch) => mismatch.includes('Worker runtime configuration differs')),
   );
@@ -200,12 +191,17 @@ test('requires a passing staging inventory from the exact production release com
       mode: 'repo-staging',
       environment: 'staging',
       sourceCommit: 'a'.repeat(40),
+      sourceAttestation: {
+        commit: 'a'.repeat(40),
+        sourceDigest: 'c'.repeat(64),
+        supabaseCliVersion: '2.111.0',
+      },
       githubEnvironment: { secrets: [], variables: [] },
       inventorySnapshot: {
         migrations: [],
         schemaDigest: 'schema-hash',
         functions: [],
-        functionSources: {},
+        sourceDigest: 'c'.repeat(64),
         secrets: [],
         worker: { vars: {}, bindings: [] },
       },
@@ -218,4 +214,37 @@ test('requires a passing staging inventory from the exact production release com
   assert.deepEqual(validateStagingSnapshot({ ...report, ok: false }, 'a'.repeat(40)), [
     'production: staging inventory artifact did not pass its release gate',
   ]);
+  assert.deepEqual(
+    validateStagingSnapshot(
+      {
+        ...report,
+        evidence: {
+          ...report.evidence,
+          sourceAttestation: { ...report.evidence.sourceAttestation, sourceDigest: 'invalid' },
+        },
+      },
+      'a'.repeat(40),
+    ),
+    ['production: staging inventory artifact is malformed'],
+  );
+});
+
+test('fails promotion when source or Supabase CLI release attestations differ', () => {
+  const staging = {
+    commit: 'a'.repeat(40),
+    sourceDigest: 'b'.repeat(64),
+    supabaseCliVersion: '2.111.0',
+  };
+  assert.deepEqual(compareSourceAttestations(staging, { ...staging }), []);
+  assert.deepEqual(
+    compareSourceAttestations(staging, {
+      ...staging,
+      sourceDigest: 'c'.repeat(64),
+      supabaseCliVersion: '2.112.0',
+    }),
+    [
+      'staging ↔ production: predeploy function source digests differ',
+      'staging ↔ production: Supabase CLI release versions differ',
+    ],
+  );
 });
