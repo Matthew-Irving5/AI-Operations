@@ -15,7 +15,7 @@ export async function POST(request: Request) {
       { status: 503, headers: { 'cache-control': 'no-store' } },
     );
   }
-  if ((factors?.all.length ?? 0) > 0) {
+  if (factors.all.some((factor) => factor.status === 'verified')) {
     const { data: assurance, error } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     if (error || assurance?.currentLevel !== 'aal2') {
       return NextResponse.json({ code: 'aal2_required' }, { status: 403 });

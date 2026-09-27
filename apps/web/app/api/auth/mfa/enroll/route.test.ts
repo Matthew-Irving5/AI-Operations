@@ -41,6 +41,20 @@ describe('regular MFA factor enrollment', () => {
     expect(response.headers.get('cache-control')).toBe('no-store');
   });
 
+  it('allows retry when the only existing factor is still unverified', async () => {
+    auth.mfa.listFactors.mockResolvedValueOnce({
+      data: { all: [{ id: 'pending', status: 'unverified' }] },
+    });
+    const response = await POST(
+      new Request('https://example.test/api/auth/mfa/enroll', {
+        method: 'POST',
+        headers: { origin: 'https://example.test' },
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(auth.mfa.getAuthenticatorAssuranceLevel).not.toHaveBeenCalled();
+  });
+
   it('requires AAL2 to add another factor and fails closed if the factor list is unavailable', async () => {
     auth.mfa.listFactors.mockResolvedValueOnce({
       data: { all: [{ id: 'existing', status: 'verified' }] },
