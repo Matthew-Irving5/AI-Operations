@@ -195,7 +195,7 @@ async function main(): Promise<void> {
         '--workdir',
         supabaseWorkdir,
         '--exclude',
-        'studio,mailpit,logflare,supavisor',
+        'studio,mailpit,logflare,supavisor,vector',
       ]);
     } catch (error) {
       throw new Error(
