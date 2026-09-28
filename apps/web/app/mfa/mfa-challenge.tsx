@@ -1,8 +1,11 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState, useSyncExternalStore } from 'react';
 
 const mfaGateStorageKey = 'mfa_job_gate';
+const subscribeToHydration = () => () => undefined;
+const getHydratedSnapshot = () => true;
+const getServerHydratedSnapshot = () => false;
 
 /**
  * The MFA page and the resumed operation can be rendered in different tabs by
@@ -54,7 +57,11 @@ export function MfaChallenge({
   onVerified?: (mfaGateId: string) => void;
 }) {
   const [message, setMessage] = useState('');
-  const [hydrated, setHydrated] = useState(false);
+  const hydrated = useSyncExternalStore(
+    subscribeToHydration,
+    getHydratedSnapshot,
+    getServerHydratedSnapshot,
+  );
   const [selectedFactorId, setSelectedFactorId] = useState(
     factorId ?? defaultFactorId ?? availableFactors[0]?.id,
   );
@@ -63,8 +70,6 @@ export function MfaChallenge({
     qrCode: string;
     secret: string;
   }>();
-
-  useEffect(() => setHydrated(true), []);
 
   useEffect(() => {
     if (factorId || availableFactors.length > 0) return;
