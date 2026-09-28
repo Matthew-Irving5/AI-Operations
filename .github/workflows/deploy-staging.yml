@@ -83,6 +83,7 @@ jobs:
             echo "PERSONAL_READ_TOKEN is not configured; Career sync will fail closed with github_connection_unavailable until the protected secret is added."
           fi
           for function in supabase/functions/*; do
+            [[ -d "$function" ]] || continue
             [[ "$(basename "$function")" == _* ]] && continue
             deployed=false
             for attempt in 1 2 3; do
