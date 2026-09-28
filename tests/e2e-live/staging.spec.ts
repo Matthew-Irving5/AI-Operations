@@ -182,7 +182,19 @@ async function signInWithFreshMfa(page: import('@playwright/test').Page): Promis
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/mfa(?:\?|$)/, { timeout: 20_000 });
   await expect(page.getByRole('heading', { name: 'Verify your identity' })).toBeVisible();
-  await page.getByLabel('Authenticator factor').selectOption(env.LIVE_E2E_TOTP_FACTOR_ID);
+  const factorSelect = page.getByLabel('Authenticator factor');
+  await factorSelect.selectOption(env.LIVE_E2E_TOTP_FACTOR_ID);
+  const configuredFactorListedAsVerified = await factorSelect
+    .locator('option')
+    .evaluateAll(
+      (options, expectedId) => options.some((option) => option.value === expectedId),
+      env.LIVE_E2E_TOTP_FACTOR_ID,
+    );
+  const selectedFactorMatchesConfigured =
+    (await factorSelect.inputValue()) === env.LIVE_E2E_TOTP_FACTOR_ID;
+  (stagingResponses.get(page) ?? []).push(
+    `MFA factor check configuredIdListedAsVerified=${configuredFactorListedAsVerified} selectedIdMatchesConfigured=${selectedFactorMatchesConfigured}`,
+  );
   await expect(page.getByLabel('Six-digit code')).toBeVisible({ timeout: 15_000 });
   const codeField = page.getByLabel('Six-digit code');
   const clockResponse = await fetch(`${env.LIVE_E2E_BASE_URL}/login`, {
