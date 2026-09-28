@@ -35,6 +35,7 @@ function diagnosticResponse(
   stage: string,
   detail: string,
   remediation: string,
+  validationIssues?: Array<{ path: string; code: string }>,
 ) {
   return NextResponse.json(
     {
@@ -48,6 +49,7 @@ function diagnosticResponse(
         method: 'POST',
         detail,
         remediation,
+        ...(validationIssues ? { validationIssues } : {}),
       },
     },
     { status, headers: { 'x-request-id': requestId } },
@@ -71,6 +73,7 @@ export async function POST(request: Request) {
         'request_validation',
         'The MFA request did not match the required factor, code, and job shape.',
         'Start the worker registration again and submit the current six-digit code.',
+        parsed.error.issues.map((issue) => ({ path: issue.path.join('.'), code: issue.code })),
       );
 
     const supabase = await createSupabaseServerClient();
