@@ -2,6 +2,7 @@
 .env
 node_modules/
 .next/
+.next-local-qa-*/
 dist/
 coverage/
 playwright-report/

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { assertLocalTestAuthEnvironment } from './lib/local-test-auth';
 
 const contentSecurityPolicy = (nonce: string) =>
   [
@@ -13,6 +14,7 @@ const contentSecurityPolicy = (nonce: string) =>
   ].join('; ');
 
 export function middleware(request: NextRequest) {
+  assertLocalTestAuthEnvironment(process.env);
   const nonce = crypto.randomUUID().replaceAll('-', '');
   const policy = contentSecurityPolicy(nonce);
   const requestHeaders = new Headers(request.headers);
