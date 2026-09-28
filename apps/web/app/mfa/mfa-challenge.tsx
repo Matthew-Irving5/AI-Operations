@@ -54,6 +54,7 @@ export function MfaChallenge({
   onVerified?: (mfaGateId: string) => void;
 }) {
   const [message, setMessage] = useState('');
+  const [hydrated, setHydrated] = useState(false);
   const [selectedFactorId, setSelectedFactorId] = useState(
     factorId ?? defaultFactorId ?? availableFactors[0]?.id,
   );
@@ -62,6 +63,8 @@ export function MfaChallenge({
     qrCode: string;
     secret: string;
   }>();
+
+  useEffect(() => setHydrated(true), []);
 
   useEffect(() => {
     if (factorId || availableFactors.length > 0) return;
@@ -158,7 +161,7 @@ export function MfaChallenge({
     window.location.assign(workerReturnTo ?? scanReturnTo ?? returnTo);
   }
   return (
-    <form className="card" onSubmit={submit}>
+    <form className="card" method="post" onSubmit={submit}>
       {!factorId && !enrolment && <p>Preparing secure authenticator enrolment…</p>}
       {availableFactors.length > 0 && !factorId && (
         <label>
@@ -201,7 +204,7 @@ export function MfaChallenge({
         />
       </label>
       <p>
-        <button type="submit" disabled={!activeFactorId}>
+        <button type="submit" disabled={!activeFactorId || !hydrated}>
           Verify
         </button>
       </p>
