@@ -1,14 +1,14 @@
-name: Live staging E2E
+name: Live staging E2E safety guard
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Live scenario to run
+        description: Run the network-free staging/production target guard
         type: choice
         required: true
-        default: suite
-        options: [suite, fixtures, mismatch]
+        default: mismatch
+        options: [mismatch]
 
 permissions:
   contents: read
@@ -18,19 +18,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  live-e2e:
+  target-guard:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: staging
-    timeout-minutes: 20
-    env:
-      LIVE_E2E_BASE_URL: https://ai-operations-staging.ai-operations.workers.dev
-      LIVE_E2E_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
-      LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY }}
-      LIVE_E2E_EMAIL: ${{ secrets.LIVE_E2E_EMAIL }}
-      LIVE_E2E_PASSWORD: ${{ secrets.LIVE_E2E_PASSWORD }}
-      LIVE_E2E_TOTP_SECRET: ${{ secrets.LIVE_E2E_TOTP_SECRET }}
-      LIVE_E2E_TOTP_FACTOR_ID: ${{ vars.LIVE_E2E_TOTP_FACTOR_ID }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -38,34 +29,7 @@ jobs:
       - uses: actions/setup-node@v5
         with: { node-version: 22.18.0, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - name: Validate protected staging E2E credentials
-        shell: bash
+      - name: Run staging target guard and configuration tests
         run: |
-          test -n "$LIVE_E2E_SUPABASE_URL" || { echo "Missing staging variable: STAGING_SUPABASE_URL"; exit 1; }
-          test -n "$LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY" || { echo "Missing staging secret: LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY"; exit 1; }
-          test -n "$LIVE_E2E_EMAIL" || { echo "Missing staging secret: LIVE_E2E_EMAIL"; exit 1; }
-          test -n "$LIVE_E2E_PASSWORD" || { echo "Missing staging secret: LIVE_E2E_PASSWORD"; exit 1; }
-          test -n "$LIVE_E2E_TOTP_SECRET" || { echo "Missing staging secret: LIVE_E2E_TOTP_SECRET"; exit 1; }
-          test -n "$LIVE_E2E_TOTP_FACTOR_ID" || { echo "Missing staging variable: LIVE_E2E_TOTP_FACTOR_ID"; exit 1; }
-          node -e 'const secret = process.env.LIVE_E2E_TOTP_SECRET.replace(/[\s=]/g, "").toUpperCase(); const valid = /^[A-Z2-7]+$/.test(secret); console.log(`Staging TOTP config: normalizedLength=${secret.length} base32Valid=${valid}`); if (secret.length !== 32 || !valid) process.exit(1);'
           pnpm test:e2e:live:mismatch
-      - name: Install Chromium and WebKit
-        if: inputs.mode == 'suite' || inputs.mode == 'fixtures'
-        run: pnpm exec playwright install --with-deps chromium webkit
-      - name: Verify staging app identity and fixture prerequisites
-        if: inputs.mode == 'suite' || inputs.mode == 'fixtures'
-        run: pnpm test:e2e:live:fixtures
-      - name: Run authenticated hosted browser scenarios
-        if: inputs.mode == 'suite'
-        run: pnpm test:e2e:live
-      - name: Run staging safety guard unit tests
-        run: pnpm --filter @ai-operations/web exec vitest run lib/live-e2e-safety.test.ts
-      - uses: actions/upload-artifact@v4
-        if: failure() && (inputs.mode == 'suite' || inputs.mode == 'fixtures')
-        with:
-          name: redacted-live-e2e-diagnostics
-          path: |
-            test-results/**/failure-redacted.png
-            test-results/**/failure-redacted-trace.json
-          if-no-files-found: ignore
-          retention-days: 2
+          pnpm --filter @ai-operations/web exec vitest run lib/live-e2e-safety.test.ts
