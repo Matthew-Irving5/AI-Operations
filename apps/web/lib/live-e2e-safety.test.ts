@@ -65,6 +65,15 @@ describe('live E2E staging target guard', () => {
     ).toThrow(/fixed staging origin/);
   });
 
+  it('keeps the fixture-mismatch diagnostic probe inside the fixed staging target', () => {
+    expect(() =>
+      parseLiveE2eEnvironment(
+        { ...valid, LIVE_E2E_BASE_URL: 'https://production.example.com' },
+        'fixture-mismatch',
+      ),
+    ).toThrow(/fixed staging origin/);
+  });
+
   it('fails closed when the staging origin contains a path or query override', () => {
     expect(() =>
       parseLiveE2eEnvironment(

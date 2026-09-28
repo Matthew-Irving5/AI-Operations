@@ -72,7 +72,7 @@ test.afterEach(async ({ page }, testInfo) => {
         fullPage: true,
         mask: [
           page.locator('input, textarea, header, nav, article'),
-          page.getByText(env.LIVE_E2E_EMAIL, { exact: true }),
+          ...(env.LIVE_E2E_EMAIL ? [page.getByText(env.LIVE_E2E_EMAIL, { exact: true })] : []),
         ],
         maskColor: '#242424',
         timeout: 5_000,
@@ -139,6 +139,24 @@ async function serviceRows<T>(table: string, query: string): Promise<T[]> {
   if (!response.ok)
     throw new Error(`Staging read of ${table} failed with HTTP ${response.status}.`);
   return (await response.json()) as T[];
+}
+
+if (process.env.LIVE_E2E_FIXTURE_MISMATCH_EXPECTED_COUNT !== undefined) {
+  test('deliberate staging fixture mismatch emits redacted failure diagnostics', async ({
+    page,
+  }) => {
+    await page.goto('/login');
+    await expect(page.getByRole('heading', { name: 'AI Operations' })).toBeVisible();
+    const fixtureIds = (process.env.LIVE_E2E_FIXTURE_IDS ?? '')
+      .split(',')
+      .filter((id) => id.length > 0);
+    const expectedCount = Number(process.env.LIVE_E2E_FIXTURE_MISMATCH_EXPECTED_COUNT);
+    expect(Number.isSafeInteger(expectedCount)).toBe(true);
+    expect(
+      fixtureIds,
+      'Deliberate mismatch probe: staging fixture count must differ from the intentionally incorrect expectation.',
+    ).toHaveLength(expectedCount);
+  });
 }
 
 test('staging live journey proves unauthorised rejection, manual MFA, AAL2, Travel persistence and both engines', async ({

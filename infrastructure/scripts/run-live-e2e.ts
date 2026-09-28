@@ -1,10 +1,34 @@
 import { execFileSync } from 'node:child_process';
+import { readdir } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { parseLiveE2eEnvironment, stagingTarget } from '../../apps/web/lib/live-e2e-safety';
+
+async function containsFailureArtifacts(directory: string): Promise<boolean> {
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  const names = new Set(entries.filter((entry) => entry.isFile()).map((entry) => entry.name));
+  if (names.has('failure-redacted.png') && names.has('failure-redacted-trace.json')) return true;
+  for (const entry of entries) {
+    if (entry.isDirectory() && (await containsFailureArtifacts(resolve(directory, entry.name)))) {
+      return true;
+    }
+  }
+  return false;
+}
 
 async function main(): Promise<void> {
   const mode = process.argv[2];
-  if (mode !== 'suite' && mode !== 'fixtures' && mode !== 'mismatch') {
-    throw new Error('Choose one live E2E mode: suite, fixtures, or mismatch.');
+  if (
+    mode !== 'suite' &&
+    mode !== 'fixtures' &&
+    mode !== 'fixture-mismatch' &&
+    mode !== 'mismatch'
+  ) {
+    throw new Error('Choose one live E2E mode: suite, fixtures, fixture-mismatch, or mismatch.');
   }
 
   if (mode === 'mismatch') {
@@ -44,7 +68,7 @@ async function main(): Promise<void> {
   }
   const env = parseLiveE2eEnvironment(process.env, mode);
   if (env.LIVE_E2E_BASE_URL !== stagingTarget.origin) throw new Error('Unexpected E2E origin.');
-  if (mode === 'fixtures' || mode === 'suite') {
+  if (mode === 'fixtures' || mode === 'suite' || mode === 'fixture-mismatch') {
     // Supabase access stays in this Node process. Reset only queued runs owned by the
     // allowlisted staging profile and marked with this harness's UUID namespace.
     const profileQuery = new URLSearchParams({
@@ -150,6 +174,45 @@ async function main(): Promise<void> {
       process.exit(0);
     }
     process.env.LIVE_E2E_FIXTURE_IDS = fixtureIds.join(',');
+    if (mode === 'fixture-mismatch') {
+      process.env.LIVE_E2E_FIXTURE_MISMATCH_EXPECTED_COUNT = String(fixtureIds.length + 1);
+    }
+  }
+
+  if (mode === 'fixture-mismatch') {
+    const outputDirectory = resolve(`test-results/fixture-mismatch-${Date.now()}`);
+    let expectedFailure = false;
+    try {
+      execFileSync(
+        'corepack',
+        [
+          'pnpm',
+          'exec',
+          'playwright',
+          'test',
+          '--config=playwright.live.config.ts',
+          '--grep=deliberate staging fixture mismatch emits redacted failure diagnostics',
+          `--output=${outputDirectory}`,
+        ],
+        {
+          stdio: 'inherit',
+          shell: process.platform === 'win32',
+          env: { ...process.env, ...env },
+        },
+      );
+    } catch (error) {
+      expectedFailure =
+        typeof error === 'object' && error !== null && 'status' in error && error.status === 1;
+    }
+    if (!expectedFailure || !(await containsFailureArtifacts(outputDirectory))) {
+      throw new Error(
+        'The deliberate fixture mismatch did not produce the expected redacted diagnostics.',
+      );
+    }
+    process.stdout.write(
+      `Deliberate staging fixture mismatch failed before authentication or mutation and captured redacted screenshot/diagnostic artifacts in ${outputDirectory}.\n`,
+    );
+    return;
   }
 
   execFileSync(
