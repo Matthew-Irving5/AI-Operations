@@ -47,6 +47,7 @@ jobs:
           test -n "$LIVE_E2E_PASSWORD" || { echo "Missing staging secret: LIVE_E2E_PASSWORD"; exit 1; }
           test -n "$LIVE_E2E_TOTP_SECRET" || { echo "Missing staging secret: LIVE_E2E_TOTP_SECRET"; exit 1; }
           test -n "$LIVE_E2E_TOTP_FACTOR_ID" || { echo "Missing staging variable: LIVE_E2E_TOTP_FACTOR_ID"; exit 1; }
+          node -e 'const secret = process.env.LIVE_E2E_TOTP_SECRET.replace(/[\s=]/g, "").toUpperCase(); const valid = /^[A-Z2-7]+$/.test(secret); console.log(`Staging TOTP config: normalizedLength=${secret.length} base32Valid=${valid}`); if (secret.length !== 32 || !valid) process.exit(1);'
           pnpm test:e2e:live:mismatch
       - name: Install Chromium and WebKit
         if: inputs.mode == 'suite' || inputs.mode == 'fixtures'
