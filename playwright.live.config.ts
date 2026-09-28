@@ -13,9 +13,7 @@ export default defineConfig({
     trace: 'off',
     screenshot: 'off',
     video: 'off',
+    launchOptions: { headless: process.env.LIVE_E2E_MANUAL_MFA !== 'true' },
   },
-  projects: [
-    { name: 'staging-chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'staging-mobile-webkit', use: { ...devices['iPhone 13'] } },
-  ],
+  projects: [{ name: 'staging-chromium', use: { ...devices['Desktop Chrome'] } }],
 });

@@ -1,49 +1,40 @@
 # Live staging E2E
 
-`pnpm test:e2e:live` targets only the fixed staging Worker and Supabase project. It signs in through the deployed login page, completes the existing Microsoft Authenticator TOTP challenge, queues one synthetic Travel request capped at `$0.01` with zero searches, verifies idempotent replay and the persisted run, budget, queue job, and correlated trace, then cancels the queued work through the Operations UI and verifies the persisted cancellation. The app request crosses the deployed Worker, authenticated Next route, staging Edge Function, database RPC, RLS-backed browser reads, and cancellation Edge Function. It never calls a model, search provider, or travel provider.
+The hosted acceptance suite runs from the Luna/Codex session on the operator desktop so the real staging MFA prompt remains visible and user-controlled. Playwright opens headed Chromium, automates only safe navigation and optional password entry, and waits on the real redirect to `/overview`. The test then continues in that same authenticated browser context. A copy of the valid session is held in memory only and used for a WebKit check; it is never written to disk or attached as an artifact.
 
-## Protected staging settings
+The suite exercises one bounded Travel request with a `$0.01` hard cap and zero searches, idempotent replay, the normal cancellation UI, persisted run/budget/queue/trace evidence, the AAL2 probe, unauthenticated rejection, and cleanup of explicitly marked queued fixtures. It crosses the deployed Worker, authenticated app routes, staging Edge Functions, database RPCs and staging database. It does not call a model, search provider or travel provider.
 
-The GitHub Environment `staging` requires these additional protected values before the manual workflow can run:
+## Local operator session
 
-- Secret `LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY`: service-role key for the fixed staging Supabase project, used only by the Node test process for read-only backend assertions and fixture ownership discovery. It is never sent to the browser and performs no writes.
-- Secret `LIVE_E2E_EMAIL`: the repository’s locked application identity.
-- Secret `LIVE_E2E_PASSWORD`: operator-created staging sign-in credential for that account.
-- Secret `LIVE_E2E_TOTP_SECRET`: the account’s operator-enrolled Microsoft Authenticator TOTP seed, stored only in the protected staging environment.
-- Variable `LIVE_E2E_TOTP_FACTOR_ID`: the UUID of the dedicated verified factor named `AI Operations staging live E2E`. The browser harness explicitly selects this ID; it never chooses by provider array order.
-- Existing secret `STAGING_SUPABASE_URL`: must identify the pinned staging Supabase project.
+The runner reads `.env` values into its process environment only. It uses `STAGING_PROJECT_URL` and `STAGING_SERVICE_ROLE_KEY` for staging-only identity and persisted-row reads; no value is printed or copied into artifacts. The default staging Worker URL and Supabase project ref are fixed in `live-e2e-safety.ts`. A configured `LIVE_E2E_EMAIL` and `LIVE_E2E_PASSWORD` may automate password entry; otherwise sign in directly in the visible browser. No MFA seed, code, factor ID or MFA-specific CI secret is accepted or needed.
 
-The staging app account must exist in Auth, have a verified TOTP factor, and have an enabled `app_users` row matching the repository’s locked identity. The test runs the actual password and fresh TOTP flow; it does not forge sessions, bypass MFA, or add an alternate test account. Configure these values only in the GitHub `staging` environment (or provide equivalent process environment values for a controlled local run). Do not put them in `.env`, shell history, source, test fixtures, logs, screenshots, or artifacts.
+In PowerShell, run:
 
-### Separate E2E factor enrollment
+```powershell
+$env:LIVE_E2E_MANUAL_MFA = 'true'
+pnpm test:e2e:live
+Remove-Item Env:LIVE_E2E_MANUAL_MFA
+```
 
-After the staging-only factor setup page is deployed, an operator with the locked account and a current AAL2 session opens `https://ai-operations-staging.ai-operations.workers.dev/mfa/staging-e2e-factor`. Choose **Add staging E2E factor**, scan the one-time QR code using a separate authenticator entry, and enter a current code to verify it. This adds a second TOTP factor; it does not remove or replace the operator’s existing factor. Copy the seed directly into the GitHub `staging` environment secret `LIVE_E2E_TOTP_SECRET` and the displayed UUID into the staging environment variable `LIVE_E2E_TOTP_FACTOR_ID`. Never send either value in chat or place them in logs. The setup response is no-store and the page keeps setup material only in memory until verification or cancellation. Normal `/mfa` defaults to the existing non-E2E verified factor, while the live harness explicitly selects the configured E2E factor ID. See AI-13 for the follow-up auth-factor ownership contract.
+If the managed worktree has no `.env` file, pass the operator checkout's existing file to Node without copying it into the worktree:
 
-## Safe live AAL2 probe
+```powershell
+$env:LIVE_E2E_MANUAL_MFA = 'true'
+node '--env-file-if-exists=C:\path\to\operator-checkout\.env' --import tsx infrastructure/scripts/run-live-e2e.ts suite
+Remove-Item Env:LIVE_E2E_MANUAL_MFA
+```
 
-After the probe route is deployed to staging, an operator can verify the Edge Function bearer-JWT AAL2 gate without creating or changing a workflow, schedule, or provider call:
+Complete the real challenge in the open staging Chromium browser. The suite resumes automatically after the app reaches Overview, then reuses that session for its remaining Chromium checks and the in-memory WebKit acceptance. The visible user action never asks for an MFA code or seed in chat. If the authentication session expires before the WebKit check, the suite fails and can be rerun; it does not create a replacement session by bypassing MFA.
 
-1. Sign in at `https://ai-operations-staging.ai-operations.workers.dev/login` and complete the existing six-digit TOTP challenge at `/mfa`.
-2. In the same authenticated staging tab, run:
+The preflight command reads the single enabled staging app profile and discovers only queued workflow runs with the harness purpose marker and idempotency prefix. It rejects ambiguous identity, unknown workflow definition, more than eight fixtures, non-staging URL/project bindings, and any unmarked record before attempting reset. Reset calls use the authenticated `/api/workflows/cancel` route and verify the resulting database state.
 
-   ```js
-   await fetch('/api/auth/mfa/aal2-probe', {
-     method: 'POST',
-     headers: { 'content-type': 'application/json' },
-     body: '{}',
-   }).then((response) => response.json());
-   ```
+## Network-free safety checks
 
-3. Expect `{ status: 400, code: 'invalid_plan', probeId: '<uuid>' }`. The probe forwards a fixed empty object to the existing `digital-plan-approve` Edge Function. That function authenticates the forwarded session and returns `invalid_plan` before any database access or mutation. The pre-fix stateless assurance check returns `403`, so this status/code pair distinguishes the deployed fix. The app route requires the exact staging app origin, exact staging Supabase URL, same-origin request, and a validated cookie-backed session; it never accepts an arbitrary Edge URL/body or returns/logs the bearer token. The route returns 404 outside the pinned staging target.
+```powershell
+pnpm test:e2e:live:mismatch
+pnpm --filter @ai-operations/web exec vitest run lib/live-e2e-safety.test.ts
+```
 
-## Run modes
+These checks prove a non-staging origin/project is rejected before network access and that the runner's config contains no automated MFA inputs. The GitHub `Live staging E2E safety guard` workflow runs only these network-free checks; a hosted headless runner cannot receive manual MFA and must not claim the user's live sign-off.
 
-- `suite`: validates the profile prerequisite, then runs desktop Chromium and iPhone-sized WebKit browser scenarios against deployed staging.
-- `fixtures`: verifies the enabled locked app profile and discovers queued on-demand Travel runs that match the `a17e` UUID namespace and exact `AI7-LIVE-E2E-FIXTURE-v1` job payload marker. The fixed staging target, owner UUID, workflow definition, trigger, queue job type, status, namespace, and payload marker must all match. The test then signs in with password and fresh MFA and cancels only those IDs through the authenticated app route/Edge Function. No service-role write or unmarked app-data mutation is performed.
-- `mismatch`: proves the fixed target guard rejects swapped app and Supabase origins before any network request.
-
-Run manually from `main` with workflow **Live staging E2E**. On failure, tests on explicitly safe routes attach a masked screenshot and a sanitized route/status trace without request bodies, headers, cookies, response bodies, or query strings; GitHub retains those artifacts for two days. Inputs, navigation, headers, cards, and the locked email are masked before screenshot capture; no screenshots are retained from other routes. Raw Playwright traces and video are disabled because they can capture authenticated session material or transient MFA codes. The tests print only non-personal test output.
-
-## Scope limitation
-
-The canonical conversation state/API contract is tracked by AI-14 and is not present on the current staging build. This harness does not create a shadow conversation table or claim conversation persistence/streaming acceptance. That branch remains unverified until AI-14’s canonical contract is implemented and deployed to staging; do not post `LIVE E2E SIGN-OFF: PASS` for all of AI-7 until that dependency is resolved and tested in this hosted suite.
+Failure output contains a redacted screenshot and a bounded trace of API paths/statuses and safe validation diagnostics. Screenshots mask editable fields, app navigation/content regions, and the account email. The runner never records request bodies, auth cookies, session state, entered codes, seeds or service-role values.

@@ -7,13 +7,19 @@ async function main(): Promise<void> {
     throw new Error('Choose one live E2E mode: suite, fixtures, or mismatch.');
   }
 
-  const env = parseLiveE2eEnvironment(process.env, mode);
   if (mode === 'mismatch') {
+    const safeDefaults = {
+      LIVE_E2E_BASE_URL: stagingTarget.origin,
+      LIVE_E2E_SUPABASE_URL: stagingTarget.supabaseUrl,
+      LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY: 'unused-safety-check-value',
+      LIVE_E2E_EMAIL: 'qa@example.test',
+      LIVE_E2E_PASSWORD: 'unused-safety-check-value',
+    };
     const rejected = (() => {
       try {
         parseLiveE2eEnvironment(
           {
-            ...process.env,
+            ...safeDefaults,
             LIVE_E2E_BASE_URL: 'https://ai-operations.example.com',
             LIVE_E2E_SUPABASE_URL: 'https://production-project.supabase.co',
           },
@@ -31,14 +37,21 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  if (mode === 'suite' && process.env.LIVE_E2E_MANUAL_MFA !== 'true') {
+    throw new Error(
+      'Live suite requires LIVE_E2E_MANUAL_MFA=true so Playwright opens a user-visible browser for the real MFA checkpoint.',
+    );
+  }
+  const env = parseLiveE2eEnvironment(process.env, mode);
   if (env.LIVE_E2E_BASE_URL !== stagingTarget.origin) throw new Error('Unexpected E2E origin.');
-  if (mode === 'fixtures') {
+  if (mode === 'fixtures' || mode === 'suite') {
     // Supabase access stays in this Node process. Reset only queued runs owned by the
     // allowlisted staging profile and marked with this harness's UUID namespace.
     const profileQuery = new URLSearchParams({
-      select: 'id,email,is_allowed',
-      email: `eq.${env.LIVE_E2E_EMAIL}`,
+      select: 'id,is_allowed',
+      is_allowed: 'eq.true',
     });
+    if (env.LIVE_E2E_EMAIL) profileQuery.set('email', `eq.${env.LIVE_E2E_EMAIL}`);
     const response = await fetch(`${stagingTarget.supabaseUrl}/rest/v1/app_users?${profileQuery}`, {
       headers: {
         apikey: env.LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY,
@@ -47,16 +60,8 @@ async function main(): Promise<void> {
     });
     if (!response.ok)
       throw new Error(`Staging fixture identity check failed with HTTP ${response.status}.`);
-    const users = (await response.json()) as Array<{
-      id: string;
-      email: string;
-      is_allowed: boolean;
-    }>;
-    if (
-      users.length !== 1 ||
-      users[0]?.email.toLowerCase() !== env.LIVE_E2E_EMAIL.toLowerCase() ||
-      !users[0]?.is_allowed
-    ) {
+    const users = (await response.json()) as Array<{ id: string; is_allowed: boolean }>;
+    if (users.length !== 1 || !users[0]?.is_allowed) {
       throw new Error('The allowlisted staging app profile is missing or disabled.');
     }
     const userId = users[0]!.id;
@@ -138,19 +143,18 @@ async function main(): Promise<void> {
     process.stdout.write(
       `Staging identity prerequisite passed; found ${fixtureIds.length} explicitly marked queued fixture(s) for authenticated reset.\n`,
     );
+    if (mode === 'fixtures') {
+      process.stdout.write(
+        'This check is read-only. Run the suite once to reset these fixtures and exercise all hosted browser scenarios in one authenticated session.\n',
+      );
+      process.exit(0);
+    }
     process.env.LIVE_E2E_FIXTURE_IDS = fixtureIds.join(',');
   }
 
   execFileSync(
     'corepack',
-    [
-      'pnpm',
-      'exec',
-      'playwright',
-      'test',
-      '--config=playwright.live.config.ts',
-      ...(mode === 'fixtures' ? ['--grep=live fixture reset'] : []),
-    ],
+    ['pnpm', 'exec', 'playwright', 'test', '--config=playwright.live.config.ts'],
     {
       stdio: 'inherit',
       shell: process.platform === 'win32',

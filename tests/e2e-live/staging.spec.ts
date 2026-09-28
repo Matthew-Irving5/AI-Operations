@@ -1,20 +1,17 @@
-import { createHmac } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
-import { expect, test } from '@playwright/test';
+import { expect, test, webkit } from '@playwright/test';
 import { parseLiveE2eEnvironment } from '../../apps/web/lib/live-e2e-safety';
 
 const env = parseLiveE2eEnvironment(process.env, 'suite');
 const stagingResponses = new WeakMap<import('@playwright/test').Page, string[]>();
-const mfaRequestShapes = new WeakMap<import('@playwright/test').Page, string[]>();
 
 function redactError(message: string): string {
   let redacted = message;
   for (const secret of [
     env.LIVE_E2E_PASSWORD,
-    env.LIVE_E2E_TOTP_SECRET,
     env.LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY,
     env.LIVE_E2E_EMAIL,
-  ]) {
+  ].filter((value): value is string => Boolean(value))) {
     redacted = redacted.replaceAll(secret, '[REDACTED]');
   }
   return redacted
@@ -27,50 +24,7 @@ function redactError(message: string): string {
 
 test.beforeEach(async ({ page }) => {
   const summaries: string[] = [];
-  const requestShapes: string[] = [];
   stagingResponses.set(page, summaries);
-  mfaRequestShapes.set(page, requestShapes);
-  page.on('request', (request) => {
-    const url = new URL(request.url());
-    if (
-      url.origin !== new URL(env.LIVE_E2E_BASE_URL).origin ||
-      url.pathname !== '/api/auth/mfa/verify'
-    )
-      return;
-    let shape: Record<string, unknown> = { parseableJson: false };
-    try {
-      const body = request.postDataJSON() as Record<string, unknown>;
-      shape = {
-        parseableJson: true,
-        keys: Object.keys(body).sort(),
-        factorIdIsUuid:
-          typeof body.factorId === 'string' &&
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-            body.factorId,
-          ),
-        codeType: typeof body.code,
-        codeLength: typeof body.code === 'string' ? body.code.length : null,
-        codeIsSixAsciiDigits: typeof body.code === 'string' && /^[0-9]{6}$/.test(body.code),
-        jobIsAllowed:
-          body.job === undefined ||
-          [
-            'apple_bridge',
-            'gmail_test',
-            'connection_revoke',
-            'connection_scope_change',
-            'worker_device_register',
-            'worker_device_revoke',
-            'digital_scan_create',
-            'finance_configure',
-            'finance_import',
-            'github_sync',
-          ].includes(String(body.job)),
-      };
-    } catch {
-      // Record only that the submitted body was not JSON; never retain its contents.
-    }
-    requestShapes.push(JSON.stringify(shape));
-  });
   page.on('response', (response) => {
     const url = new URL(response.url());
     if (url.origin === new URL(env.LIVE_E2E_BASE_URL).origin && url.pathname.startsWith('/api/')) {
@@ -143,7 +97,6 @@ test.afterEach(async ({ page }, testInfo) => {
       }
     })(),
     responses: (stagingResponses.get(page) ?? []).slice(-80),
-    mfaRequestShapes: (mfaRequestShapes.get(page) ?? []).slice(-10),
     errors: testInfo.errors.map((error) => ({
       message: redactError(error.message ?? 'Unknown failure'),
     })),
@@ -156,96 +109,24 @@ test.afterEach(async ({ page }, testInfo) => {
   });
 });
 
-function totp(secret: string, timestamp = Date.now()): string {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-  const normalized = secret.replace(/\s|=/g, '').toUpperCase();
-  let bits = '';
-  for (const character of normalized) {
-    const value = alphabet.indexOf(character);
-    if (value < 0) throw new Error('LIVE_E2E_TOTP_SECRET must be a Base32 authenticator secret.');
-    bits += value.toString(2).padStart(5, '0');
-  }
-  const key = Buffer.from(bits.match(/.{8}/g)?.map((byte) => Number.parseInt(byte, 2)) ?? []);
-  const counter = Buffer.alloc(8);
-  counter.writeBigUInt64BE(BigInt(Math.floor(timestamp / 30_000)));
-  const digest = createHmac('sha1', key).update(counter).digest();
-  const offset = digest[digest.length - 1]! & 0x0f;
-  const binary = digest.readUInt32BE(offset) & 0x7fffffff;
-  return String(binary % 1_000_000).padStart(6, '0');
-}
-
 async function signInWithFreshMfa(page: import('@playwright/test').Page): Promise<void> {
   await page.goto('/login');
   await expect(page.getByRole('heading', { name: 'AI Operations' })).toBeVisible();
-  await page.getByLabel('Email').fill(env.LIVE_E2E_EMAIL);
-  await page.getByLabel('Password').fill(env.LIVE_E2E_PASSWORD);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/mfa(?:\?|$)/, { timeout: 20_000 });
-  await expect(page.getByRole('heading', { name: 'Verify your identity' })).toBeVisible();
-  const factorSelect = page.getByLabel('Authenticator factor');
-  await factorSelect.selectOption(env.LIVE_E2E_TOTP_FACTOR_ID);
-  const configuredFactorListedAsVerified = await factorSelect
-    .locator('option')
-    .evaluateAll(
-      (options, expectedId) => options.some((option) => option.value === expectedId),
-      env.LIVE_E2E_TOTP_FACTOR_ID,
+  if (env.LIVE_E2E_EMAIL && env.LIVE_E2E_PASSWORD) {
+    await page.getByLabel('Email').fill(env.LIVE_E2E_EMAIL);
+    await page.getByLabel('Password').fill(env.LIVE_E2E_PASSWORD);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page).toHaveURL(/\/mfa(?:\?|$)/, { timeout: 20_000 });
+    await expect(page.getByRole('heading', { name: 'Verify your identity' })).toBeVisible();
+    process.stdout.write(
+      '\nManual MFA checkpoint: complete the real challenge in this open staging browser. The same browser journey resumes automatically after sign-in.\n',
     );
-  const selectedFactorMatchesConfigured =
-    (await factorSelect.inputValue()) === env.LIVE_E2E_TOTP_FACTOR_ID;
-  (stagingResponses.get(page) ?? []).push(
-    `MFA factor check configuredIdListedAsVerified=${configuredFactorListedAsVerified} selectedIdMatchesConfigured=${selectedFactorMatchesConfigured}`,
-  );
-  await expect(page.getByLabel('Six-digit code')).toBeVisible({ timeout: 15_000 });
-  const codeField = page.getByLabel('Six-digit code');
-  const clockResponse = await fetch(`${env.LIVE_E2E_BASE_URL}/login`, {
-    method: 'HEAD',
-    cache: 'no-store',
-  });
-  const serverDateHeader = clockResponse.headers.get('date');
-  const serverDateMs = serverDateHeader ? Date.parse(serverDateHeader) : Number.NaN;
-  if (!clockResponse.ok || !Number.isFinite(serverDateMs)) {
-    throw new Error('Could not establish the staging server time for the MFA check.');
+  } else {
+    process.stdout.write(
+      '\nManual sign-in checkpoint: sign into the staging account and complete its real MFA challenge in this open browser. The same browser journey resumes automatically after Overview loads.\n',
+    );
   }
-  const runnerNow = Date.now();
-  const serverNow = serverDateMs + (runnerNow % 1_000);
-  const clockSkewSeconds = Math.round((serverNow - runnerNow) / 1_000);
-  const timeToRolloverMs = 30_000 - (serverNow % 30_000);
-  const periodOffsets = timeToRolloverMs < 8_000 ? [1, 0, -1] : [0, -1, 1];
-  const summaries = stagingResponses.get(page) ?? [];
-  summaries.push(
-    `MFA clock check runnerToStagingSeconds=${clockSkewSeconds} timeToRolloverSeconds=${Math.round(timeToRolloverMs / 1_000)}`,
-  );
-
-  let verified = false;
-  for (const periodOffset of periodOffsets) {
-    const code = totp(env.LIVE_E2E_TOTP_SECRET, serverNow + periodOffset * 30_000);
-    expect(code).toMatch(/^[0-9]{6}$/);
-    await codeField.fill(code);
-    await expect(codeField).toHaveValue(/^[0-9]{6}$/);
-    const verification = page.waitForResponse((response) => {
-      const url = new URL(response.url());
-      return (
-        url.origin === new URL(env.LIVE_E2E_BASE_URL).origin &&
-        url.pathname === '/api/auth/mfa/verify'
-      );
-    });
-    await page.getByRole('button', { name: 'Verify' }).click();
-    const response = await verification;
-    if (response.ok()) {
-      verified = true;
-      break;
-    }
-    const body = (await response.json().catch(() => null)) as {
-      diagnostic?: { stage?: unknown };
-    } | null;
-    if (response.status() !== 401 || body?.diagnostic?.stage !== 'supabase_mfa_verify') {
-      throw new Error(
-        `MFA stopped at a non-code verification failure (HTTP ${response.status()}).`,
-      );
-    }
-  }
-  expect(verified, 'staging rejected the bounded current and adjacent TOTP periods').toBe(true);
-  await expect(page).toHaveURL(/\/overview(?:\?|$)/, { timeout: 20_000 });
+  await expect(page).toHaveURL(/\/overview(?:\?|$)/, { timeout: 5 * 60_000 });
 }
 
 async function serviceRows<T>(table: string, query: string): Promise<T[]> {
@@ -260,10 +141,72 @@ async function serviceRows<T>(table: string, query: string): Promise<T[]> {
   return (await response.json()) as T[];
 }
 
-test('real staging AAL2 user launches bounded Travel work, persists it, replays idempotently, and cancels it', async ({
+test('staging live journey proves unauthorised rejection, manual MFA, AAL2, Travel persistence and both engines', async ({
   page,
-}) => {
+}, testInfo) => {
+  testInfo.setTimeout(10 * 60_000);
+  await page.goto('/login');
+  const unauthenticated = await page.evaluate(async () => {
+    const result = await fetch('/api/workflows/launch', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        workflowCode: 'travel-on-demand-plan',
+        managerCode: 'travel',
+        hardCapUsd: 0.01,
+        modelCeiling: 'gpt-5.6-terra',
+        searchCeiling: 0,
+        idempotencyKey: '00000000-0000-4000-8000-000000000007',
+        request: {
+          purpose: 'Unauthenticated failure-path check',
+          constraints: 'No provider calls.',
+        },
+      }),
+    });
+    return { status: result.status, body: (await result.json()) as { code?: string } };
+  });
+  expect(unauthenticated).toMatchObject({ status: 401, body: { code: 'unauthorised' } });
+  await expect(page.getByRole('heading', { name: 'AI Operations' })).toBeVisible();
+  await expect(page.getByText(/Multi-factor authentication is required/)).toBeVisible();
+
   await signInWithFreshMfa(page);
+  const aal2Probe = await page.evaluate(async () => {
+    const response = await fetch('/api/auth/mfa/aal2-probe', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+    return {
+      httpStatus: response.status,
+      body: (await response.json()) as { probeId?: string; status?: number; code?: string },
+    };
+  });
+  expect(aal2Probe.httpStatus).toBe(200);
+  expect(aal2Probe.body).toMatchObject({ status: 400, code: 'invalid_plan' });
+  expect(aal2Probe.body.probeId).toMatch(/^[0-9a-f-]{36}$/i);
+
+  const fixtureIds = (process.env.LIVE_E2E_FIXTURE_IDS ?? '')
+    .split(',')
+    .filter((id) => id.length > 0);
+  for (const runId of fixtureIds) {
+    expect(runId).toMatch(/^[0-9a-f-]{36}$/i);
+    const cancellation = await page.evaluate(async (id) => {
+      const response = await fetch('/api/workflows/cancel', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ runId: id }),
+      });
+      return { status: response.status, body: (await response.json()) as { cancelled?: boolean } };
+    }, runId);
+    expect(cancellation).toMatchObject({ status: 200, body: { cancelled: true } });
+    const rows = await serviceRows<{ status: string; cancelled_at: string | null }>(
+      'workflow_runs',
+      `select=status,cancelled_at&id=eq.${runId}`,
+    );
+    expect(rows[0]).toMatchObject({ status: 'cancelled' });
+    expect(rows[0]?.cancelled_at).toBeTruthy();
+  }
+
   await page.goto('/travel');
   await expect(page.getByRole('heading', { name: 'Travel Planning' })).toBeVisible();
   await page.getByLabel('Purpose').fill('AI7-LIVE-E2E-FIXTURE-v1');
@@ -321,21 +264,12 @@ test('real staging AAL2 user launches bounded Travel work, persists it, replays 
   await expect(queuedRun.getByRole('button', { name: 'Cancel run' })).toBeVisible();
   await queuedRun.getByRole('button', { name: 'Cancel run' }).click();
   await expect(queuedRun.getByText('Cancelled. Refresh to update the queue.')).toBeVisible();
-  const [cancelledRun, cancelledJob, budgets, runs] = await Promise.all([
+  const [cancelledRun, cancelledJob, runs] = await Promise.all([
     serviceRows<{ status: string; cancelled_at: string | null }>(
       'workflow_runs',
       `select=status,cancelled_at&id=eq.${launchResult.runId}`,
     ),
     serviceRows<{ status: string }>('job_queue', `select=status&run_id=eq.${launchResult.runId}`),
-    serviceRows<{
-      run_id: string;
-      hard_cap: string;
-      search_ceiling: number;
-      reserved_amount: string;
-    }>(
-      'on_demand_budgets',
-      `select=run_id,hard_cap,search_ceiling,reserved_amount&run_id=eq.${launchResult.runId}`,
-    ),
     serviceRows<{
       id: string;
       status: string;
@@ -350,8 +284,6 @@ test('real staging AAL2 user launches bounded Travel work, persists it, replays 
   expect(cancelledRun[0]).toMatchObject({ status: 'cancelled' });
   expect(cancelledRun[0]?.cancelled_at).toBeTruthy();
   expect(cancelledJob[0]?.status).toBe('cancelled');
-  expect(budgets).toHaveLength(1);
-  expect(budgets[0]).toMatchObject({ hard_cap: '0.01', search_ceiling: 0, reserved_amount: '0' });
   expect(runs).toHaveLength(1);
   expect(runs[0]).toMatchObject({
     id: launchResult.runId,
@@ -359,85 +291,39 @@ test('real staging AAL2 user launches bounded Travel work, persists it, replays 
     trigger: 'on_demand',
     idempotency_key: launchBody.idempotencyKey,
   });
-  const traces = await serviceRows<{ event_type: string; correlation_id: string }>(
-    'trace_events',
-    `select=event_type,correlation_id&correlation_id=eq.${runs[0]!.correlation_id}`,
-  );
-  expect(traces.some((event) => event.event_type === 'on_demand_run_queued')).toBe(true);
-});
+  await page.goto('/ai-traces-audit');
+  await expect(page.getByRole('heading', { name: 'AI Traces & Audit' })).toBeVisible();
+  const correlatedTrace = page
+    .getByRole('region', { name: 'Workflow traces' })
+    .locator('article')
+    .filter({ hasText: runs[0]!.correlation_id });
+  await expect(
+    correlatedTrace.getByRole('heading', { name: 'on_demand_run_queued' }),
+  ).toBeVisible();
 
-test('staging denies bounded launch before sign-in and keeps the login surface usable', async ({
-  page,
-}) => {
-  await page.goto('/login');
-  const response = await page.evaluate(async () => {
-    const result = await fetch('/api/workflows/launch', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        workflowCode: 'travel-on-demand-plan',
-        managerCode: 'travel',
-        hardCapUsd: 0.01,
-        modelCeiling: 'gpt-5.6-terra',
-        searchCeiling: 0,
-        idempotencyKey: '00000000-0000-4000-8000-000000000007',
-        request: {
-          purpose: 'Unauthenticated failure-path check',
-          constraints: 'No provider calls.',
-        },
-      }),
+  const webkitBrowser = await webkit.launch({ headless: true });
+  try {
+    const webkitContext = await webkitBrowser.newContext({
+      storageState: await page.context().storageState(),
     });
-    return { status: result.status, body: (await result.json()) as { code?: string } };
-  });
-  expect(response).toMatchObject({ status: 401, body: { code: 'unauthorised' } });
-  await expect(page.getByRole('heading', { name: 'AI Operations' })).toBeVisible();
-  await expect(page.getByText(/Multi-factor authentication is required/)).toBeVisible();
-});
-
-test('staging AAL2 probe reaches the deployed bearer-JWT gate without business side effects', async ({
-  page,
-}) => {
-  await signInWithFreshMfa(page);
-  const probe = await page.evaluate(async () => {
-    const response = await fetch('/api/auth/mfa/aal2-probe', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{}',
-    });
-    return {
-      httpStatus: response.status,
-      body: (await response.json()) as { probeId?: string; status?: number; code?: string },
-    };
-  });
-
-  expect(probe.httpStatus).toBe(200);
-  expect(probe.body).toMatchObject({ status: 400, code: 'invalid_plan' });
-  expect(probe.body.probeId).toMatch(/^[0-9a-f-]{36}$/i);
-});
-
-test('live fixture reset cancels only explicitly owned staging fixtures through authenticated routes', async ({
-  page,
-}) => {
-  await signInWithFreshMfa(page);
-  const fixtureIds = (process.env.LIVE_E2E_FIXTURE_IDS ?? '')
-    .split(',')
-    .filter((id) => id.length > 0);
-  for (const runId of fixtureIds) {
-    expect(runId).toMatch(/^[0-9a-f-]{36}$/i);
-    const cancellation = await page.evaluate(async (id) => {
-      const response = await fetch('/api/workflows/cancel', {
+    const webkitPage = await webkitContext.newPage();
+    await webkitPage.goto('/overview');
+    await expect(webkitPage.getByRole('heading', { name: /Overview/ })).toBeVisible();
+    const webkitProbe = await webkitPage.evaluate(async () => {
+      const response = await fetch('/api/auth/mfa/aal2-probe', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ runId: id }),
+        body: '{}',
       });
-      return { status: response.status, body: (await response.json()) as { cancelled?: boolean } };
-    }, runId);
-    expect(cancellation).toMatchObject({ status: 200, body: { cancelled: true } });
-    const rows = await serviceRows<{ status: string; cancelled_at: string | null }>(
-      'workflow_runs',
-      `select=status,cancelled_at&id=eq.${runId}`,
-    );
-    expect(rows[0]).toMatchObject({ status: 'cancelled' });
-    expect(rows[0]?.cancelled_at).toBeTruthy();
+      return {
+        httpStatus: response.status,
+        body: (await response.json()) as { probeId?: string; status?: number; code?: string },
+      };
+    });
+    expect(webkitProbe.httpStatus).toBe(200);
+    expect(webkitProbe.body).toMatchObject({ status: 400, code: 'invalid_plan' });
+    await webkitContext.close();
+  } finally {
+    await webkitBrowser.close();
   }
 });

@@ -1,6 +1,6 @@
 import { MfaChallenge } from './mfa-challenge';
 import { createSupabaseServerClient } from '../../lib/supabase-server';
-import { stagingE2eTotpFactorName } from '../../lib/live-e2e-safety';
+import { legacyStagingE2eFactorName } from '../../lib/live-e2e-safety';
 
 export default async function MfaPage({
   searchParams,
@@ -17,7 +17,7 @@ export default async function MfaPage({
     }));
   const params = await searchParams;
   const defaultFactorId =
-    verifiedFactors.find((factor) => factor.friendlyName !== stagingE2eTotpFactorName)?.id ??
+    verifiedFactors.find((factor) => factor.friendlyName !== legacyStagingE2eFactorName)?.id ??
     verifiedFactors[0]?.id;
   const requestedJob = params.job;
   const job =
