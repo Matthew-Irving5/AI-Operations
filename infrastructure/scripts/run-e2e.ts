@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { basename, join, tmpdir } from 'node:path';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 import { runLocalQaPreflight } from './local-qa-preflight';
 
 function run(args: string[], env = process.env): string {
@@ -12,6 +13,16 @@ function run(args: string[], env = process.env): string {
     shell: process.platform === 'win32',
     stdio: ['inherit', 'pipe', 'pipe'],
   });
+}
+
+function sanitizedCommandError(error: unknown): string {
+  if (!error || typeof error !== 'object' || !('stderr' in error)) return '';
+  const stderr = (error as { stderr?: Buffer | string }).stderr;
+  if (!stderr) return '';
+  return String(stderr)
+    .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[REDACTED_JWT]')
+    .replace(/(?:sb_secret_|sb_publishable_)[A-Za-z0-9_-]+/g, '[REDACTED_KEY]')
+    .slice(-2000);
 }
 
 function statusValue(status: string, name: string): string {
@@ -64,7 +75,7 @@ function createIsolatedSupabaseProject(
   ports: { api: number; database: number; shadow: number },
 ): { temporaryRoot: string; projectDirectory: string } {
   const workdir = mkdtempSync(join(tmpdir(), `aiops-local-qa-${namespace.slice(0, 8)}-`));
-  const projectDirectory = join(workdir, 'supabase');
+  const projectDirectory = join(workdir, `supabase-${namespace.slice(0, 8)}`);
   cpSync(join(repositoryRoot, 'supabase'), projectDirectory, {
     recursive: true,
     filter: (source) =>
@@ -186,9 +197,9 @@ async function main(): Promise<void> {
         '--exclude',
         'studio,mailpit,logflare,supavisor',
       ]);
-    } catch {
+    } catch (error) {
       throw new Error(
-        'Local Supabase could not start. Confirm Docker Desktop is ready and free local ports are available.',
+        `Local Supabase could not start. Confirm Docker Desktop is ready and free local ports are available.${sanitizedCommandError(error) ? `\n${sanitizedCommandError(error)}` : ''}`,
       );
     }
 

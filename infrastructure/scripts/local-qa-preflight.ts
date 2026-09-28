@@ -21,7 +21,11 @@ const checks: CommandCheck[] = [
 
 function commandWorks(command: string, args: string[]): boolean {
   try {
-    execFileSync(command, args, { stdio: 'ignore', timeout: 10_000 });
+    execFileSync(command, args, {
+      stdio: 'ignore',
+      timeout: 10_000,
+      shell: process.platform === 'win32',
+    });
     return true;
   } catch {
     return false;
