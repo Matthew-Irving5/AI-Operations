@@ -108,6 +108,7 @@ function createIsolatedSupabaseProject(
     recursive: true,
     filter: (source) =>
       basename(source) !== '.env' &&
+      basename(source) !== 'node_modules' &&
       !source.includes(`${join('supabase', '.temp')}`) &&
       !source.includes(`${join('supabase', '.branches')}`),
   });
