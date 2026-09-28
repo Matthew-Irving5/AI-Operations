@@ -63,6 +63,8 @@ jobs:
         if: failure() && (inputs.mode == 'suite' || inputs.mode == 'fixtures')
         with:
           name: redacted-live-e2e-diagnostics
-          path: test-results/
+          path: |
+            test-results/**/failure-redacted.png
+            test-results/**/failure-redacted-trace.json
           if-no-files-found: ignore
           retention-days: 2

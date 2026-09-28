@@ -19,6 +19,7 @@ function redactError(message: string): string {
   }
   return redacted
     .replace(/\bBearer\s+\S+/gi, 'Bearer [REDACTED]')
+    .replace(/([?&][^=\s"'<>]+)=([^&\s"'<>]*)/g, '$1=[REDACTED]')
     .replace(/\b\d{6}\b/g, '[REDACTED-CODE]')
     .replace(/\b[0-9a-f]{8}-[0-9a-f-]{27}\b/gi, '[REDACTED-ID]')
     .slice(0, 500);
