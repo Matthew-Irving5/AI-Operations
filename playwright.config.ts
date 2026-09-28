@@ -11,7 +11,7 @@ export default defineConfig({
   outputDir: namespace ? `test-results/local/${namespace}` : 'test-results',
   use: { baseURL: `http://127.0.0.1:${port}`, trace: 'retain-on-failure' },
   webServer: {
-    command: `corepack pnpm --filter @ai-operations/web dev -- --hostname 127.0.0.1 --port ${port}`,
+    command: `corepack pnpm --filter @ai-operations/web exec next dev --hostname 127.0.0.1 --port ${port}`,
     url: `http://127.0.0.1:${port}/login`,
     reuseExistingServer: false,
     env: {
