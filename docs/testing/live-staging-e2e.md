@@ -2,7 +2,7 @@
 
 The hosted acceptance suite runs from the Luna/Codex session on the operator desktop so the real staging MFA prompt remains visible and user-controlled. Playwright opens headed Chromium, automates only safe navigation and optional password entry, and waits on the real redirect to `/overview`. The test then continues in that same authenticated browser context. A copy of the valid session is held in memory only and used for a WebKit check; it is never written to disk or attached as an artifact.
 
-The suite exercises one bounded Travel request with a `$0.01` hard cap and zero searches, idempotent replay, the normal cancellation UI, persisted run/budget/queue/trace evidence, the AAL2 probe, unauthenticated rejection, and cleanup of explicitly marked queued fixtures. It crosses the deployed Worker, authenticated app routes, staging Edge Functions, database RPCs and staging database. It does not call a model, search provider or travel provider.
+The suite exercises one bounded Travel request with a `$0.01` hard cap and zero searches, idempotent replay, the normal cancellation UI, persisted workflow/job records, a correlated authenticated trace, the AAL2 probe, unauthenticated rejection, and cleanup of explicitly marked queued fixtures. It asserts cap and search limits at the authenticated launch boundary and confirmation UI; direct `on_demand_budgets` service-role reads remain owned by AI-11's grant/RLS work. It crosses the deployed Worker, authenticated app routes, staging Edge Functions, database RPCs and staging database. It does not call a model, search provider or travel provider.
 
 ## Local operator session
 
@@ -36,5 +36,7 @@ pnpm --filter @ai-operations/web exec vitest run lib/live-e2e-safety.test.ts
 ```
 
 These checks prove a non-staging origin/project is rejected before network access and that the runner's config contains no automated MFA inputs. The GitHub `Live staging E2E safety guard` workflow runs only these network-free checks; a hosted headless runner cannot receive manual MFA and must not claim the user's live sign-off.
+
+To verify failure diagnostics without MFA or staging mutation, run `pnpm test:e2e:live:fixture-mismatch`. It reads the real staging fixture baseline, intentionally expects one extra marked fixture, opens only the staging login page, and confirms the expected test failure produced a redacted screenshot and diagnostic JSON. It exits successfully only when both artifacts exist. The mismatch probe uses no authenticated route and performs no writes.
 
 Failure output contains a redacted screenshot and a bounded trace of API paths/statuses and safe validation diagnostics. Screenshots mask editable fields, app navigation/content regions, and the account email. The runner never records request bodies, auth cookies, session state, entered codes, seeds or service-role values.

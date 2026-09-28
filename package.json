@@ -17,6 +17,7 @@
     "test:db": "supabase test db",
     "test:e2e": "tsx infrastructure/scripts/run-e2e.ts",
     "test:e2e:live": "node --env-file-if-exists=.env --import tsx infrastructure/scripts/run-live-e2e.ts suite",
+    "test:e2e:live:fixture-mismatch": "node --env-file-if-exists=.env --import tsx infrastructure/scripts/run-live-e2e.ts fixture-mismatch",
     "test:e2e:live:mismatch": "tsx infrastructure/scripts/run-live-e2e.ts mismatch",
     "test:e2e:live:fixtures": "node --env-file-if-exists=.env --import tsx infrastructure/scripts/run-live-e2e.ts fixtures",
     "security": "corepack pnpm audit --audit-level=high && gitleaks detect --no-banner",
