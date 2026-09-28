@@ -53,7 +53,6 @@ export function MfaChallenge({
     | 'github_sync';
   onVerified?: (mfaGateId: string) => void;
 }) {
-  const [code, setCode] = useState('');
   const [message, setMessage] = useState('');
   const [selectedFactorId, setSelectedFactorId] = useState(
     factorId ?? defaultFactorId ?? availableFactors[0]?.id,
@@ -89,10 +88,15 @@ export function MfaChallenge({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!activeFactorId) return;
+    const submittedCode = new FormData(event.currentTarget).get('code');
+    if (typeof submittedCode !== 'string' || !/^[0-9]{6}$/.test(submittedCode)) {
+      setMessage('Enter the current six-digit authenticator code.');
+      return;
+    }
     const response = await fetch('/api/auth/mfa/verify', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ factorId: activeFactorId, code, job }),
+      body: JSON.stringify({ factorId: activeFactorId, code: submittedCode, job }),
     });
     const result = (await response.json().catch(() => null)) as {
       code?: string;
@@ -189,11 +193,10 @@ export function MfaChallenge({
         Six-digit code
         <input
           aria-label="Six-digit code"
+          name="code"
           inputMode="numeric"
           pattern="[0-9]{6}"
           maxLength={6}
-          value={code}
-          onChange={(event) => setCode(event.target.value)}
           required
         />
       </label>
