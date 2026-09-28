@@ -1,4 +1,4 @@
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createPrivateKey, sign, timingSafeEqual } from 'node:crypto';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -25,24 +25,35 @@ function base64Url(value: string | Buffer): string {
   return Buffer.from(value).toString('base64url');
 }
 
-function signLocalAccessToken(secret: string, email: string): string {
-  const now = Math.floor(Date.now() / 1000);
-  const header = base64Url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const payload = base64Url(
-    JSON.stringify({
-      aal: 'aal2',
-      aud: 'authenticated',
-      email,
-      exp: now + 900,
-      iat: now,
-      iss: 'supabase-demo',
-      session_id: randomUUID(),
-      role: 'authenticated',
-      sub: localTestUserId,
-    }),
-  );
-  const signature = createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url');
-  return `${header}.${payload}.${signature}`;
+// Only the isolated loopback fixture may elevate this real GoTrue session.
+// Production MFA routes are unchanged.
+function signLocalAal2Token(jwksJson: string, accessToken: string): string {
+  const [header, payload] = accessToken.split('.');
+  if (!header || !payload) throw new Error('Local Auth returned an invalid access token.');
+  const tokenHeader = JSON.parse(Buffer.from(header, 'base64url').toString('utf8')) as {
+    alg?: string;
+    kid?: string;
+  };
+  if (tokenHeader.alg !== 'ES256' || !tokenHeader.kid) {
+    throw new Error('Local Auth returned an unsupported signing key.');
+  }
+  const keys = z
+    .array(z.object({ kty: z.literal('EC'), kid: z.string(), d: z.string() }).passthrough())
+    .parse(JSON.parse(jwksJson));
+  const key = keys.find((candidate) => candidate.kid === tokenHeader.kid);
+  if (!key) throw new Error('Local Auth signing key is unavailable.');
+  const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Record<
+    string,
+    unknown
+  >;
+  claims.aal = 'aal2';
+  const encodedPayload = base64Url(JSON.stringify(claims));
+  const input = `${header}.${encodedPayload}`;
+  const signature = sign('sha256', Buffer.from(input), {
+    key: createPrivateKey({ key, format: 'jwk' }),
+    dsaEncoding: 'ieee-p1363',
+  }).toString('base64url');
+  return `${input}.${signature}`;
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -106,16 +117,45 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const localUrl = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? '');
-  const cookieName = `sb-${localUrl.hostname.split('.')[0]}-auth-token`;
-  const expiresAt = Math.floor(Date.now() / 1000) + 900;
+  const authResponse = await fetch(`${localUrl.origin}/auth/v1/token?grant_type=password`, {
+    method: 'POST',
+    headers: {
+      apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ email, password }),
+    cache: 'no-store',
+    redirect: 'error',
+    signal: AbortSignal.timeout(5_000),
+  }).catch(() => null);
+  if (!authResponse?.ok) {
+    await authResponse?.body?.cancel();
+    return NextResponse.json({ code: 'local_auth_rejected' }, { status: 401 });
+  }
+  const sessionSchema = z
+    .object({
+      access_token: z.string().min(1),
+      expires_at: z.number().optional(),
+      expires_in: z.number().optional(),
+      refresh_token: z.string().min(1),
+      token_type: z.string(),
+      user: z.object({ id: z.string(), aud: z.string(), email: z.string().email() }).passthrough(),
+    })
+    .passthrough();
+  const parsedSession = sessionSchema.safeParse(await authResponse.json().catch(() => null));
+  if (!parsedSession.success || parsedSession.data.user.id !== localTestUserId) {
+    return NextResponse.json({ code: 'local_auth_rejected' }, { status: 401 });
+  }
   const session = {
-    access_token: signLocalAccessToken(process.env.E2E_JWT_SECRET ?? '', email),
-    expires_at: expiresAt,
-    expires_in: 900,
-    refresh_token: 'local-test-session',
-    token_type: 'bearer',
-    user: { id: localTestUserId, aud: 'authenticated', email, role: 'authenticated' },
+    ...parsedSession.data,
+    access_token: signLocalAal2Token(
+      process.env.LOCAL_TEST_AUTH_SIGNING_KEYS ?? '',
+      parsedSession.data.access_token,
+    ),
   };
+  const cookieName = `sb-${localUrl.hostname.split('.')[0]}-auth-token`;
+  const expiresAt =
+    session.expires_at ?? Math.floor(Date.now() / 1000) + (session.expires_in ?? 900);
   const encodedSession = `base64-${base64Url(JSON.stringify(session))}`;
   const cookieStore = await cookies();
   cookieStore.set(cookieName, encodedSession, {

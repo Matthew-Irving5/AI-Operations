@@ -24,7 +24,12 @@ test('authenticated Operations, spend, trace, approval, and feedback surfaces re
   await page.goto('/ai-traces-audit');
   await expect(page.getByRole('heading', { name: 'AI Traces & Audit' })).toBeVisible();
   await expect(page.getByText('workflow.completed')).toBeVisible();
-  await expect(page.getByText(/Correlation:/)).toBeVisible();
+  await expect(
+    page
+      .getByRole('article')
+      .filter({ has: page.getByRole('heading', { name: 'workflow.completed' }) })
+      .getByText(/Correlation:/),
+  ).toBeVisible();
 
   await page.goto('/approvals');
   await expect(page.getByRole('heading', { name: 'Approvals' })).toBeVisible();

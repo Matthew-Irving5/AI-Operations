@@ -37,6 +37,33 @@ function statusValue(status: string, name: string): string {
   return match[1];
 }
 
+function localAuthSigningKeys(projectId: string): string {
+  const names = execFileSync(
+    'docker',
+    ['ps', '--filter', `label=com.supabase.cli.project=${projectId}`, '--format', '{{.Names}}'],
+    { encoding: 'utf8', shell: process.platform === 'win32' },
+  )
+    .split(/\r?\n/)
+    .filter((name) => name.includes('_auth_'));
+  if (names.length !== 1) throw new Error('Isolated local Auth container was not found uniquely.');
+  const inspection = execFileSync('docker', ['inspect', names[0]], {
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+  });
+  const container = JSON.parse(inspection) as Array<{ Config?: { Env?: string[] } }>;
+  const value = container[0]?.Config?.Env?.find((entry) => entry.startsWith('GOTRUE_JWT_KEYS='));
+  if (!value) throw new Error('Isolated local Auth signing keys were unavailable.');
+  const keys = JSON.parse(value.slice('GOTRUE_JWT_KEYS='.length)) as Array<{
+    alg?: string;
+    kid?: string;
+    d?: string;
+  }>;
+  if (!keys.some((key) => key.alg === 'ES256' && key.kid && key.d)) {
+    throw new Error('Isolated local Auth ES256 private signing key was unavailable.');
+  }
+  return value.slice('GOTRUE_JWT_KEYS='.length);
+}
+
 async function freePort(): Promise<number> {
   const server = createServer();
   await new Promise<void>((resolve, reject) => {
@@ -73,9 +100,10 @@ function createIsolatedSupabaseProject(
   repositoryRoot: string,
   namespace: string,
   ports: { api: number; database: number; shadow: number },
+  localTestPassword: string,
 ): { temporaryRoot: string; projectDirectory: string } {
   const workdir = mkdtempSync(join(tmpdir(), `aiops-local-qa-${namespace.slice(0, 8)}-`));
-  const projectDirectory = join(workdir, `supabase-${namespace.slice(0, 8)}`);
+  const projectDirectory = join(workdir, 'supabase');
   cpSync(join(repositoryRoot, 'supabase'), projectDirectory, {
     recursive: true,
     filter: (source) =>
@@ -94,7 +122,20 @@ function createIsolatedSupabaseProject(
     /(\[db\]\s*\nport = )\d+/m,
     `$1${ports.database}\nshadow_port = ${ports.shadow}`,
   );
+  if (!/^\[db\.seed\]/m.test(config)) {
+    config += '\n[db.seed]\nsql_paths = ["./seed.sql"]\n';
+  }
   writeFileSync(configPath, config, 'utf8');
+  const seedPath = join(projectDirectory, 'seed.sql');
+  const seed = readFileSync(seedPath, 'utf8');
+  writeFileSync(
+    seedPath,
+    seed.replace(
+      "crypt('synthetic-only', gen_salt('bf'))",
+      `crypt('${localTestPassword}', gen_salt('bf'))`,
+    ),
+    'utf8',
+  );
   return { temporaryRoot: workdir, projectDirectory };
 }
 
@@ -123,6 +164,7 @@ function checkStagingAuthConfiguration(env: NodeJS.ProcessEnv): void {
 function localRunnerEnvironment(additions: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env = { ...process.env };
   const localCredentialNames = new Set([
+    'LOCAL_TEST_AUTH_SIGNING_KEYS',
     'E2E_JWT_SECRET',
     'LOCAL_TEST_PASSWORD',
     'LOCAL_TEST_STAGING_ANON_KEY',
@@ -167,13 +209,25 @@ async function main(): Promise<void> {
 
   const repositoryRoot = process.cwd();
   const namespace = randomUUID();
+  const localTestPassword = randomBytes(32).toString('base64url');
   const ports = await localPorts();
-  const supabase = createIsolatedSupabaseProject(repositoryRoot, namespace, ports);
-  const supabaseWorkdir = supabase.projectDirectory;
+  const supabase = createIsolatedSupabaseProject(
+    repositoryRoot,
+    namespace,
+    ports,
+    localTestPassword,
+  );
+  const supabaseWorkdir = supabase.temporaryRoot;
   const appBuildDir = `.next-local-qa-${namespace}`;
+  const preserveFailedStack = process.env.LOCAL_QA_KEEP_TEMP === 'true';
   let stackMayHaveStarted = false;
+  let testsPassed = false;
 
   const cleanup = () => {
+    if (preserveFailedStack && !testsPassed) {
+      process.stderr.write(`Local QA debug stack preserved at ${supabaseWorkdir}\n`);
+      return;
+    }
     if (stackMayHaveStarted) {
       try {
         run(['exec', 'supabase', 'stop', '--workdir', supabaseWorkdir, '--no-backup']);
@@ -208,6 +262,8 @@ async function main(): Promise<void> {
     const status = run(['exec', 'supabase', 'status', '-o', 'env', '--workdir', supabaseWorkdir]);
     const anonKey = statusValue(status, 'ANON_KEY');
     const jwtSecret = statusValue(status, 'JWT_SECRET');
+    const projectId = `aiops-${namespace.replaceAll('-', '').slice(0, 12)}`;
+    const signingKeys = localAuthSigningKeys(projectId);
     const supabaseUrl = statusValue(status, 'API_URL');
     await waitForLocalSupabase(supabaseUrl, anonKey);
 
@@ -217,20 +273,27 @@ async function main(): Promise<void> {
       LOCAL_TEST_AUTH: 'true',
       LOCAL_TEST_APP_ORIGIN: `http://127.0.0.1:${ports.app}`,
       LOCAL_TEST_EMAIL: process.env.LOCAL_TEST_EMAIL?.trim() || 'matthewirving99@gmail.com',
-      LOCAL_TEST_PASSWORD: process.env.LOCAL_TEST_PASSWORD || randomBytes(32).toString('base64url'),
+      LOCAL_TEST_PASSWORD: localTestPassword,
+      E2E_JWT_SECRET: jwtSecret,
       PUBLIC_APP_ORIGIN: `http://127.0.0.1:${ports.app}`,
       NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
       NEXT_PUBLIC_SUPABASE_ANON_KEY: anonKey,
-      E2E_JWT_SECRET: jwtSecret,
+      LOCAL_TEST_AUTH_SIGNING_KEYS: signingKeys,
       E2E_NAMESPACE: namespace,
       E2E_PORT: String(ports.app),
       LOCAL_QA_DIST_DIR: appBuildDir,
     });
-    execFileSync('corepack', ['pnpm', 'exec', 'playwright', 'test'], {
-      env,
-      shell: process.platform === 'win32',
-      stdio: 'inherit',
-    });
+    const runPlaywright = (args: string[]) =>
+      execFileSync('corepack', ['pnpm', 'exec', 'playwright', 'test', ...args], {
+        env,
+        shell: process.platform === 'win32',
+        stdio: 'inherit',
+      });
+    if (process.env.LOCAL_QA_AUTH_PROBE === 'true') {
+      runPlaywright(['tests/e2e/local-test-auth.spec.ts', '--project=chromium']);
+    }
+    runPlaywright([]);
+    testsPassed = true;
   } finally {
     cleanup();
   }

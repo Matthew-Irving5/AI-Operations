@@ -55,5 +55,39 @@ test('local test credentials reject invalid sign-in and allow a protected DB jou
   expect(await accepted.json()).toMatchObject({ feedbackId: expect.any(String) });
 
   await page.goto('/ai-traces-audit');
-  await expect(page.getByRole('heading', { name: 'feedback_submitted' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'feedback_submitted' }).first()).toBeVisible();
+});
+
+test('parallel local sessions receive independent protected browser sessions', async ({
+  browser,
+  baseURL,
+}) => {
+  const firstContext = await browser.newContext({ baseURL });
+  const secondContext = await browser.newContext({ baseURL });
+  try {
+    const [firstPage, secondPage] = await Promise.all([
+      firstContext.newPage(),
+      secondContext.newPage(),
+    ]);
+    await Promise.all([
+      signInLocalTestUser(firstPage, baseURL),
+      signInLocalTestUser(secondPage, baseURL),
+    ]);
+    const [firstCookies, secondCookies] = await Promise.all([
+      firstContext.cookies(),
+      secondContext.cookies(),
+    ]);
+    const firstAuthCookie = firstCookies.find((cookie) => cookie.name.endsWith('-auth-token'));
+    const secondAuthCookie = secondCookies.find((cookie) => cookie.name.endsWith('-auth-token'));
+    expect(firstAuthCookie).toBeDefined();
+    expect(secondAuthCookie).toBeDefined();
+    expect(firstAuthCookie?.value).not.toBe(secondAuthCookie?.value);
+    await Promise.all([firstPage.goto('/reports'), secondPage.goto('/reports')]);
+    await Promise.all([
+      expect(firstPage.getByRole('heading', { name: 'Reports' })).toBeVisible(),
+      expect(secondPage.getByRole('heading', { name: 'Reports' })).toBeVisible(),
+    ]);
+  } finally {
+    await Promise.all([firstContext.close(), secondContext.close()]);
+  }
 });
