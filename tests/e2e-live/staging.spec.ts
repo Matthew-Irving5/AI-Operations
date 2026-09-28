@@ -47,7 +47,9 @@ test.beforeEach(async ({ page }) => {
           /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
             body.factorId,
           ),
-        codeIsSixDigits: typeof body.code === 'string' && /^\d{6}$/.test(body.code),
+        codeType: typeof body.code,
+        codeLength: typeof body.code === 'string' ? body.code.length : null,
+        codeIsSixAsciiDigits: typeof body.code === 'string' && /^[0-9]{6}$/.test(body.code),
         jobIsAllowed:
           body.job === undefined ||
           [
@@ -183,7 +185,11 @@ async function signInWithFreshMfa(page: import('@playwright/test').Page): Promis
   await expect(page.getByLabel('Six-digit code')).toBeVisible({ timeout: 15_000 });
   const currentPeriodMs = Date.now() % 30_000;
   if (currentPeriodMs > 26_000) await page.waitForTimeout(5_000);
-  await page.getByLabel('Six-digit code').fill(totp(env.LIVE_E2E_TOTP_SECRET));
+  const code = totp(env.LIVE_E2E_TOTP_SECRET);
+  expect(code).toMatch(/^[0-9]{6}$/);
+  const codeField = page.getByLabel('Six-digit code');
+  await codeField.fill(code);
+  await expect(codeField).toHaveValue(/^[0-9]{6}$/);
   await page.getByRole('button', { name: 'Verify' }).click();
   await expect(page).toHaveURL(/\/overview(?:\?|$)/, { timeout: 20_000 });
 }
