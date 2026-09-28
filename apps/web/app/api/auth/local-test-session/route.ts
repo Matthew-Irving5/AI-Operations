@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -36,6 +36,7 @@ function signLocalAccessToken(secret: string, email: string): string {
       exp: now + 900,
       iat: now,
       iss: 'supabase-demo',
+      session_id: randomUUID(),
       role: 'authenticated',
       sub: localTestUserId,
     }),
