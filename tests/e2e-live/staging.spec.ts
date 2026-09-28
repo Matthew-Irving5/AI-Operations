@@ -184,14 +184,55 @@ async function signInWithFreshMfa(page: import('@playwright/test').Page): Promis
   await expect(page.getByRole('heading', { name: 'Verify your identity' })).toBeVisible();
   await page.getByLabel('Authenticator factor').selectOption(env.LIVE_E2E_TOTP_FACTOR_ID);
   await expect(page.getByLabel('Six-digit code')).toBeVisible({ timeout: 15_000 });
-  const currentPeriodMs = Date.now() % 30_000;
-  if (currentPeriodMs > 26_000) await page.waitForTimeout(5_000);
-  const code = totp(env.LIVE_E2E_TOTP_SECRET);
-  expect(code).toMatch(/^[0-9]{6}$/);
   const codeField = page.getByLabel('Six-digit code');
-  await codeField.fill(code);
-  await expect(codeField).toHaveValue(/^[0-9]{6}$/);
-  await page.getByRole('button', { name: 'Verify' }).click();
+  const clockResponse = await fetch(`${env.LIVE_E2E_BASE_URL}/login`, {
+    method: 'HEAD',
+    cache: 'no-store',
+  });
+  const serverDateHeader = clockResponse.headers.get('date');
+  const serverDateMs = serverDateHeader ? Date.parse(serverDateHeader) : Number.NaN;
+  if (!clockResponse.ok || !Number.isFinite(serverDateMs)) {
+    throw new Error('Could not establish the staging server time for the MFA check.');
+  }
+  const runnerNow = Date.now();
+  const serverNow = serverDateMs + (runnerNow % 1_000);
+  const clockSkewSeconds = Math.round((serverNow - runnerNow) / 1_000);
+  const timeToRolloverMs = 30_000 - (serverNow % 30_000);
+  const periodOffsets = timeToRolloverMs < 8_000 ? [1, 0, -1] : [0, -1, 1];
+  const summaries = stagingResponses.get(page) ?? [];
+  summaries.push(
+    `MFA clock check runnerToStagingSeconds=${clockSkewSeconds} timeToRolloverSeconds=${Math.round(timeToRolloverMs / 1_000)}`,
+  );
+
+  let verified = false;
+  for (const periodOffset of periodOffsets) {
+    const code = totp(env.LIVE_E2E_TOTP_SECRET, serverNow + periodOffset * 30_000);
+    expect(code).toMatch(/^[0-9]{6}$/);
+    await codeField.fill(code);
+    await expect(codeField).toHaveValue(/^[0-9]{6}$/);
+    const verification = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.origin === new URL(env.LIVE_E2E_BASE_URL).origin &&
+        url.pathname === '/api/auth/mfa/verify'
+      );
+    });
+    await page.getByRole('button', { name: 'Verify' }).click();
+    const response = await verification;
+    if (response.ok()) {
+      verified = true;
+      break;
+    }
+    const body = (await response.json().catch(() => null)) as {
+      diagnostic?: { stage?: unknown };
+    } | null;
+    if (response.status() !== 401 || body?.diagnostic?.stage !== 'supabase_mfa_verify') {
+      throw new Error(
+        `MFA stopped at a non-code verification failure (HTTP ${response.status()}).`,
+      );
+    }
+  }
+  expect(verified, 'staging rejected the bounded current and adjacent TOTP periods').toBe(true);
   await expect(page).toHaveURL(/\/overview(?:\?|$)/, { timeout: 20_000 });
 }
 
