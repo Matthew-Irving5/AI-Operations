@@ -1,9 +1,11 @@
 import { createHmac } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { parseLiveE2eEnvironment } from '../../apps/web/lib/live-e2e-safety';
 
 const env = parseLiveE2eEnvironment(process.env, 'suite');
 const stagingResponses = new WeakMap<import('@playwright/test').Page, string[]>();
+const mfaRequestShapes = new WeakMap<import('@playwright/test').Page, string[]>();
 
 function redactError(message: string): string {
   let redacted = message;
@@ -24,11 +26,79 @@ function redactError(message: string): string {
 
 test.beforeEach(async ({ page }) => {
   const summaries: string[] = [];
+  const requestShapes: string[] = [];
   stagingResponses.set(page, summaries);
+  mfaRequestShapes.set(page, requestShapes);
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (
+      url.origin !== new URL(env.LIVE_E2E_BASE_URL).origin ||
+      url.pathname !== '/api/auth/mfa/verify'
+    )
+      return;
+    let shape: Record<string, unknown> = { parseableJson: false };
+    try {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      shape = {
+        parseableJson: true,
+        keys: Object.keys(body).sort(),
+        factorIdIsUuid:
+          typeof body.factorId === 'string' &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+            body.factorId,
+          ),
+        codeIsSixDigits: typeof body.code === 'string' && /^\d{6}$/.test(body.code),
+        jobIsAllowed:
+          body.job === undefined ||
+          [
+            'apple_bridge',
+            'gmail_test',
+            'connection_revoke',
+            'connection_scope_change',
+            'worker_device_register',
+            'worker_device_revoke',
+            'digital_scan_create',
+            'finance_configure',
+            'finance_import',
+            'github_sync',
+          ].includes(String(body.job)),
+      };
+    } catch {
+      // Record only that the submitted body was not JSON; never retain its contents.
+    }
+    requestShapes.push(JSON.stringify(shape));
+  });
   page.on('response', (response) => {
     const url = new URL(response.url());
     if (url.origin === new URL(env.LIVE_E2E_BASE_URL).origin && url.pathname.startsWith('/api/')) {
       summaries.push(`${response.request().method()} ${url.pathname} ${response.status()}`);
+      if (url.pathname === '/api/auth/mfa/verify') {
+        void response
+          .json()
+          .then((body: unknown) => {
+            if (typeof body !== 'object' || body === null) return;
+            const diagnostic = (body as { diagnostic?: unknown }).diagnostic;
+            if (typeof diagnostic !== 'object' || diagnostic === null) return;
+            const safeDiagnostic = diagnostic as {
+              code?: unknown;
+              stage?: unknown;
+              validationIssues?: unknown;
+            };
+            const issues = Array.isArray(safeDiagnostic.validationIssues)
+              ? safeDiagnostic.validationIssues.filter(
+                  (issue): issue is { path: string; code: string } =>
+                    typeof issue === 'object' &&
+                    issue !== null &&
+                    typeof (issue as { path?: unknown }).path === 'string' &&
+                    typeof (issue as { code?: unknown }).code === 'string',
+                )
+              : [];
+            summaries.push(
+              `MFA diagnostic code=${String(safeDiagnostic.code)} stage=${String(safeDiagnostic.stage)} issues=${issues.map(({ path, code }) => `${path}:${code}`).join(',') || 'none'}`,
+            );
+          })
+          .catch(() => summaries.push('MFA diagnostic response was not JSON.'));
+      }
     }
   });
 });
@@ -70,12 +140,15 @@ test.afterEach(async ({ page }, testInfo) => {
       }
     })(),
     responses: (stagingResponses.get(page) ?? []).slice(-80),
+    mfaRequestShapes: (mfaRequestShapes.get(page) ?? []).slice(-10),
     errors: testInfo.errors.map((error) => ({
       message: redactError(error.message ?? 'Unknown failure'),
     })),
   };
+  const tracePath = testInfo.outputPath('failure-redacted-trace.json');
+  await writeFile(tracePath, JSON.stringify(diagnosticTrace, null, 2), 'utf8');
   await testInfo.attach('failure-redacted-trace.json', {
-    body: Buffer.from(JSON.stringify(diagnosticTrace, null, 2)),
+    path: tracePath,
     contentType: 'application/json',
   });
 });
