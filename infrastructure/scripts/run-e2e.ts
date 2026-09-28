@@ -142,6 +142,7 @@ function localRunnerEnvironment(additions: NodeJS.ProcessEnv): NodeJS.ProcessEnv
 }
 
 async function waitForLocalSupabase(url: string, anonKey: string): Promise<void> {
+  let lastResult = 'no response';
   for (let attempt = 0; attempt < 20; attempt += 1) {
     try {
       const response = await fetch(`${url}/auth/v1/health`, {
@@ -149,13 +150,14 @@ async function waitForLocalSupabase(url: string, anonKey: string): Promise<void>
         signal: AbortSignal.timeout(2_000),
       });
       if (response.ok) return;
+      lastResult = `HTTP ${response.status}`;
     } catch {
-      // Retry the local health endpoint for up to ten seconds.
+      lastResult = 'connection failed';
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   throw new Error(
-    'Local Supabase Auth did not become healthy; check Docker and the local port range.',
+    `Local Supabase Auth did not become healthy at ${url} (${lastResult}); check Docker and the local port range.`,
   );
 }
 
@@ -206,7 +208,7 @@ async function main(): Promise<void> {
     const status = run(['exec', 'supabase', 'status', '-o', 'env', '--workdir', supabaseWorkdir]);
     const anonKey = statusValue(status, 'ANON_KEY');
     const jwtSecret = statusValue(status, 'JWT_SECRET');
-    const supabaseUrl = `http://127.0.0.1:${ports.api}`;
+    const supabaseUrl = statusValue(status, 'API_URL');
     await waitForLocalSupabase(supabaseUrl, anonKey);
 
     const env = localRunnerEnvironment({
