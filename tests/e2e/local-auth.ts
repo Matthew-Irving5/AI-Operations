@@ -10,7 +10,8 @@ export async function signInLocalTestUser(page: Page, baseURL: string | undefine
     data: { email, password },
   });
   const body = await response.json().catch(() => null);
-  expect(response.status(), `Local test sign-in rejected: ${body?.code ?? 'no error code'}`).toBe(
-    200,
-  );
+  expect(
+    response.status(),
+    `Local test sign-in rejected: ${JSON.stringify(body ?? { code: 'no error code' })}`,
+  ).toBe(200);
 }

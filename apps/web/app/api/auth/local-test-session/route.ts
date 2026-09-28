@@ -56,13 +56,32 @@ export async function POST(request: Request): Promise<NextResponse> {
   const originError = requireSameOrigin(request);
   if (originError) return originError;
   const appOrigin = process.env.LOCAL_TEST_APP_ORIGIN;
-  const requestUrl = new URL(request.url);
-  if (
-    !appOrigin ||
-    requestUrl.origin !== appOrigin ||
-    !['127.0.0.1', 'localhost', '[::1]'].includes(requestUrl.hostname)
-  ) {
-    return NextResponse.json({ code: 'local_origin_required' }, { status: 403 });
+  const configuredOrigin = appOrigin ? new URL(appOrigin) : undefined;
+  const originHeader = request.headers.get('origin');
+  let originMatches = false;
+  try {
+    originMatches = Boolean(
+      configuredOrigin && originHeader && new URL(originHeader).origin === configuredOrigin.origin,
+    );
+  } catch {
+    originMatches = false;
+  }
+  const trustedHosts = [
+    request.headers.get('host'),
+    request.headers.get('x-forwarded-host')?.split(',')[0]?.trim(),
+  ];
+  const hostMatches = Boolean(
+    configuredOrigin &&
+      trustedHosts.some((host) => host?.toLowerCase() === configuredOrigin.host.toLowerCase()),
+  );
+  const isLoopbackHost = Boolean(
+    configuredOrigin && ['127.0.0.1', 'localhost', '[::1]'].includes(configuredOrigin.hostname),
+  );
+  if (!configuredOrigin || !originMatches || !hostMatches || !isLoopbackHost) {
+    return NextResponse.json(
+      { code: 'local_origin_required', originMatches, hostMatches, isLoopbackHost },
+      { status: 403 },
+    );
   }
 
   const parsed = credentialsSchema.safeParse(await request.json().catch(() => null));
