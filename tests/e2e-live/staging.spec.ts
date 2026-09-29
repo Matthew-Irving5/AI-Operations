@@ -1,9 +1,11 @@
 import { writeFile } from 'node:fs/promises';
 import { expect, test, webkit } from '@playwright/test';
 import { parseLiveE2eEnvironment } from '../../apps/web/lib/live-e2e-safety';
+import { writeLiveStagingAcceptanceEvidence } from '../../infrastructure/scripts/live-acceptance-evidence.js';
 
 const env = parseLiveE2eEnvironment(process.env, 'suite');
 const stagingResponses = new WeakMap<import('@playwright/test').Page, string[]>();
+let manualMfaChallengeObserved = false;
 
 function redactError(message: string): string {
   let redacted = message;
@@ -23,6 +25,15 @@ function redactError(message: string): string {
 }
 
 test.beforeEach(async ({ page }) => {
+  manualMfaChallengeObserved = false;
+  page.on('framenavigated', (frame) => {
+    if (frame !== page.mainFrame()) return;
+    try {
+      if (new URL(frame.url()).pathname === '/mfa') manualMfaChallengeObserved = true;
+    } catch {
+      // Ignore non-URL navigations; only the staging MFA route can satisfy acceptance.
+    }
+  });
   const summaries: string[] = [];
   stagingResponses.set(page, summaries);
   page.on('response', (response) => {
@@ -57,6 +68,17 @@ test.beforeEach(async ({ page }) => {
           .catch(() => summaries.push('MFA diagnostic response was not JSON.'));
       }
     }
+  });
+});
+
+test('deployed Worker release matches the exact hosted acceptance candidate', async ({ page }) => {
+  const candidateSha = process.env.LIVE_E2E_CANDIDATE_SHA;
+  expect(candidateSha).toMatch(/^[a-f0-9]{40}$/i);
+  const response = await page.request.get(new URL('/api/release', env.LIVE_E2E_BASE_URL).href);
+  expect(response.status()).toBe(200);
+  expect(await response.json()).toEqual({
+    schemaVersion: 1,
+    releaseSha: candidateSha?.toLowerCase(),
   });
 });
 
@@ -127,6 +149,11 @@ async function signInWithFreshMfa(page: import('@playwright/test').Page): Promis
     );
   }
   await expect(page).toHaveURL(/\/overview(?:\?|$)/, { timeout: 5 * 60_000 });
+  if (!manualMfaChallengeObserved) {
+    throw new Error(
+      'Hosted acceptance requires observing the real staging MFA challenge in this browser.',
+    );
+  }
 }
 
 async function serviceRows<T>(table: string, query: string): Promise<T[]> {
@@ -343,5 +370,42 @@ test('staging live journey proves unauthorised rejection, manual MFA, AAL2, Trav
     await webkitContext.close();
   } finally {
     await webkitBrowser.close();
+  }
+
+  const acceptanceOutputPath = process.env.LIVE_E2E_ACCEPTANCE_OUTPUT_PATH;
+  if (acceptanceOutputPath) {
+    const candidateSha = process.env.LIVE_E2E_CANDIDATE_SHA;
+    const candidateTreeSha = process.env.LIVE_E2E_CANDIDATE_TREE_SHA;
+    const pullRequestNumber = process.env.LIVE_E2E_PULL_REQUEST_NUMBER;
+    const deploymentRunId = process.env.LIVE_E2E_DEPLOYMENT_RUN_ID;
+    if (!candidateSha || !candidateTreeSha || !pullRequestNumber || !deploymentRunId)
+      throw new Error(
+        'Hosted acceptance output requires candidate SHA, tree SHA, PR number, and deployment run ID.',
+      );
+    await writeLiveStagingAcceptanceEvidence(acceptanceOutputPath, {
+      candidateSha,
+      candidateTreeSha,
+      pullRequestNumber: Number(pullRequestNumber),
+      deploymentRunId,
+      stagingOrigin: env.LIVE_E2E_BASE_URL,
+      completeSuite: 'passed',
+      manualMfaChallengeObserved,
+      browserChecks: { chromium: 'passed', webkit: 'passed' },
+      checks: {
+        authAal2: 'passed',
+        safeRead: 'passed',
+        safeWrite: 'passed',
+        ui: 'passed',
+        edgeFunctions: 'passed',
+        releaseVersion: 'passed',
+      },
+      correlationIds: [
+        launchResult.runId,
+        runs[0]!.correlation_id,
+        aal2Probe.body.probeId!,
+        webkitProbe.body.probeId!,
+      ],
+      acceptedAt: new Date().toISOString(),
+    });
   }
 });

@@ -1,7 +1,9 @@
 import { execFileSync } from 'node:child_process';
-import { readdir } from 'node:fs/promises';
+import { mkdir, readFile, readdir, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseLiveE2eEnvironment, stagingTarget } from '../../apps/web/lib/live-e2e-safety';
+import { createHostedStagingSuiteEvidence } from './release-gate.js';
+import { resolveGitTreeSha } from './live-acceptance-evidence.js';
 
 async function containsFailureArtifacts(directory: string): Promise<boolean> {
   let entries;
@@ -68,6 +70,64 @@ async function main(): Promise<void> {
   }
   const env = parseLiveE2eEnvironment(process.env, mode);
   if (env.LIVE_E2E_BASE_URL !== stagingTarget.origin) throw new Error('Unexpected E2E origin.');
+  let acceptanceOutputPath: string | undefined;
+  let acceptanceCandidateSha: string | undefined;
+  let acceptanceDeploymentRunId: string | undefined;
+  let acceptanceCandidateTreeSha: string | undefined;
+  let acceptancePullRequestNumber: number | undefined;
+  if (mode === 'suite') {
+    acceptanceCandidateSha = process.env.LIVE_E2E_CANDIDATE_SHA;
+    acceptanceDeploymentRunId = process.env.LIVE_E2E_DEPLOYMENT_RUN_ID;
+    acceptanceCandidateTreeSha = process.env.LIVE_E2E_CANDIDATE_TREE_SHA;
+    const pullRequestNumberInput = process.env.LIVE_E2E_PULL_REQUEST_NUMBER;
+    if (
+      [
+        acceptanceCandidateSha,
+        acceptanceDeploymentRunId,
+        acceptanceCandidateTreeSha,
+        pullRequestNumberInput,
+      ].some(Boolean) &&
+      ![
+        acceptanceCandidateSha,
+        acceptanceDeploymentRunId,
+        acceptanceCandidateTreeSha,
+        pullRequestNumberInput,
+      ].every(Boolean)
+    ) {
+      throw new Error(
+        'Hosted acceptance evidence requires candidate SHA, tree SHA, PR number, and staging deployment run ID.',
+      );
+    }
+    if (
+      acceptanceCandidateSha &&
+      acceptanceDeploymentRunId &&
+      acceptanceCandidateTreeSha &&
+      pullRequestNumberInput
+    ) {
+      if (!/^[a-f0-9]{40}$/i.test(acceptanceCandidateSha))
+        throw new Error('Hosted acceptance candidate SHA is invalid.');
+      if (!/^[a-f0-9]{40}$/i.test(acceptanceCandidateTreeSha))
+        throw new Error('Hosted acceptance candidate tree SHA is invalid.');
+      if (!/^[1-9][0-9]{0,19}$/.test(acceptanceDeploymentRunId))
+        throw new Error('Hosted acceptance deployment run ID is invalid.');
+      if (!/^[1-9][0-9]{0,8}$/.test(pullRequestNumberInput))
+        throw new Error('Hosted acceptance PR number is invalid.');
+      acceptanceCandidateSha = acceptanceCandidateSha.toLowerCase();
+      acceptanceCandidateTreeSha = acceptanceCandidateTreeSha.toLowerCase();
+      acceptancePullRequestNumber = Number(pullRequestNumberInput);
+      const actualTreeSha = resolveGitTreeSha(acceptanceCandidateSha);
+      if (actualTreeSha !== acceptanceCandidateTreeSha)
+        throw new Error(
+          'Hosted acceptance candidate tree SHA does not match the local candidate commit.',
+        );
+      acceptanceOutputPath = resolve(
+        'test-results',
+        `live-staging-acceptance-${acceptanceCandidateSha}-${Date.now()}.json`,
+      );
+      await mkdir(resolve('test-results'), { recursive: true });
+      process.env.LIVE_E2E_ACCEPTANCE_OUTPUT_PATH = acceptanceOutputPath;
+    }
+  }
   if (mode === 'fixtures' || mode === 'suite' || mode === 'fixture-mismatch') {
     // Supabase access stays in this Node process. Reset only queued runs owned by the
     // allowlisted staging profile and marked with this harness's UUID namespace.
@@ -215,15 +275,49 @@ async function main(): Promise<void> {
     return;
   }
 
-  execFileSync(
-    'corepack',
-    ['pnpm', 'exec', 'playwright', 'test', '--config=playwright.live.config.ts'],
-    {
-      stdio: 'inherit',
-      shell: process.platform === 'win32',
-      env: { ...process.env, ...env },
-    },
-  );
+  try {
+    execFileSync(
+      'corepack',
+      ['pnpm', 'exec', 'playwright', 'test', '--config=playwright.live.config.ts'],
+      {
+        stdio: 'inherit',
+        shell: process.platform === 'win32',
+        env: { ...process.env, ...env },
+      },
+    );
+    if (
+      acceptanceOutputPath &&
+      acceptanceCandidateSha &&
+      acceptanceDeploymentRunId &&
+      acceptanceCandidateTreeSha &&
+      acceptancePullRequestNumber
+    ) {
+      const rawEvidence: unknown = JSON.parse(await readFile(acceptanceOutputPath, 'utf8'));
+      const evidence = createHostedStagingSuiteEvidence(rawEvidence);
+      if (evidence.candidateSha !== acceptanceCandidateSha)
+        throw new Error(
+          'Hosted acceptance evidence candidate SHA did not match the requested candidate.',
+        );
+      if (evidence.deploymentRunId !== acceptanceDeploymentRunId)
+        throw new Error(
+          'Hosted acceptance evidence deployment run did not match the staging deployment.',
+        );
+      if (evidence.candidateTreeSha !== acceptanceCandidateTreeSha)
+        throw new Error(
+          'Hosted acceptance evidence candidate tree SHA did not match the requested candidate.',
+        );
+      if (evidence.pullRequestNumber !== acceptancePullRequestNumber)
+        throw new Error(
+          'Hosted acceptance evidence PR number did not match the requested candidate.',
+        );
+      process.stdout.write(
+        `Hosted staging acceptance evidence written to ${acceptanceOutputPath}.\n`,
+      );
+    }
+  } catch (error) {
+    if (acceptanceOutputPath) await unlink(acceptanceOutputPath).catch(() => undefined);
+    throw error;
+  }
 }
 
 void main().catch((error: unknown) => {

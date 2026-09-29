@@ -34,6 +34,20 @@ describe('Google connection sources route', () => {
     expect(globalThis.fetch).toHaveBeenCalledOnce();
   });
 
+  it('denies an unauthenticated read before calling the Edge Function', async () => {
+    vi.mocked(getAuthenticatedServerAccessToken).mockResolvedValueOnce(null);
+
+    const response = await GET(
+      new Request(
+        `https://operations.example/api/connections/sources?connectionId=${connectionId}`,
+      ),
+    );
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ code: 'unauthorised' });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it('retains the same-origin guard for POST', async () => {
     const response = await POST(
       new Request('https://operations.example/api/connections/sources', {

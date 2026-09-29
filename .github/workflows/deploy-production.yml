@@ -6,35 +6,75 @@ on:
   workflow_dispatch:
     inputs:
       staging_run_id:
-        description: Successful staging workflow run that produced the inventory to promote
+        description: Successful post-merge main staging run to promote
         required: true
         type: string
 
 permissions:
   contents: read
   actions: read
+  pull-requests: read
+  statuses: read
 
 concurrency:
   group: production-deployment
   cancel-in-progress: false
 jobs:
   deploy:
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'))
     runs-on: ubuntu-latest
     environment: production
     steps:
       - name: Resolve successful staging release
         id: staging-run
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
           STAGING_RUN_ID: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || inputs.staging_run_id }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
         run: |
-          details="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$STAGING_RUN_ID" --jq '[.name, .head_branch, .head_sha, .status, .conclusion] | @tsv')"
-          IFS=$'\t' read -r name branch sha status conclusion <<< "$details"
-          test "$name" = "Deploy staging" || { echo "Selected run is not Deploy staging."; exit 1; }
-          test "$branch" = "main" || { echo "Selected staging run did not come from main."; exit 1; }
-          test "$status" = "completed" && test "$conclusion" = "success" || { echo "Selected staging run did not complete successfully."; exit 1; }
-          printf 'sha=%s\nrun_id=%s\n' "$sha" "$STAGING_RUN_ID" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          [[ "$STAGING_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]] || { echo "Staging run ID is invalid."; exit 1; }
+          gh api "repos/$GH_REPOSITORY/actions/runs/$STAGING_RUN_ID" > staging-run.json
+          jq -e --arg repo "$GH_REPOSITORY" '
+            .head_repository.full_name == $repo and .name == "Deploy staging" and
+            .path == ".github/workflows/deploy-staging.yml" and .head_branch == "main" and
+            .event == "push" and .status == "completed" and .conclusion == "success"
+          ' staging-run.json > /dev/null || { echo "Selected run is not the successful post-merge main staging deployment."; exit 1; }
+          sha="$(jq -r '.head_sha' staging-run.json)"
+          [[ "$sha" =~ ^[a-f0-9]{40}$ ]] || { echo "Staging merge SHA is invalid."; exit 1; }
+          gh api "repos/$GH_REPOSITORY/commits/$sha/pulls" > merged-pulls.json
+          pr_count="$(jq --arg repo "$GH_REPOSITORY" --arg sha "$sha" '[.[] | select(.state == "closed" and .merged_at != null and .base.ref == "main" and .merge_commit_sha == $sha and .head.repo.full_name == $repo)] | length' merged-pulls.json)"
+          [[ "$pr_count" == "1" ]] || { echo "Merge SHA must have exactly one associated merged same-repository PR to main."; exit 1; }
+          candidate_sha="$(jq --arg repo "$GH_REPOSITORY" --arg sha "$sha" -r '.[] | select(.state == "closed" and .merged_at != null and .base.ref == "main" and .merge_commit_sha == $sha and .head.repo.full_name == $repo) | .head.sha' merged-pulls.json)"
+          pr_number="$(jq --arg repo "$GH_REPOSITORY" --arg sha "$sha" -r '.[] | select(.state == "closed" and .merged_at != null and .base.ref == "main" and .merge_commit_sha == $sha and .head.repo.full_name == $repo) | .number' merged-pulls.json)"
+          pr_branch="$(jq --arg repo "$GH_REPOSITORY" --arg sha "$sha" -r '.[] | select(.state == "closed" and .merged_at != null and .base.ref == "main" and .merge_commit_sha == $sha and .head.repo.full_name == $repo) | .head.ref' merged-pulls.json)"
+          [[ "$candidate_sha" =~ ^[a-f0-9]{40}$ && "$pr_number" =~ ^[1-9][0-9]{0,8}$ && -n "$pr_branch" ]] || { echo "Merged PR provenance is malformed."; exit 1; }
+          gh api "repos/$GH_REPOSITORY/git/commits/$sha" > merge-commit.json
+          merge_tree_sha="$(jq -r '.tree.sha' merge-commit.json)"
+          [[ "$merge_tree_sha" =~ ^[a-f0-9]{40}$ ]] || { echo "Merge commit tree SHA is invalid."; exit 1; }
+          gh api "repos/$GH_REPOSITORY/commits/$candidate_sha/statuses?per_page=100" > candidate-statuses.json
+          latest_status="$(jq -c '[.[] | select(.context == "AI Operations / Staging capability acceptance")] | sort_by(.created_at) | last // empty' candidate-statuses.json)"
+          [[ -n "$latest_status" ]] || { echo "Candidate has no staging capability acceptance status."; exit 1; }
+          status_state="$(jq -r '.state' <<< "$latest_status")"
+          status_url="$(jq -r '.target_url // empty' <<< "$latest_status")"
+          [[ "$status_state" == "success" ]] || { echo "Latest candidate staging acceptance status is not success."; exit 1; }
+          status_prefix="$GITHUB_SERVER_URL/$GH_REPOSITORY/actions/runs/"
+          [[ "$status_url" == "$status_prefix"* ]] || { echo "Acceptance status target URL is not an Actions run."; exit 1; }
+          acceptance_run_id="${status_url#"$status_prefix"}"
+          [[ "$acceptance_run_id" =~ ^[1-9][0-9]{0,19}$ ]] || { echo "Acceptance status target URL has an invalid run ID."; exit 1; }
+          gh api "repos/$GH_REPOSITORY/actions/runs/$acceptance_run_id" > acceptance-run.json
+          jq -e --arg repo "$GH_REPOSITORY" --arg sha "$candidate_sha" --arg branch "$pr_branch" '
+            .head_repository.full_name == $repo and .name == "Deploy staging" and
+            .path == ".github/workflows/deploy-staging.yml" and .event == "workflow_dispatch" and
+            .head_branch == $branch and .head_sha == $sha and .status == "completed" and .conclusion == "success"
+          ' acceptance-run.json > /dev/null || { echo "Status target is not the successful acceptance run for the merged PR head."; exit 1; }
+          gh api "repos/$GH_REPOSITORY/actions/runs/$acceptance_run_id/artifacts?per_page=100" > acceptance-artifacts.json
+          acceptance_artifact_name="staging-capability-acceptance-$candidate_sha"
+          acceptance_artifact_count="$(jq --arg name "$acceptance_artifact_name" '[.artifacts[] | select(.name == $name and .expired == false and .size_in_bytes > 0)] | length' acceptance-artifacts.json)"
+          [[ "$acceptance_artifact_count" == "1" ]] || { echo "Expected exactly one non-expired hosted acceptance artifact on the status run."; exit 1; }
+          printf 'sha=%s\nrun_id=%s\nacceptance_run_id=%s\ncandidate_sha=%s\npr_number=%s\npr_branch=%s\nmerge_tree_sha=%s\nacceptance_artifact_name=%s\n' \
+            "$sha" "$STAGING_RUN_ID" "$acceptance_run_id" "$candidate_sha" "$pr_number" "$pr_branch" "$merge_tree_sha" "$acceptance_artifact_name" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v5
         with:
           ref: ${{ steps.staging-run.outputs.sha }}
@@ -50,6 +90,98 @@ jobs:
           run-id: ${{ steps.staging-run.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: staging-parity
+      - name: Download status-bound hosted acceptance artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.staging-run.outputs.acceptance_artifact_name }}
+          run-id: ${{ steps.staging-run.outputs.acceptance_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: hosted-acceptance
+      - name: Resolve candidate deployment run from accepted evidence
+        id: candidate-deployment
+        env:
+          CANDIDATE_SHA: ${{ steps.staging-run.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          jq -e --arg sha "$CANDIDATE_SHA" '.schemaVersion == 1 and .state == "STAGING_ACCEPTED" and .acceptance.candidateSha == $sha' hosted-acceptance/acceptance-evidence.json > /dev/null || { echo "Hosted acceptance artifact is malformed or stale."; exit 1; }
+          run_id="$(jq -r '.acceptance.deploymentRunId' hosted-acceptance/acceptance-evidence.json)"
+          [[ "$run_id" =~ ^[1-9][0-9]{0,19}$ ]] || { echo "Accepted candidate deployment run ID is invalid."; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+      - name: Verify accepted candidate deployment run and artifact identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          CANDIDATE_SHA: ${{ steps.staging-run.outputs.candidate_sha }}
+          CANDIDATE_BRANCH: ${{ steps.staging-run.outputs.pr_branch }}
+          CANDIDATE_DEPLOYMENT_RUN_ID: ${{ steps.candidate-deployment.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GH_REPOSITORY/actions/runs/$CANDIDATE_DEPLOYMENT_RUN_ID" > candidate-deployment-run.json
+          jq -e --arg repo "$GH_REPOSITORY" --arg sha "$CANDIDATE_SHA" --arg branch "$CANDIDATE_BRANCH" '
+            .head_repository.full_name == $repo and .name == "Deploy staging" and
+            .path == ".github/workflows/deploy-staging.yml" and .event == "workflow_dispatch" and
+            .head_branch == $branch and .head_sha == $sha and .status == "completed" and .conclusion == "success"
+          ' candidate-deployment-run.json > /dev/null || { echo "Accepted candidate deployment run is not successful on the exact PR head."; exit 1; }
+          gh api "repos/$GH_REPOSITORY/actions/runs/$CANDIDATE_DEPLOYMENT_RUN_ID/artifacts?per_page=100" > candidate-deployment-artifacts.json
+          artifact_count="$(jq --arg name "candidate-staging-deployment-$CANDIDATE_SHA" '[.artifacts[] | select(.name == $name and .expired == false and .size_in_bytes > 0)] | length' candidate-deployment-artifacts.json)"
+          [[ "$artifact_count" == "1" ]] || { echo "Expected exactly one non-expired exact candidate deployment artifact."; exit 1; }
+      - name: Download exact candidate deployment evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-staging-deployment-${{ steps.staging-run.outputs.candidate_sha }}
+          run-id: ${{ steps.candidate-deployment.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: candidate-deployment
+      - name: Validate merged PR provenance and accepted candidate tree
+        env:
+          CANDIDATE_SHA: ${{ steps.staging-run.outputs.candidate_sha }}
+          CANDIDATE_PR_NUMBER: ${{ steps.staging-run.outputs.pr_number }}
+          MERGE_SHA: ${{ steps.staging-run.outputs.sha }}
+          REPOSITORY_FULL_NAME: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const read = (path) => JSON.parse(readFileSync(path, 'utf8'));
+          const acceptanceRecord = read('hosted-acceptance/acceptance-evidence.json');
+          const acceptance = acceptanceRecord.acceptance;
+          const deployment = read('candidate-deployment/candidate-staging-deployment.json');
+          const candidateRun = read('candidate-deployment-run.json');
+          const stagingRun = read('staging-run.json');
+          const mergeCommit = read('merge-commit.json');
+          const pullRequests = read('merged-pulls.json');
+          const matchingPrs = pullRequests.filter((pr) => pr.state === 'closed' && pr.merged_at && pr.base?.ref === 'main' && pr.merge_commit_sha === process.env.MERGE_SHA && pr.head?.repo?.full_name === process.env.REPOSITORY_FULL_NAME);
+          if (matchingPrs.length !== 1 || matchingPrs[0].number !== Number(process.env.CANDIDATE_PR_NUMBER) || matchingPrs[0].head?.sha !== process.env.CANDIDATE_SHA) {
+            throw new Error('Merge commit must map to the accepted PR number and exact candidate head uniquely.');
+          }
+          if (stagingRun.head_sha !== process.env.MERGE_SHA || stagingRun.head_branch !== 'main' || stagingRun.event !== 'push' || stagingRun.conclusion !== 'success') {
+            throw new Error('Production request is not bound to the successful post-merge main staging run.');
+          }
+          if (acceptanceRecord.schemaVersion !== 1 || acceptanceRecord.state !== 'STAGING_ACCEPTED' || acceptance.candidateSha !== process.env.CANDIDATE_SHA || acceptance.pullRequestNumber !== Number(process.env.CANDIDATE_PR_NUMBER)) {
+            throw new Error('Hosted acceptance artifact does not match the merged PR head and number.');
+          }
+          if (deployment.candidateSha !== acceptance.candidateSha || deployment.candidateTreeSha !== acceptance.candidateTreeSha || deployment.pullRequestNumber !== acceptance.pullRequestNumber || deployment.runId !== acceptance.deploymentRunId || String(deployment.runAttempt) !== String(candidateRun.run_attempt)) {
+            throw new Error('Candidate deployment artifact does not match accepted SHA/tree/PR/run attempt.');
+          }
+          const provenanceInput = {
+            requestedSha: process.env.MERGE_SHA,
+            mergeCommitSha: process.env.MERGE_SHA,
+            mergeCommitTreeSha: mergeCommit.tree?.sha,
+            repositoryFullName: process.env.REPOSITORY_FULL_NAME,
+            associatedPullRequests: matchingPrs.map((pr) => ({
+              number: pr.number,
+              state: pr.state,
+              mergedAt: pr.merged_at,
+              mergeCommitSha: pr.merge_commit_sha,
+              headSha: pr.head.sha,
+              baseBranch: pr.base.ref,
+              headRepositoryFullName: pr.head.repo.full_name,
+            })),
+            acceptance,
+          };
+          writeFileSync('production-promotion-input.json', JSON.stringify(provenanceInput) + '\n');
+          NODE
+          pnpm exec tsx infrastructure/scripts/release-gate.ts production-promote < production-promotion-input.json > production-promotion-evidence.json
       - name: Validate production environment identity
         env:
           GITHUB_CONFIG_SECRET_NAMES: ${{ secrets.CLOUDFLARE_ACCOUNT_ID != '' && 'CLOUDFLARE_ACCOUNT_ID,' || '' }}${{ secrets.CLOUDFLARE_API_TOKEN != '' && 'CLOUDFLARE_API_TOKEN,' || '' }}${{ secrets.FINANCE_ARCHIVE_GATEWAY_SECRET != '' && 'FINANCE_ARCHIVE_GATEWAY_SECRET,' || '' }}${{ secrets.PRODUCTION_SUPABASE_ACCESS_TOKEN != '' && 'PRODUCTION_SUPABASE_ACCESS_TOKEN,' || '' }}${{ secrets.PRODUCTION_SUPABASE_ANON_KEY != '' && 'PRODUCTION_SUPABASE_ANON_KEY,' || '' }}${{ secrets.PRODUCTION_SUPABASE_DB_PASSWORD != '' && 'PRODUCTION_SUPABASE_DB_PASSWORD,' || '' }}${{ secrets.PRODUCTION_SUPABASE_PROJECT_REF != '' && 'PRODUCTION_SUPABASE_PROJECT_REF,' || '' }}${{ secrets.PRODUCTION_SUPABASE_URL != '' && 'PRODUCTION_SUPABASE_URL' || '' }}
@@ -94,7 +226,8 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
-        run: pnpm run deploy -- --config wrangler.production.jsonc
+          RELEASE_SHA: ${{ steps.staging-run.outputs.sha }}
+        run: pnpm run deploy -- --config wrangler.production.jsonc --var "RELEASE_SHA:${RELEASE_SHA}"
       - name: Configure production finance archive gateway secret
         working-directory: apps/web
         env:
@@ -162,16 +295,21 @@ jobs:
           SOURCE_ATTESTATION_PATH: function-source-attestation.json
           DRIFT_REPORT_PATH: production-environment-drift.json
         run: pnpm environment:drift -- staging-production
-      - name: Safe production smoke test
-        run: |
-          for attempt in {1..18}; do
-            status="$(curl --silent --show-error --location --max-time 20 --output /dev/null --write-out '%{http_code}' https://ai-operations-production.ai-operations.workers.dev/login || true)"
-            if [ "$status" = "200" ]; then exit 0; fi
-            echo "Attempt $attempt returned HTTP ${status:-no-response}; waiting for deployment propagation."
-            sleep 5
-          done
-          echo "Production Worker did not return HTTP 200 within 90 seconds."
-          exit 1
+      - name: Run bounded production capability smoke
+        env:
+          PRODUCTION_ORIGIN: https://ai-operations-production.ai-operations.workers.dev
+          RELEASE_SHA: ${{ steps.staging-run.outputs.sha }}
+          PRODUCTION_PROMOTION_PATH: production-promotion-evidence.json
+          PRODUCTION_SMOKE_OUTPUT_PATH: production-smoke-evidence.json
+        run: pnpm exec tsx infrastructure/scripts/production-smoke.ts
+      - name: Upload production capability smoke evidence
+        if: always() && hashFiles('production-smoke-evidence.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-capability-smoke-${{ steps.staging-run.outputs.sha }}
+          path: production-smoke-evidence.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Upload production environment parity report
         if: always() && hashFiles('production-environment-drift.json') != ''
         uses: actions/upload-artifact@v4
