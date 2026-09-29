@@ -26,17 +26,6 @@ on:
         description: Redacted JSON emitted by the headed staging runner; required for accepted.
         required: false
         type: string
-  workflow_call:
-    inputs:
-      mode:
-        description: Workflow call mode; candidate is the only supported deployment mode.
-        required: false
-        type: string
-        default: candidate
-      candidate_sha:
-        description: Exact same-repository PR head SHA to deploy to staging.
-        required: false
-        type: string
 permissions:
   contents: read
   actions: read

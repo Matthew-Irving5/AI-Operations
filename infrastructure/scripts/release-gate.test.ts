@@ -984,83 +984,50 @@ test('JSON CLI does not echo malformed input into diagnostics', () => {
   assert.doesNotMatch(result.stderr, new RegExp(secretMarker));
 });
 
-test('hosted acceptance status workflow binds success to current PR and validated deployment evidence', async () => {
-  const workflow = await readFile(
-    new URL('../../.github/workflows/staging-acceptance-status.yml', import.meta.url),
-    'utf8',
-  );
-  const candidateWorkflow = await readFile(
-    new URL('../../.github/workflows/staging-candidate.yml', import.meta.url),
-    'utf8',
-  );
+test('manual staging dispatch is the only privileged candidate path and binds hosted acceptance', async () => {
   const deployWorkflow = await readFile(
     new URL('../../.github/workflows/deploy-staging.yml', import.meta.url),
     'utf8',
   );
 
-  assert.match(workflow, /if: github\.ref == 'refs\/heads\/main'/);
-  assert.match(workflow, /candidate_sha:/);
-  assert.match(workflow, /deployment_run_id:/);
-  assert.match(workflow, /acceptance_evidence:/);
-  assert.match(workflow, /outcome:[\s\S]*options: \[accepted, failed\]/);
-  assert.match(workflow, /head\.sha == \$sha/);
-  assert.match(workflow, /repos\/\$GH_REPOSITORY\/pulls\/\$pr_number/);
-  assert.match(workflow, /repos\/\$GH_REPOSITORY\/git\/commits\/\$CANDIDATE_SHA/);
   assert.match(
-    workflow,
-    /\.head_branch == "main" and[\s\S]*\.event == "workflow_run" and \.status == "completed" and \.conclusion == "success"/,
+    deployWorkflow,
+    /workflow_dispatch:[\s\S]*mode:[\s\S]*options: \[candidate, acceptance\]/,
   );
-  assert.doesNotMatch(workflow, /\.head_sha == \$sha/);
-  assert.match(workflow, /artifact_count/);
-  assert.match(workflow, /expired == false/);
+  assert.doesNotMatch(deployWorkflow, /workflow_call:|workflow_run:/);
+  for (const removedWorkflow of ['staging-candidate.yml', 'staging-acceptance-status.yml'])
+    await assert.rejects(
+      readFile(new URL(`../../.github/workflows/${removedWorkflow}`, import.meta.url), 'utf8'),
+      { code: 'ENOENT' },
+      `${removedWorkflow} must not restore the privileged workflow_run candidate path`,
+    );
+  assert.match(deployWorkflow, /candidate_sha:/);
+  assert.match(deployWorkflow, /deployment_run_id:/);
+  assert.match(deployWorkflow, /acceptance_evidence:/);
+  assert.match(deployWorkflow, /outcome:[\s\S]*options: \[accepted, failed\]/);
+  assert.match(deployWorkflow, /head\.sha == \$sha/);
+  assert.match(deployWorkflow, /repos\/\$GH_REPOSITORY\/pulls\/\$pr_number/);
+  assert.match(deployWorkflow, /repos\/\$GH_REPOSITORY\/git\/commits\/\$CANDIDATE_SHA/);
   assert.match(
-    workflow,
+    deployWorkflow,
     /actions\/download-artifact@v4[\s\S]*run-id: \$\{\{ inputs\.deployment_run_id \}\}/,
   );
-  assert.match(workflow, /deployment\.candidateSha !== sha/);
-  assert.match(workflow, /deployment\.candidateTreeSha !== candidateTreeSha/);
-  assert.match(workflow, /deployment\.pullRequestNumber/);
-  assert.match(workflow, /submitted\.candidateTreeSha !== candidateTreeSha/);
-  assert.match(workflow, /submitted\.pullRequestNumber !== currentPr\.number/);
-  assert.match(workflow, /currentPullRequestTreeSha: candidateTreeSha/);
-  assert.match(workflow, /currentPullRequestNumber: currentPr\.number/);
-  assert.match(workflow, /deployment\.runId !== runId/);
-  assert.match(workflow, /deployment\.runAttempt/);
-  assert.match(workflow, /release-gate\.ts staging-status/);
+  assert.match(deployWorkflow, /deployment\.candidateSha !== sha/);
+  assert.match(deployWorkflow, /deployment\.candidateTreeSha !== candidateTreeSha/);
+  assert.match(deployWorkflow, /deployment\.pullRequestNumber/);
+  assert.match(deployWorkflow, /submitted\.candidateTreeSha !== candidateTreeSha/);
+  assert.match(deployWorkflow, /submitted\.pullRequestNumber !== currentPr\.number/);
+  assert.match(deployWorkflow, /currentPullRequestTreeSha: candidateTreeSha/);
+  assert.match(deployWorkflow, /currentPullRequestNumber: currentPr\.number/);
+  assert.match(deployWorkflow, /deployment\.runId !== runId/);
+  assert.match(deployWorkflow, /deployment\.runAttempt/);
+  assert.match(deployWorkflow, /release-gate\.ts staging-status/);
   assert.ok(
-    workflow.indexOf('Upload validated hosted acceptance evidence') <
-      workflow.indexOf('Publish accepted commit status'),
+    deployWorkflow.indexOf('Upload validated hosted acceptance evidence') <
+      deployWorkflow.indexOf('Publish accepted commit status'),
   );
-  assert.match(workflow, /state:"failure"/);
-  assert.doesNotMatch(workflow, /deploy-production|production-promote/);
-
-  for (const requiredWorkflow of [
-    'CI',
-    'Database',
-    'Edge functions',
-    'E2E',
-    'Security',
-    'Performance',
-    'Windows worker foundation',
-    'CodeQL Advanced',
-    'Dependency review',
-  ])
-    assert.ok(
-      candidateWorkflow.includes(`- ${requiredWorkflow}`),
-      `missing required check ${requiredWorkflow}`,
-    );
-  assert.match(candidateWorkflow, /event\.workflow_run\.event == 'pull_request'/);
-  assert.match(candidateWorkflow, /head\.sha == \$sha/);
-  assert.match(candidateWorkflow, /latest-required-workflow-runs/);
-  assert.doesNotMatch(candidateWorkflow, /sort_by\(\.name, \.run_attempt\)/);
-  assert.match(candidateWorkflow, /candidate_sha: \$\{\{ needs\.gate\.outputs\.candidate_sha \}\}/);
-  assert.match(candidateWorkflow, /statuses\/\$CANDIDATE_SHA/);
-  assert.ok(
-    candidateWorkflow.includes(
-      '$prior_description" != "Staging acceptance failed: staging_slot_busy."',
-    ),
-    'automatic candidate gate must retry lease-busy candidates after the slot clears',
-  );
+  assert.match(deployWorkflow, /state:"failure"/);
+  assert.doesNotMatch(deployWorkflow, /deploy-production|production-promote/);
   assert.match(deployWorkflow, /group: staging-deployment[\s\S]*cancel-in-progress: false/);
   assert.match(
     deployWorkflow,
@@ -1107,7 +1074,6 @@ test('hosted acceptance status workflow binds success to current PR and validate
   assert.match(deployWorkflow, /commits\/\$\{headSha\}\/status/);
   assert.match(deployWorkflow, /headSha === candidateSha\) continue/);
   assert.match(deployWorkflow, /staging_slot_busy/);
-  assert.match(candidateWorkflow, /Staging acceptance failed: staging_slot_busy\./);
   assert.match(
     deployWorkflow,
     /Manual candidate deploy must use the current non-main PR branch ref/,
@@ -1119,7 +1085,6 @@ test('hosted acceptance status workflow binds success to current PR and validate
   );
   assert.match(deployWorkflow, /current-pr-on-failure\.json/);
   assert.match(deployWorkflow, /current-pr\.json[\s\S]*acceptance_malformed/);
-  assert.match(deployWorkflow, /workflow_run|workflow_dispatch/);
   assert.doesNotMatch(deployWorkflow, /pull_request_target/);
   assert.match(deployWorkflow, /ref: \$\{\{ inputs\.candidate_sha \|\| github\.sha \}\}/);
   assert.match(deployWorkflow, /RELEASE_SHA: \$\{\{ inputs\.candidate_sha \|\| github\.sha \}\}/);
