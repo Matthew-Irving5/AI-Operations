@@ -346,6 +346,7 @@ test('staging live journey proves unauthorised rejection, manual MFA, AAL2, Trav
     correlatedTrace.getByRole('heading', { name: 'on_demand_run_queued' }),
   ).toBeVisible();
 
+  let webkitProbeId: string | null = null;
   const webkitBrowser = await webkit.launch({ headless: true });
   try {
     const webkitContext = await webkitBrowser.newContext({
@@ -367,6 +368,9 @@ test('staging live journey proves unauthorised rejection, manual MFA, AAL2, Trav
     });
     expect(webkitProbe.httpStatus).toBe(200);
     expect(webkitProbe.body).toMatchObject({ status: 400, code: 'invalid_plan' });
+    if (!webkitProbe.body.probeId)
+      throw new Error('WebKit AAL2 probe did not return its correlation ID.');
+    webkitProbeId = webkitProbe.body.probeId;
     await webkitContext.close();
   } finally {
     await webkitBrowser.close();
@@ -374,6 +378,8 @@ test('staging live journey proves unauthorised rejection, manual MFA, AAL2, Trav
 
   const acceptanceOutputPath = process.env.LIVE_E2E_ACCEPTANCE_OUTPUT_PATH;
   if (acceptanceOutputPath) {
+    if (!webkitProbeId)
+      throw new Error('Hosted acceptance evidence requires the passing WebKit probe result.');
     const candidateSha = process.env.LIVE_E2E_CANDIDATE_SHA;
     const candidateTreeSha = process.env.LIVE_E2E_CANDIDATE_TREE_SHA;
     const pullRequestNumber = process.env.LIVE_E2E_PULL_REQUEST_NUMBER;
@@ -403,7 +409,7 @@ test('staging live journey proves unauthorised rejection, manual MFA, AAL2, Trav
         launchResult.runId,
         runs[0]!.correlation_id,
         aal2Probe.body.probeId!,
-        webkitProbe.body.probeId!,
+        webkitProbeId,
       ],
       acceptedAt: new Date().toISOString(),
     });

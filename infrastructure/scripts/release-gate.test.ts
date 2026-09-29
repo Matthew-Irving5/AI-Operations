@@ -1109,6 +1109,11 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
     hostedSuite,
     /deployed Worker release matches the exact hosted acceptance candidate[\s\S]*page\.request\.get\(new URL\('\/api\/release',[\s\S]*releaseSha: candidateSha\?\.toLowerCase\(\)/,
   );
+  assert.match(hostedSuite, /let webkitProbeId: string \| null = null/);
+  assert.match(hostedSuite, /webkitProbeId = webkitProbe\.body\.probeId/);
+  assert.match(hostedSuite, /Hosted acceptance evidence requires the passing WebKit probe result/);
+  assert.match(hostedSuite, /webkitProbeId,/);
+  assert.doesNotMatch(hostedSuite, /webkitProbe\.body\.probeId!/);
   assert.match(deployWorkflow, /checked_out_sha="\$\(git rev-parse HEAD\)"/);
   assert.match(deployWorkflow, /git rev-parse --verify 'HEAD\^\{tree\}'/);
   assert.match(deployWorkflow, /pull_request_number=\$pr_number/);
