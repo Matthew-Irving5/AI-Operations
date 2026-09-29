@@ -233,8 +233,14 @@ export function compareInventory(
   return mismatches;
 }
 
-function compareWorkerToExpected(name: EnvironmentName, actual: WorkerInventory): string[] {
+export function compareWorkerToExpected(
+  name: EnvironmentName,
+  actual: WorkerInventory,
+  releaseSha: string,
+): string[] {
+  if (!/^[a-f0-9]{40}$/.test(releaseSha)) return [`${name}: release SHA is invalid`];
   const expected = inventoryFromWrangler(name);
+  expected.vars.RELEASE_SHA = valueHash(releaseSha);
   const fingerprint = (value: WorkerInventory) =>
     JSON.stringify({
       vars: Object.fromEntries(
@@ -636,7 +642,7 @@ function valueHash(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function inventoryFromWrangler(name: EnvironmentName): WorkerInventory {
+export function inventoryFromWrangler(name: EnvironmentName): WorkerInventory {
   const config = manifest.environments[name];
   const raw = readFileSync(config.wranglerConfig, 'utf8')
     .replace(/^\s*\/\/.*$/gm, '')
@@ -793,7 +799,7 @@ export async function runDriftCheck(
         `${name}: Edge Function ${slug} verify_jwt differs from supabase/config.toml`,
       );
   }
-  mismatches.push(...compareWorkerToExpected(name, current.worker));
+  mismatches.push(...compareWorkerToExpected(name, current.worker, sourceAttestation.commit));
   const missingSecrets = manifest.requiredEdgeSecrets.filter(
     (secret) => !current.secrets.includes(secret),
   );
@@ -868,8 +874,8 @@ export async function runPairCheck(): Promise<DriftReport> {
       ['staging', 'production'],
       manifest.edgeSecretNameException,
     ),
-    ...compareWorkerToExpected('staging', staging.worker),
-    ...compareWorkerToExpected('production', production.worker),
+    ...compareWorkerToExpected('staging', staging.worker, productionAttestation.commit),
+    ...compareWorkerToExpected('production', production.worker, productionAttestation.commit),
     ...deploymentWorkflowMismatches('staging'),
     ...deploymentWorkflowMismatches('production'),
     ...missingGitHubEnvironmentNames('staging', stagingGithub),
