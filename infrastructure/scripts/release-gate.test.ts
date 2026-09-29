@@ -1059,12 +1059,24 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
     /if: github\.event_name == 'workflow_dispatch' && inputs\.mode == 'candidate'[\s\S]*latest-required-workflow-runs[\s\S]*candidate-readiness/,
   );
   assert.ok(
-    leaseCheck >= 0 && leaseCheck < deployPending,
-    'lease guard must run before staging mutation',
+    leaseCheck >= manualRequiredGate && leaseCheck < environmentValidation,
+    'lease guard must run after required-check validation and before staging environment access',
   );
   assert.ok(
     deployWorkflow.indexOf('name: Revalidate exact candidate PR head') < leaseCheck,
     'lease guard must run after resolving the current candidate PR',
+  );
+  assert.ok(
+    deployWorkflow.indexOf('pnpm install --frozen-lockfile') < leaseCheck,
+    'release-gate tooling must be installed before lease validation',
+  );
+  assert.match(
+    deployWorkflow,
+    /ref: \$\{\{ inputs\.candidate_sha \|\| github\.sha \}\}[\s\S]*persist-credentials: false/,
+  );
+  assert.ok(
+    leaseCheck < deployPending,
+    'lease guard must run before the candidate staging status/deployment begins',
   );
   assert.ok(
     deployWorkflow.indexOf('name: Smoke test staging Worker') < acceptancePending,

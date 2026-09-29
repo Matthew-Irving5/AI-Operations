@@ -65,6 +65,52 @@ jobs:
           pr_number="$(jq --arg repo "$GH_REPOSITORY" --arg sha "$CANDIDATE_SHA" -r '.[] | select(.state == "open" and .base.ref == "main" and .head.sha == $sha and .head.repo.full_name == $repo) | .number' candidate-pulls.json)"
           [[ "$pr_number" =~ ^[1-9][0-9]{0,8}$ ]] || { echo "Candidate PR number is invalid."; exit 1; }
           echo "pull_request_number=$pr_number" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.candidate_sha || github.sha }}
+          persist-credentials: false
+      - name: Derive exact checked-out candidate tree
+        id: candidate-tree
+        if: inputs.candidate_sha != ''
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          checked_out_sha="$(git rev-parse HEAD)"
+          [[ "$checked_out_sha" == "$CANDIDATE_SHA" ]] || { echo "Checkout does not match the exact candidate SHA."; exit 1; }
+          candidate_tree_sha="$(git rev-parse --verify 'HEAD^{tree}')"
+          [[ "$candidate_tree_sha" =~ ^[a-f0-9]{40}$ ]] || { echo "Checked-out candidate tree SHA is invalid."; exit 1; }
+          echo "candidate_tree_sha=$candidate_tree_sha" >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.18.2 }
+      - uses: actions/setup-node@v5
+        with: { node-version: 22.18.0, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Validate manual candidate required workflows
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'candidate'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          PULL_REQUEST_NUMBER: ${{ steps.candidate.outputs.pull_request_number }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GH_REPOSITORY/actions/runs?head_sha=$CANDIDATE_SHA&per_page=100" > manual-candidate-runs.json
+          CANDIDATE_SHA="$CANDIDATE_SHA" node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const { workflow_runs: workflowRuns } = JSON.parse(readFileSync('manual-candidate-runs.json', 'utf8'));
+          writeFileSync('manual-workflow-runs-input.json', JSON.stringify({ candidateSha: process.env.CANDIDATE_SHA, workflowRuns }) + '\n');
+          NODE
+          pnpm exec tsx infrastructure/scripts/release-gate.ts latest-required-workflow-runs < manual-workflow-runs-input.json > manual-latest-workflow-runs.json
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const candidateSha = process.env.CANDIDATE_SHA;
+          const pullRequestNumber = Number(process.env.PULL_REQUEST_NUMBER);
+          const latest = JSON.parse(readFileSync('manual-latest-workflow-runs.json', 'utf8')).workflowRuns;
+          const checks = latest.map((run) => ({ name: run.name, headSha: run.head_sha, conclusion: run.status === 'completed' ? run.conclusion : 'pending' }));
+          writeFileSync('manual-candidate-readiness-input.json', JSON.stringify({ candidateSha, pullRequestHeadSha: candidateSha, prNumber: pullRequestNumber, baseBranch: 'main', sameRepository: true, pullRequestOpen: true, checks }) + '\n');
+          NODE
+          pnpm exec tsx infrastructure/scripts/release-gate.ts candidate-readiness < manual-candidate-readiness-input.json > manual-candidate-readiness.json
       - name: Check shared staging acceptance lease
         if: inputs.candidate_sha != ''
         env:
@@ -116,51 +162,6 @@ jobs:
           set -euo pipefail
           jq -n '{state:"pending",context:"AI Operations / Staging capability acceptance",description:"Candidate staging deployment is in progress."}' > commit-status.json
           gh api "repos/$GH_REPOSITORY/statuses/$CANDIDATE_SHA" --method POST --input commit-status.json > /dev/null
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.candidate_sha || github.sha }}
-      - name: Derive exact checked-out candidate tree
-        id: candidate-tree
-        if: inputs.candidate_sha != ''
-        env:
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-        run: |
-          set -euo pipefail
-          checked_out_sha="$(git rev-parse HEAD)"
-          [[ "$checked_out_sha" == "$CANDIDATE_SHA" ]] || { echo "Checkout does not match the exact candidate SHA."; exit 1; }
-          candidate_tree_sha="$(git rev-parse --verify 'HEAD^{tree}')"
-          [[ "$candidate_tree_sha" =~ ^[a-f0-9]{40}$ ]] || { echo "Checked-out candidate tree SHA is invalid."; exit 1; }
-          echo "candidate_tree_sha=$candidate_tree_sha" >> "$GITHUB_OUTPUT"
-      - uses: pnpm/action-setup@v4
-        with: { version: 10.18.2 }
-      - uses: actions/setup-node@v5
-        with: { node-version: 22.18.0, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      - name: Validate manual candidate required workflows
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'candidate'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPOSITORY: ${{ github.repository }}
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-          PULL_REQUEST_NUMBER: ${{ steps.candidate.outputs.pull_request_number }}
-        run: |
-          set -euo pipefail
-          gh api "repos/$GH_REPOSITORY/actions/runs?head_sha=$CANDIDATE_SHA&per_page=100" > manual-candidate-runs.json
-          CANDIDATE_SHA="$CANDIDATE_SHA" node --input-type=module <<'NODE'
-          import { readFileSync, writeFileSync } from 'node:fs';
-          const { workflow_runs: workflowRuns } = JSON.parse(readFileSync('manual-candidate-runs.json', 'utf8'));
-          writeFileSync('manual-workflow-runs-input.json', JSON.stringify({ candidateSha: process.env.CANDIDATE_SHA, workflowRuns }) + '\n');
-          NODE
-          pnpm exec tsx infrastructure/scripts/release-gate.ts latest-required-workflow-runs < manual-workflow-runs-input.json > manual-latest-workflow-runs.json
-          node --input-type=module <<'NODE'
-          import { readFileSync, writeFileSync } from 'node:fs';
-          const candidateSha = process.env.CANDIDATE_SHA;
-          const pullRequestNumber = Number(process.env.PULL_REQUEST_NUMBER);
-          const latest = JSON.parse(readFileSync('manual-latest-workflow-runs.json', 'utf8')).workflowRuns;
-          const checks = latest.map((run) => ({ name: run.name, headSha: run.head_sha, conclusion: run.status === 'completed' ? run.conclusion : 'pending' }));
-          writeFileSync('manual-candidate-readiness-input.json', JSON.stringify({ candidateSha, pullRequestHeadSha: candidateSha, prNumber: pullRequestNumber, baseBranch: 'main', sameRepository: true, pullRequestOpen: true, checks }) + '\n');
-          NODE
-          pnpm exec tsx infrastructure/scripts/release-gate.ts candidate-readiness < manual-candidate-readiness-input.json > manual-candidate-readiness.json
       - name: Validate staging environment identity
         env:
           GITHUB_CONFIG_SECRET_NAMES: ${{ secrets.CLOUDFLARE_ACCOUNT_ID != '' && 'CLOUDFLARE_ACCOUNT_ID,' || '' }}${{ secrets.CLOUDFLARE_API_TOKEN != '' && 'CLOUDFLARE_API_TOKEN,' || '' }}${{ secrets.FINANCE_ARCHIVE_GATEWAY_SECRET != '' && 'FINANCE_ARCHIVE_GATEWAY_SECRET,' || '' }}${{ secrets.STAGING_SUPABASE_ACCESS_TOKEN != '' && 'STAGING_SUPABASE_ACCESS_TOKEN,' || '' }}${{ secrets.STAGING_SUPABASE_ANON_KEY != '' && 'STAGING_SUPABASE_ANON_KEY,' || '' }}${{ secrets.STAGING_SUPABASE_DB_PASSWORD != '' && 'STAGING_SUPABASE_DB_PASSWORD,' || '' }}${{ secrets.STAGING_SUPABASE_PROJECT_REF != '' && 'STAGING_SUPABASE_PROJECT_REF,' || '' }}${{ secrets.STAGING_SUPABASE_URL != '' && 'STAGING_SUPABASE_URL' || '' }}
