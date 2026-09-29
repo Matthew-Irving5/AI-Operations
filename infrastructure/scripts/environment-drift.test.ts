@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   compareInventory,
+  compareWorkerToExpected,
   compareMigrations,
   compareSourceAttestations,
   compareSourceDigests,
@@ -14,9 +16,14 @@ import {
   validateConfig,
   missingGitHubEnvironmentNames,
   validateStagingSnapshot,
+  inventoryFromWrangler,
   type FunctionInventory,
   type WorkerInventory,
 } from './environment-drift.js';
+
+function hashValue(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
 
 const functions: FunctionInventory = [
   { slug: 'manager-list', verify_jwt: true, version: 10, ezbr_sha256: 'sha-a' },
@@ -191,6 +198,43 @@ test('detects schema, function inventory, auth, release attestation, and worker 
   assert.ok(mismatches.some((mismatch) => mismatch.includes('release source attestations differ')));
   assert.ok(
     mismatches.some((mismatch) => mismatch.includes('Worker runtime configuration differs')),
+  );
+});
+
+test('validates the deployed RELEASE_SHA by hash while preserving strict Worker drift checks', () => {
+  const releaseSha = 'a'.repeat(40);
+  const configured = inventoryFromWrangler('staging');
+  const live: WorkerInventory = {
+    ...configured,
+    vars: { ...configured.vars, RELEASE_SHA: hashValue(releaseSha) },
+  };
+
+  assert.deepEqual(compareWorkerToExpected('staging', live, releaseSha), []);
+  assert.deepEqual(compareWorkerToExpected('staging', configured, releaseSha), [
+    'staging: Cloudflare runtime configuration differs from apps/web/wrangler.jsonc',
+  ]);
+  assert.deepEqual(
+    compareWorkerToExpected(
+      'staging',
+      { ...live, vars: { ...live.vars, RELEASE_SHA: hashValue('b'.repeat(40)) } },
+      releaseSha,
+    ),
+    ['staging: Cloudflare runtime configuration differs from apps/web/wrangler.jsonc'],
+  );
+  assert.deepEqual(
+    compareWorkerToExpected(
+      'staging',
+      { ...live, vars: { ...live.vars, UNEXPECTED: hashValue('unexpected') } },
+      releaseSha,
+    ),
+    ['staging: Cloudflare runtime configuration differs from apps/web/wrangler.jsonc'],
+  );
+  assert.deepEqual(compareWorkerToExpected('staging', live, 'not-a-release-sha'), [
+    'staging: release SHA is invalid',
+  ]);
+  assert.equal(
+    JSON.stringify(compareWorkerToExpected('staging', live, releaseSha)).includes(releaseSha),
+    false,
   );
 });
 
