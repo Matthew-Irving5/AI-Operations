@@ -1156,6 +1156,22 @@ test('production deploy requires status-bound staging acceptance and squash PR p
   );
   assert.match(workflow, /acceptance_artifact_count/);
   assert.match(workflow, /candidate-deployment-artifacts\.json/);
+  const releaseResolution = workflow.slice(
+    workflow.indexOf('name: Resolve successful staging release'),
+    workflow.indexOf('- uses: actions/checkout@v5'),
+  );
+  assert.match(
+    releaseResolution,
+    /PROMOTION_EVIDENCE_DIR: \$\{\{ runner\.temp \}\}\/ai-operations-production-release-evidence/,
+  );
+  assert.match(
+    releaseResolution,
+    /mkdir -p "\$PROMOTION_EVIDENCE_DIR"[\s\S]*cd "\$PROMOTION_EVIDENCE_DIR"/,
+  );
+  assert.match(
+    workflow,
+    /const stagingRun = readPromotionEvidence\('staging-run\.json'\);[\s\S]*const mergeCommit = readPromotionEvidence\('merge-commit\.json'\);[\s\S]*const pullRequests = readPromotionEvidence\('merged-pulls\.json'\);/,
+  );
   assert.match(
     workflow,
     /String\(deployment\.runAttempt\) !== String\(candidateRun\.run_attempt\)/,
