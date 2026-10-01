@@ -96,13 +96,7 @@ jobs:
         run: |
           set -euo pipefail
           gh api --paginate "repos/$GH_REPOSITORY/pulls/$PULL_REQUEST_NUMBER/files?per_page=100" --jq '.[].filename' > candidate-files.txt
-          node --import tsx --input-type=module <<'NODE'
-          import { readFileSync, appendFileSync } from 'node:fs';
-          import { selectHostedAcceptanceProfile } from './infrastructure/scripts/release-gate.ts';
-          const files = readFileSync('candidate-files.txt', 'utf8').split(/\r?\n/).filter(Boolean);
-          const profile = selectHostedAcceptanceProfile(files);
-          appendFileSync(process.env.GITHUB_OUTPUT, `acceptance_profile=${profile}\n`);
-          NODE
+          pnpm exec tsx infrastructure/scripts/acceptance-profile.ts candidate-files.txt
       - name: Validate manual candidate required workflows
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'candidate'
         env:
