@@ -1260,7 +1260,10 @@ test('targeted hosted acceptance is valid without MFA and cannot satisfy an auth
     deploymentRunId: '36474707377',
     stagingOrigin: origin,
     humanMfa: 'not-required',
-    checks: [{ name: 'feedback-submit', result: 'passed' }],
+    checks: [
+      { name: 'source-drift', result: 'passed' },
+      { name: 'readiness-smoke', result: 'passed' },
+    ],
     correlationIds: ['trace-1'],
     acceptedAt: '2026-09-29T10:00:00.000Z',
   };
