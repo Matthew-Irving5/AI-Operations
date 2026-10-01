@@ -312,6 +312,7 @@ jobs:
           GH_REPOSITORY: ${{ github.repository }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           PULL_REQUEST_NUMBER: ${{ steps.candidate.outputs.pull_request_number }}
+          WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           current_sha="$(gh api "repos/$GH_REPOSITORY/pulls/$PULL_REQUEST_NUMBER" --jq '.head.sha')"
@@ -323,7 +324,7 @@ jobs:
           NODE
           pnpm exec tsx infrastructure/scripts/release-gate.ts staging-status < staging-status-input.json > validated-acceptance.json
           jq '{schemaVersion:1,state:"STAGING_ACCEPTED",acceptance:.acceptance}' validated-acceptance.json > acceptance-evidence.json
-          jq '.status' validated-acceptance.json > commit-status.json
+          jq --arg url "$WORKFLOW_RUN_URL" '.status + {target_url:$url}' validated-acceptance.json > commit-status.json
           gh api "repos/$GH_REPOSITORY/statuses/$CANDIDATE_SHA" --method POST --input commit-status.json > /dev/null
       - name: Upload targeted staging acceptance evidence
         if: inputs.candidate_sha != '' && steps.acceptance-profile.outputs.acceptance_profile == 'targeted'
