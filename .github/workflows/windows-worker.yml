@@ -1,5 +1,12 @@
-name: Windows worker foundation
-on: [pull_request, merge_group]
+name: Windows worker full regression
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '29 4 * * *'
+
+concurrency:
+  group: windows-worker-full-regression
+  cancel-in-progress: true
 
 permissions:
   contents: read

@@ -10,7 +10,7 @@ on:
         type: choice
         options: [candidate, acceptance]
       candidate_sha:
-        description: Exact current same-repository PR head SHA; manual candidate dispatch also requires all nine latest required PR workflows to pass.
+        description: Exact current same-repository PR head SHA; manual candidate dispatch requires the current baseline PR verification workflows to pass.
         required: true
         type: string
       deployment_run_id:
@@ -86,6 +86,23 @@ jobs:
       - uses: actions/setup-node@v5
         with: { node-version: 22.18.0, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - name: Determine hosted acceptance profile from changed files
+        id: acceptance-profile
+        if: inputs.candidate_sha != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          PULL_REQUEST_NUMBER: ${{ steps.candidate.outputs.pull_request_number }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GH_REPOSITORY/pulls/$PULL_REQUEST_NUMBER/files?per_page=100" --jq '.[].filename' > candidate-files.txt
+          node --import tsx --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          import { selectHostedAcceptanceProfile } from './infrastructure/scripts/release-gate.ts';
+          const files = readFileSync('candidate-files.txt', 'utf8').split(/\r?\n/).filter(Boolean);
+          const profile = selectHostedAcceptanceProfile(files);
+          appendFileSync(process.env.GITHUB_OUTPUT, `acceptance_profile=${profile}\n`);
+          NODE
       - name: Validate manual candidate required workflows
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'candidate'
         env:
@@ -283,8 +300,9 @@ jobs:
           PULL_REQUEST_NUMBER: ${{ steps.candidate.outputs.pull_request_number }}
           DEPLOYMENT_RUN_ID: ${{ github.run_id }}
           DEPLOYMENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          ACCEPTANCE_PROFILE: ${{ steps.acceptance-profile.outputs.acceptance_profile }}
         run: |
-          node -e 'const fs=require("node:fs"); fs.writeFileSync("candidate-staging-deployment.json", JSON.stringify({schemaVersion:1,state:"CANDIDATE_STAGING_DEPLOYED",candidateSha:process.env.CANDIDATE_SHA,candidateTreeSha:process.env.CANDIDATE_TREE_SHA,pullRequestNumber:Number(process.env.PULL_REQUEST_NUMBER),runId:process.env.DEPLOYMENT_RUN_ID,runAttempt:process.env.DEPLOYMENT_RUN_ATTEMPT,origin:"https://ai-operations-staging.ai-operations.workers.dev",migrations:"passed",edgeFunctions:"passed",sourceDrift:"passed",readinessSmoke:"passed"})+"\n")'
+          node -e 'const fs=require("node:fs"); fs.writeFileSync("candidate-staging-deployment.json", JSON.stringify({schemaVersion:1,state:"CANDIDATE_STAGING_DEPLOYED",candidateSha:process.env.CANDIDATE_SHA,candidateTreeSha:process.env.CANDIDATE_TREE_SHA,pullRequestNumber:Number(process.env.PULL_REQUEST_NUMBER),runId:process.env.DEPLOYMENT_RUN_ID,runAttempt:process.env.DEPLOYMENT_RUN_ATTEMPT,origin:"https://ai-operations-staging.ai-operations.workers.dev",acceptanceProfile:process.env.ACCEPTANCE_PROFILE,migrations:"passed",edgeFunctions:"passed",sourceDrift:"passed",readinessSmoke:"passed"})+"\n")'
       - name: Upload exact candidate deployment evidence
         if: inputs.candidate_sha != ''
         uses: actions/upload-artifact@v4

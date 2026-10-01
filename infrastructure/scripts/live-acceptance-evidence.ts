@@ -43,6 +43,7 @@ export async function writeLiveStagingAcceptanceEvidence(
   const evidence = createHostedStagingSuiteEvidence({
     schemaVersion: 1,
     state: 'LIVE_STAGING_E2E_ACCEPTED',
+    acceptanceProfile: 'auth-browser',
     candidateSha: input.candidateSha,
     candidateTreeSha: input.candidateTreeSha,
     pullRequestNumber: input.pullRequestNumber,

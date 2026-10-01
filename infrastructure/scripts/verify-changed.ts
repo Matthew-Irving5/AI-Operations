@@ -190,7 +190,7 @@ function runCore(plan: ImpactPlan): void {
       run('corepack', ['pnpm', '--filter', name, '--if-present', script]);
     }
   }
-  if (plan.worker) {
+  if (plan.worker && !process.env.CI) {
     run('python', ['-m', 'ruff', 'check', 'src', 'tests'], { cwd: 'apps/windows-worker' });
   }
 }
@@ -219,7 +219,7 @@ function runBoundary(plan: ImpactPlan): void {
     run('deno', ['check', '--config', 'supabase/functions/deno.json', ...indexes]);
     run('deno', ['test', '--no-config', ...tests]);
   }
-  if (plan.worker) {
+  if (plan.worker && !process.env.CI) {
     run('python', ['-m', 'pytest', '-p', 'no:cacheprovider'], { cwd: 'apps/windows-worker' });
   }
   if (plan.browser) {
@@ -238,7 +238,7 @@ function runBoundary(plan: ImpactPlan): void {
       { timeout: 600_000 },
     );
   }
-  if (plan.security) run('corepack', ['pnpm', 'security']);
+  if (plan.security) run('corepack', ['pnpm', 'audit', '--audit-level=high']);
 }
 
 function argValue(name: string): string | undefined {

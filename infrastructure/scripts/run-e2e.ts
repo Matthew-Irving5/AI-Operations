@@ -4,7 +4,7 @@ import { createServer } from 'node:net';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { runLocalQaPreflight } from './local-qa-preflight';
+import { requiredBrowsersFromPlaywrightArgs, runLocalQaPreflight } from './local-qa-preflight';
 
 function run(args: string[], env = process.env, timeoutMs = 120_000): string {
   return execFileSync('corepack', ['pnpm', ...args], {
@@ -232,7 +232,9 @@ async function waitForLocalSupabase(url: string, anonKey: string): Promise<void>
 }
 
 async function main(): Promise<void> {
-  runLocalQaPreflight();
+  const playwrightArgs = process.argv.slice(2);
+  if (playwrightArgs[0] === '--') playwrightArgs.shift();
+  runLocalQaPreflight(requiredBrowsersFromPlaywrightArgs(playwrightArgs));
   checkStagingAuthConfiguration(process.env);
 
   const repositoryRoot = process.cwd();
@@ -328,8 +330,6 @@ async function main(): Promise<void> {
         shell: process.platform === 'win32',
         stdio: 'inherit',
       });
-    const playwrightArgs = process.argv.slice(2);
-    if (playwrightArgs[0] === '--') playwrightArgs.shift();
     process.stdout.write(
       `[qa:local] ${projectId}: running Playwright ${playwrightArgs.join(' ') || 'all projects'}.\n`,
     );
