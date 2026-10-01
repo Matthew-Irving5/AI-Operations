@@ -1132,6 +1132,10 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
     deployWorkflow,
     /Auto-accept targeted staging candidate[\s\S]*TARGETED_STAGING_ACCEPTED/,
   );
+  assert.match(
+    deployWorkflow,
+    /Auto-accept targeted staging candidate[\s\S]*WORKFLOW_RUN_URL[\s\S]*target_url:\$url/,
+  );
   assert.match(deployWorkflow, /state:"pending"[\s\S]*waiting for auth-browser acceptance/);
   assert.match(deployWorkflow, /failure_code="stage_deployment_failed"/);
   assert.match(deployWorkflow, /failure_code="staging_slot_busy"/);
