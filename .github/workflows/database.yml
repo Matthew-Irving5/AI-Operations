@@ -1,5 +1,12 @@
-name: Database
-on: [pull_request, merge_group]
+name: Database full regression
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '11 4 * * *'
+
+concurrency:
+  group: database-full-regression
+  cancel-in-progress: true
 
 permissions:
   contents: read

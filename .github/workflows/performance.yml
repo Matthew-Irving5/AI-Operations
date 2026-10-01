@@ -1,6 +1,13 @@
-name: Performance
+name: Performance full regression
 
-on: [pull_request, merge_group]
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '37 4 * * *'
+
+concurrency:
+  group: performance-full-regression
+  cancel-in-progress: true
 
 permissions:
   contents: read

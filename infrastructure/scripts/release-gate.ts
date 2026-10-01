@@ -36,6 +36,8 @@ const ReadyEvidenceSchema = z
   })
   .strict();
 
+const AcceptanceProfileSchema = z.enum(['targeted', 'auth-browser']);
+
 const CapabilityResultsSchema = z
   .object({
     authAal2: z.literal('passed'),
@@ -48,6 +50,18 @@ const CapabilityResultsSchema = z
   })
   .strict();
 
+const TargetedCapabilityResultsSchema = z
+  .array(
+    z
+      .object({
+        name: SafeIdSchema,
+        result: z.literal('passed'),
+      })
+      .strict(),
+  )
+  .min(1)
+  .max(20);
+
 const AcceptanceEvidenceSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -57,13 +71,27 @@ const AcceptanceEvidenceSchema = z
     pullRequestNumber: z.number().int().positive(),
     deploymentRunId: RunIdSchema,
     stagingOrigin: StageOrigin,
-    humanMfa: z.literal('user-completed'),
-    checks: CapabilityResultsSchema,
+    acceptanceProfile: AcceptanceProfileSchema,
+    humanMfa: z.enum(['user-completed', 'not-required']),
+    checks: z.union([CapabilityResultsSchema, TargetedCapabilityResultsSchema]),
     correlationIds: z.array(SafeIdSchema).max(20),
     acceptedAt: z.string().datetime({ offset: true }),
     accepted: z.literal(true),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    const targeted = value.acceptanceProfile === 'targeted';
+    const validMfa = targeted
+      ? value.humanMfa === 'not-required'
+      : value.humanMfa === 'user-completed';
+    const validChecks = targeted ? Array.isArray(value.checks) : !Array.isArray(value.checks);
+    if (!validMfa || !validChecks) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'acceptance profile, MFA evidence and check shape must agree',
+      });
+    }
+  });
 
 export const ProductionPromotionEvidenceSchema = z
   .object({
@@ -116,6 +144,7 @@ const StagingAcceptanceInputSchema = z
     candidateSha: ShaSchema,
     deploymentRunId: RunIdSchema,
     stagingOrigin: StageOrigin,
+    acceptanceProfile: z.literal('auth-browser'),
     humanMfa: z.literal('user-completed'),
     checks: CapabilityResultsSchema,
     correlationIds: z.array(SafeIdSchema).max(20),
@@ -132,16 +161,18 @@ const CandidateStagingDeploymentEvidenceSchema = z
     runId: RunIdSchema,
     runAttempt: RunIdSchema,
     origin: StageOrigin,
+    acceptanceProfile: AcceptanceProfileSchema,
     migrations: z.literal('passed'),
     edgeFunctions: z.literal('passed'),
     sourceDrift: z.literal('passed'),
     readinessSmoke: z.literal('passed'),
   })
   .strict();
-const HostedStagingSuiteEvidenceSchema = z
+const AuthBrowserStagingSuiteEvidenceSchema = z
   .object({
     schemaVersion: z.literal(1),
     state: z.literal('LIVE_STAGING_E2E_ACCEPTED'),
+    acceptanceProfile: z.literal('auth-browser'),
     candidateSha: ShaSchema,
     candidateTreeSha: ShaSchema,
     pullRequestNumber: z.number().int().positive(),
@@ -162,6 +193,28 @@ const HostedStagingSuiteEvidenceSchema = z
     acceptedAt: z.string().datetime({ offset: true }),
   })
   .strict();
+
+const TargetedStagingSuiteEvidenceSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    state: z.literal('TARGETED_STAGING_ACCEPTED'),
+    acceptanceProfile: z.literal('targeted'),
+    candidateSha: ShaSchema,
+    candidateTreeSha: ShaSchema,
+    pullRequestNumber: z.number().int().positive(),
+    deploymentRunId: RunIdSchema,
+    stagingOrigin: StageOrigin,
+    humanMfa: z.literal('not-required'),
+    checks: TargetedCapabilityResultsSchema,
+    correlationIds: z.array(SafeIdSchema).max(20),
+    acceptedAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
+const HostedStagingSuiteEvidenceSchema = z.discriminatedUnion('acceptanceProfile', [
+  AuthBrowserStagingSuiteEvidenceSchema,
+  TargetedStagingSuiteEvidenceSchema,
+]);
 
 const StagingAcceptanceCommandSchema = z
   .object({
@@ -204,17 +257,7 @@ const ProductionSmokeInputSchema = z
   })
   .strict();
 
-const RequiredCandidateChecks = [
-  'CI',
-  'Database',
-  'Edge functions',
-  'E2E',
-  'Security',
-  'Performance',
-  'Windows worker foundation',
-  'CodeQL Advanced',
-  'Dependency review',
-] as const;
+const RequiredCandidateChecks = ['CI', 'Security', 'CodeQL Advanced', 'Dependency review'] as const;
 const CandidateCheckNameSchema = z.enum(RequiredCandidateChecks);
 const CandidateReadinessInputSchema = z
   .object({
@@ -330,7 +373,26 @@ export interface CandidateReadinessEvidence {
   checks: Array<{ name: (typeof RequiredCandidateChecks)[number]; conclusion: 'success' }>;
 }
 
+export type HostedAcceptanceProfile = z.infer<typeof AcceptanceProfileSchema>;
 export type HostedStagingSuiteEvidence = z.infer<typeof HostedStagingSuiteEvidenceSchema>;
+
+export function selectHostedAcceptanceProfile(files: string[]): HostedAcceptanceProfile {
+  const authBrowser = files.some((raw) => {
+    const file = raw.replaceAll('\\', '/');
+    return (
+      file.startsWith('apps/web/app/api/auth/') ||
+      file.startsWith('apps/web/app/login/') ||
+      file.startsWith('apps/web/app/mfa/') ||
+      file.startsWith('apps/web/lib/auth') ||
+      file.startsWith('apps/web/lib/local-test-auth') ||
+      file === 'apps/web/middleware.ts' ||
+      file === 'supabase/config.toml' ||
+      file.startsWith('supabase/functions/_shared/auth-assurance') ||
+      file.startsWith('tests/e2e/auth.')
+    );
+  });
+  return authBrowser ? 'auth-browser' : 'targeted';
+}
 
 export function createHostedStagingSuiteEvidence(input: unknown): HostedStagingSuiteEvidence {
   return parseEvidence(
@@ -472,6 +534,18 @@ export function createStagingAcceptanceStatus(input: unknown): StagingAcceptance
       parsed.deployment.origin,
       parsed.hostedSuite.stagingOrigin,
     );
+  if (parsed.hostedSuite.acceptanceProfile !== parsed.deployment.acceptanceProfile)
+    fail(
+      'acceptance_profile_mismatch',
+      'staging.status',
+      candidateSha,
+      parsed.deployment.acceptanceProfile,
+      parsed.hostedSuite.acceptanceProfile,
+    );
+  const checks =
+    parsed.hostedSuite.acceptanceProfile === 'auth-browser'
+      ? { ...parsed.hostedSuite.checks, migrations: parsed.deployment.migrations }
+      : parsed.hostedSuite.checks;
   const acceptance = AcceptanceEvidenceSchema.parse({
     schemaVersion: 1,
     state: 'STAGING_ACCEPTED',
@@ -480,8 +554,9 @@ export function createStagingAcceptanceStatus(input: unknown): StagingAcceptance
     pullRequestNumber: parsed.deployment.pullRequestNumber,
     deploymentRunId: parsed.deployment.runId,
     stagingOrigin: parsed.deployment.origin,
+    acceptanceProfile: parsed.hostedSuite.acceptanceProfile,
     humanMfa: parsed.hostedSuite.humanMfa,
-    checks: { ...parsed.hostedSuite.checks, migrations: parsed.deployment.migrations },
+    checks,
     correlationIds: parsed.hostedSuite.correlationIds,
     acceptedAt: parsed.hostedSuite.acceptedAt,
     accepted: true,

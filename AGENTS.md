@@ -1,4 +1,4 @@
-# AGENTS.md — AI Operations
+# AGENTS.md â€” AI Operations
 
 ## Repository identity
 
@@ -12,9 +12,9 @@
 
 Before editing any production code or governance artifact, read the active Linear issue, its linked dependencies and completion evidence, and all three root specifications:
 
-1. `AI_OPERATIONS_AGENT_SPEC.md` — authoritative for manager identities, responsibilities, ownership, communication, command authority, handoffs, and agent capabilities.
-2. `AI_OPERATIONS_BUILD_SPEC.md` — authoritative for platform/product architecture, infrastructure, security, data, integrations, testing, and delivery.
-3. `AI_OPERATIONS_FRONTEND_DESIGN_CONSTITUTION.md` — authoritative for visual design, interaction, accessibility, frontend architecture, and frontend review.
+1. `AI_OPERATIONS_AGENT_SPEC.md` â€” authoritative for manager identities, responsibilities, ownership, communication, command authority, handoffs, and agent capabilities.
+2. `AI_OPERATIONS_BUILD_SPEC.md` â€” authoritative for platform/product architecture, infrastructure, security, data, integrations, testing, and delivery.
+3. `AI_OPERATIONS_FRONTEND_DESIGN_CONSTITUTION.md` â€” authoritative for visual design, interaction, accessibility, frontend architecture, and frontend review.
 4. `CODEX_PASS_PROMPTS.md` and `docs/build/PASS_LEDGER.md` when working on a historical build pass.
 5. Relevant ADRs, architecture documents, tests, and workflows for the changed area.
 
@@ -22,13 +22,13 @@ Apply authority by subject: the Agent Spec controls agent behavior and provider 
 
 ## Linear issue execution and completion
 
-- Use the project workflow: **Backlog** means not ready or deferred; move dependency-ready work to **Todo**; use **In Progress** for the single session that owns implementation and QA; use **Done** only after required live E2E and production acceptance evidence is truthful and posted. Unit or mocked tests alone never justify Done.
-- Before editing, define the issue's live happy path, acceptance branches, relevant permission/failure/empty/degraded/retry/recovery paths, and the real boundaries the proof must cross. Keep the issue In Progress through implementation, debugging, deployment, and QA.
-- Prefer Playwright against a deployed staging scene. If the relevant boundary cannot be exercised in a browser, use its closest real interface (for example the staging endpoint, provider test account, worker, scheduler, webhook, or provider API) and record the method and evidence. Mock-only E2E is not sign-off.
-- Before Done, post one issue comment containing branch, PR and merge commit; changed files/modules; implementation summary and deviations; automated checks and results; exact live scenarios; environment and deployment/version; browser/provider/backend evidence; defects found and fixed; earlier issues touched and their regression proof; production smoke result; and the exact line `LIVE E2E SIGN-OFF: PASS`.
-- If QA exposes a regression in an earlier Done issue, the active session may fix it. Reference that issue in the current completion evidence and rerun its original relevant live E2E scenarios. Preserve the earlier contract; do not defer a required defect.
-- Keep these detailed project rules canonical in the Linear **Execution & Live E2E QA Standard** and **Architecture Compatibility & Dependency Rules**. This repository guidance points sessions to those rules and enforces the root specification prerequisites through `pnpm preflight`.
-
+- Linear describes **feature intent**, not a duplicated engineering manual. A ready ticket should contain: objective, feature-specific constraints, 1–3 observable acceptance outcomes, one test profile, any genuinely live-only proof, and out-of-scope items.
+- The repository owns the execution method. Every ticket starts with `pnpm qa:doctor --fix`; do not copy Docker/browser/test recovery instructions into individual tickets.
+- Use **In Progress** only while a development lane actively owns the ticket. One coding agent owns implementation and remains accountable through merge; do not add reviewer/best-of-N agents by default.
+- Compatible tickets may develop in parallel. Do not let CI, staging, MFA, provider waits, or another ticket's release wait consume an otherwise-free development lane. Park external-human gates with an exact resume command.
+- A ticket is Done when its selected local/CI proofs pass, its explicitly required live-only proof (if any) passes, and a deployable change has the bounded production smoke required by the release pipeline. Full live E2E is **not** a universal per-ticket requirement.
+- Every deterministic defect first discovered at a higher layer must add a cheaper regression or invariant at the lowest layer capable of catching it before the ticket completes.
+- Keep dependency relationships truthful. Prefer issues that are independently developable/QA-complete and prioritize work that unlocks additional ready lanes.
 ## Codex configuration
 
 - Build model: `gpt-5.6-terra`
@@ -98,114 +98,45 @@ Never:
 
 ## Debugging and incident method
 
-When diagnosing a production failure, establish the failing boundary before
-forming a root-cause theory. Trace the request hop by hop: browser request,
-application route, provider call, persistence/RLS operation, and the next
-redirect or session read. Record the status and structured response for each
-hop, using a correlation/request ID where available.
+Agent debugging optimizes **localisation time**, not the number of patches attempted.
 
-- Treat a successful upstream operation as a boundary: if a provider returns
-  `200`, stop treating that provider call as the failure and inspect the next
-  application operation.
-- For authenticated flows, verify both identities and persistence: the Auth
-  user/session, the application profile row, required `is_allowed` flags,
-  claims/AAL, cookies, and RLS predicates. An Auth user can exist while the
-  application user row required by RLS is missing.
-- Check provider logs and database invariants early, before investigating
-  niche browser, CDN, CSP, clock, or token hypotheses. Rank hypotheses by the
-  evidence already observed and test the cheapest/highest-probability one
-  first.
-- Do not ask the operator to repeatedly paste minified JavaScript initiator
-  stacks. Request only the exact status, endpoint, structured response, log
-  exception, or redacted screenshot needed to distinguish the next boundary.
-- If the client response is blank, use server/provider logs or add temporary
-  safe stage-level diagnostics with correlation IDs; never log secrets, codes,
-  cookies, tokens, or personal payloads. Remove temporary diagnostics after
-  the root cause is confirmed.
-- After a production fix, repeat the complete flow from a fresh session and
-  verify both the user-visible result and the relevant provider/database audit
-  record.
+1. Reproduce the failure with the narrowest command possible. If useful, run `pnpm qa:debug -- <command>` to capture a sanitized failure bundle, changed files and likely source locations.
+2. Classify the failure before reading broadly: `CODE`, `CONTRACT`, `ENVIRONMENT`, `INFRASTRUCTURE`, `FLAKE`, or `UNKNOWN`. Environment failures go back to `qa:doctor`; do not search application code for them.
+3. Search in this order: exact error evidence → failing test → current diff → direct producer/consumer/caller → correlated logs → git history → external documentation/web. Stop when evidence localizes the failing boundary.
+4. Make the smallest causal fix and rerun **only the narrow reproducer**. Do not run a broad suite while that reproducer is red.
+5. After two unsupported/failed fix hypotheses, stop patching. Revert speculative changes, restate the misunderstood invariant, reduce to a smaller reproduction, improve diagnostics if needed, and only then edit again.
+6. Once narrow green, run the changed-surface proof with `pnpm verify:changed`. CI/staging are independent verification, not the primary debugger.
+7. Every escaped deterministic bug leaves three artifacts: the fix, a regression test, and an earlier diagnostic/invariant so the same class cannot escape to that stage again.
 
+Errors must be actionable without secret/personal-data leakage: identify the failed invariant, boundary/subsystem, expected vs actual state, correlation ID when available, owning contract/source when known, and the exact reproduction command.
 ## Pass start protocol
 
-1. Verify repository:
-   ```bash
-   gh repo view --json nameWithOwner,isPrivate
-   ```
-   Owner must be `Matthew-Irving5`.
-
-2. Read authoritative files.
-
-3. Verify prior pass:
-   - previous PR merged;
-   - required checks passed;
-   - commit exists on `origin/main`.
-
-4. Synchronise:
-   ```bash
-   git fetch --all --prune
-   git checkout main
-   git pull --ff-only origin main
-   git status --short
-   ```
-
-5. Run baseline test command.
-
-6. Create the exact branch named by the pass prompt.
-
-7. Mark pass `IN_PROGRESS` in `docs/build/PASS_LEDGER.md`.
-
-If the previous PR is not merged, stop. Do not layer passes on an unmerged branch.
-
+1. Verify `Matthew-Irving5/AI-Operations`, fetch/prune and start from current `origin/main` without disturbing another active worktree.
+2. Run `pnpm qa:doctor --fix`. Do not investigate the feature until it is green. This verifies/recovers Docker, local Supabase/images, browsers and required developer runtimes.
+3. Read the active Linear issue and only the authoritative spec sections/repo-map entries relevant to its changed surface. Run `pnpm repo:map` when the generated routing map is stale.
+4. Define 1–3 observable acceptance outcomes and identify the cheapest test layer capable of proving each. Add a live/staging proof only for a boundary localhost cannot faithfully prove.
+5. Run a narrow existing baseline only when it materially validates the starting assumption; do not pay the full-suite tax before editing.
+6. Create the issue branch and implement in one owning session.
 ## Test protocol
 
-Before implementation:
-- inspect current tests and GitHub Actions;
-- determine whether the changed scope is fully covered;
-- add missing test jobs, fixtures, and checks.
+Use the cheapest proof capable of catching each defect class exactly once.
 
-During work:
-- run targeted tests after each coherent change;
-- use Playwright MCP to inspect browser console, network, responsive layout, and user flows;
-- fix root causes.
-
-Before PR, run the repository’s full CI-equivalent command, including:
-- format;
-- lint;
-- typecheck;
-- unit tests;
-- database and RLS tests;
-- Edge Function tests;
-- Python worker tests if relevant;
-- build;
-- Playwright;
-- security checks.
-
+- Inner loop: affected unit/contract/component tests only.
+- Boundary proof: exactly the real boundary changed (DB/API/queue/browser/provider), not unrelated product journeys.
+- Final local gate: `pnpm verify:changed`. Its impact router selects affected static/package/DB/Edge/worker/browser/security checks and fails safe to the broader suite when central build/test routing changes.
+- Chromium is the default PR browser proof when browser behaviour changed. WebKit/full cross-browser runs belong to explicit compatibility/auth/design-system acceptance or scheduled full regression, not every backend/release edit.
+- `pnpm verify` / `pnpm verify:ci` are fallback/full-regression commands, not the default feature inner loop.
+- Never repeat the same capability proof locally, in CI and on staging unless the higher layer exercises a boundary the lower layer physically cannot prove.
+- Long-running independent checks should run in parallel. Do not create many tiny jobs when runner/setup overhead exceeds the test value.
+- Never skip/loosen a required assertion to gain speed; reduce scope to the relevant proof instead.
 ## PR protocol
 
-- Update `docs/build/evidence/pass-XX.md`.
-- Mark ledger `READY_FOR_REVIEW`.
-- Commit with clear conventional messages.
-- Push the pass branch.
-- Create a PR with the pass number and title.
-- Include:
-  - specification scope;
-  - implemented features;
-  - migrations;
-  - security changes;
-  - tests and evidence;
-  - screenshots or Playwright artifacts;
-  - deployment impact.
-- Enable squash auto-merge.
-- Run:
-  ```bash
-  gh pr checks --watch
-  ```
-- On failure, inspect logs, fix, push, and repeat.
-- Do not finish while a required check is failing.
-- Wait for auto-merge and verify the PR is merged.
-- Pull `main` and confirm the merge.
-
+- Before opening the PR, run `pnpm verify:changed`; do not reflexively run the full CI-equivalent suite.
+- Push one coherent branch/PR. The same ticket owner remains responsible for defects until merge, but waiting on CI/release does not block another compatible development lane.
+- PR CI consists of parallel changed-surface **core** and **boundary** lanes. Superseded runs are cancelled. Full browser/Edge regression is scheduled separately.
+- If CI fails, use its exact failing command as the narrow reproducer; use `qa:debug` where useful. Fix locally, prove the narrow failure green, then push once. Do not debug by speculative GitHub Actions commits.
+- Staging proves only ticket-specific boundaries that cannot be established locally. Promote the accepted immutable candidate/provenance through the existing release gates; production gets a bounded affected-capability smoke.
+- Merge only with required checks green. Record material defects and the new regression/diagnostic that prevents recurrence.
 ## Conversation completion
 
 When the pass is merged:

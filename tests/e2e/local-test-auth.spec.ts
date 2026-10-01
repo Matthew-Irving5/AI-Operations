@@ -51,8 +51,9 @@ test('local test credentials reject invalid sign-in and allow a protected DB jou
       comment: 'Local fixture acceptance.',
     },
   });
-  expect(accepted.status()).toBe(201);
-  expect(await accepted.json()).toMatchObject({ feedbackId: expect.any(String) });
+  const acceptedBody = await accepted.json();
+  expect(accepted.status(), `feedback-submit failed: ${JSON.stringify(acceptedBody)}`).toBe(201);
+  expect(acceptedBody).toMatchObject({ feedbackId: expect.any(String) });
 
   await page.goto('/ai-traces-audit');
   await expect(page.getByRole('heading', { name: 'feedback_submitted' }).first()).toBeVisible();

@@ -2,6 +2,18 @@ import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { chromium, webkit } from '@playwright/test';
 
+export type PlaywrightBrowser = 'chromium' | 'webkit';
+const ALL_BROWSERS: PlaywrightBrowser[] = ['chromium', 'webkit'];
+
+export function requiredBrowsersFromPlaywrightArgs(args: string[]): PlaywrightBrowser[] {
+  const projectIndex = args.indexOf('--project');
+  const inline = args.find((value) => value.startsWith('--project='));
+  const project =
+    inline?.slice('--project='.length) ?? (projectIndex >= 0 ? args[projectIndex + 1] : undefined);
+  if (project === 'chromium' || project === 'webkit') return [project];
+  return ALL_BROWSERS;
+}
+
 type CommandCheck = { command: string; args: string[]; label: string; recover: string };
 
 const checks: CommandCheck[] = [
@@ -32,7 +44,9 @@ function commandWorks(command: string, args: string[]): boolean {
   }
 }
 
-export function collectLocalQaPrerequisiteIssues(): string[] {
+export function collectLocalQaPrerequisiteIssues(
+  requiredBrowsers: PlaywrightBrowser[] = ALL_BROWSERS,
+): string[] {
   const issues: string[] = [];
   const [major, minor] = process.versions.node.split('.').map(Number);
   if (major < 22 || (major === 22 && minor < 18)) {
@@ -46,13 +60,15 @@ export function collectLocalQaPrerequisiteIssues(): string[] {
       issues.push(`${check.label}. ${check.recover}`);
     }
   }
-  for (const [name, executablePath] of [
-    ['Chromium', chromium.executablePath()],
-    ['WebKit', webkit.executablePath()],
-  ]) {
+  const browserPaths: Record<PlaywrightBrowser, [string, string]> = {
+    chromium: ['Chromium', chromium.executablePath()],
+    webkit: ['WebKit', webkit.executablePath()],
+  };
+  for (const browser of requiredBrowsers) {
+    const [name, executablePath] = browserPaths[browser];
     if (!existsSync(executablePath)) {
       issues.push(
-        `${name} browser is not installed; run corepack pnpm exec playwright install chromium webkit.`,
+        `${name} browser is not installed; run corepack pnpm exec playwright install ${requiredBrowsers.join(' ')}.`,
       );
     }
   }
@@ -76,8 +92,8 @@ export function collectLocalQaPrerequisiteIssues(): string[] {
   return issues;
 }
 
-export function runLocalQaPreflight(): void {
-  const issues = collectLocalQaPrerequisiteIssues();
+export function runLocalQaPreflight(requiredBrowsers: PlaywrightBrowser[] = ALL_BROWSERS): void {
+  const issues = collectLocalQaPrerequisiteIssues(requiredBrowsers);
   if (issues.length) {
     throw new Error(
       `Local QA preflight failed (${issues.length} prerequisite${issues.length === 1 ? '' : 's'}):\n${issues.map((issue) => `- ${issue}`).join('\n')}`,

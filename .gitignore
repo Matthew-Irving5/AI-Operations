@@ -17,3 +17,4 @@ __pycache__/
 supabase/.branches/
 supabase/.temp/
 *.log
+.qa/

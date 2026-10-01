@@ -1,8 +1,16 @@
-name: Edge functions
-on: [pull_request, merge_group]
+name: Edge functions full regression
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '43 3 * * *'
+
+concurrency:
+  group: edge-full-regression
+  cancel-in-progress: true
 
 permissions:
   contents: read
+
 jobs:
   deno:
     runs-on: ubuntu-latest

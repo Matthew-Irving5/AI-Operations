@@ -19,6 +19,7 @@ import {
   inspectStagingAcceptanceLease,
   recordProductionSmoke,
   releaseStagingSlot,
+  selectHostedAcceptanceProfile,
   selectLatestRequiredWorkflowRuns,
   type StagingAcceptanceEvidence,
   type StagingDeploymentEvidence,
@@ -55,6 +56,7 @@ function candidateDeploymentEvidence(overrides: Record<string, unknown> = {}) {
     runId: '36474707377',
     runAttempt: '2',
     origin,
+    acceptanceProfile: 'auth-browser',
     migrations: 'passed',
     edgeFunctions: 'passed',
     sourceDrift: 'passed',
@@ -67,6 +69,7 @@ function hostedSuiteEvidence(overrides: Record<string, unknown> = {}) {
   return {
     schemaVersion: 1,
     state: 'LIVE_STAGING_E2E_ACCEPTED',
+    acceptanceProfile: 'auth-browser',
     candidateSha,
     candidateTreeSha,
     pullRequestNumber: 152,
@@ -105,6 +108,7 @@ type RawStagingAcceptance = {
   candidateSha: string;
   deploymentRunId: string;
   stagingOrigin: string;
+  acceptanceProfile: 'auth-browser';
   humanMfa: 'user-completed';
   checks: StagingAcceptanceEvidence['checks'];
   correlationIds: string[];
@@ -118,6 +122,7 @@ function stagingAcceptanceInput(
     candidateSha,
     deploymentRunId: '36474707377',
     stagingOrigin: origin,
+    acceptanceProfile: 'auth-browser',
     humanMfa: 'user-completed',
     checks: {
       authAal2: 'passed',
@@ -178,17 +183,7 @@ test('local or hosted CI failure cannot produce staging-ready evidence', () => {
   assert.throws(() => ready({ ci: 'failed' }), /ci_not_passed/);
 });
 
-const candidateWorkflowNames = [
-  'CI',
-  'Database',
-  'Edge functions',
-  'E2E',
-  'Security',
-  'Performance',
-  'Windows worker foundation',
-  'CodeQL Advanced',
-  'Dependency review',
-] as const;
+const candidateWorkflowNames = ['CI', 'Security', 'CodeQL Advanced', 'Dependency review'] as const;
 function candidateInput(overrides: Record<string, unknown> = {}) {
   return {
     candidateSha,
@@ -216,7 +211,7 @@ test('candidate readiness requires an open same-repository main PR and every req
     { baseBranch: 'release' },
     { sameRepository: false },
     { pullRequestOpen: false },
-    { checks: candidateInput().checks.filter((check) => check.name !== 'E2E') },
+    { checks: candidateInput().checks.filter((check) => check.name !== 'CodeQL Advanced') },
     {
       checks: candidateInput().checks.map((check) =>
         check.name === 'Security' ? { ...check, headSha: nextSha } : check,
@@ -468,7 +463,11 @@ test('staging acceptance status is pending until complete current-head hosted ev
   assert.equal(success.candidateSha, candidateSha);
   assert.equal(success.acceptance?.candidateTreeSha, candidateTreeSha);
   assert.equal(success.acceptance?.pullRequestNumber, 152);
-  assert.equal(success.acceptance?.checks.migrations, 'passed');
+  assert.equal(success.acceptance?.acceptanceProfile, 'auth-browser');
+  assert.ok(success.acceptance && !Array.isArray(success.acceptance.checks));
+  if (success.acceptance && !Array.isArray(success.acceptance.checks)) {
+    assert.equal(success.acceptance.checks.migrations, 'passed');
+  }
   for (const phase of ['required_checks', 'staging_deployment', 'hosted_acceptance'] as const) {
     assert.equal(
       createStagingAcceptanceStatus({
@@ -1041,8 +1040,9 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /DISPATCH_REF: \$\{\{ github\.ref \}\}/);
   const leaseCheck = deployWorkflow.indexOf('name: Check shared staging acceptance lease');
   const deployPending = deployWorkflow.indexOf('name: Set candidate status while staging deploys');
-  const acceptancePending = deployWorkflow.indexOf(
-    'Staging is deployed; waiting for hosted acceptance.',
+  const targetedAutoAccept = deployWorkflow.indexOf('name: Auto-accept targeted staging candidate');
+  const authBrowserPending = deployWorkflow.indexOf(
+    'Staging is deployed; waiting for auth-browser acceptance.',
   );
   const manualRequiredGate = deployWorkflow.indexOf(
     'name: Validate manual candidate required workflows',
@@ -1078,10 +1078,16 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
     leaseCheck < deployPending,
     'lease guard must run before the candidate staging status/deployment begins',
   );
+  const stagingSmoke = deployWorkflow.indexOf('name: Smoke test staging Worker');
   assert.ok(
-    deployWorkflow.indexOf('name: Smoke test staging Worker') < acceptancePending,
-    'acceptance lease begins only after staging deploy/smoke succeeds',
+    stagingSmoke < targetedAutoAccept,
+    'targeted acceptance can auto-publish only after staging deploy/smoke succeeds',
   );
+  assert.ok(
+    stagingSmoke < authBrowserPending,
+    'auth-browser acceptance can become pending only after staging deploy/smoke succeeds',
+  );
+  assert.match(deployWorkflow, /current_sha=.*pulls\/\$PULL_REQUEST_NUMBER/);
   assert.match(deployWorkflow, /staging-slot-check < staging-slot-input\.json/);
   assert.match(deployWorkflow, /commits\/\$\{headSha\}\/status/);
   assert.match(deployWorkflow, /headSha === candidateSha\) continue/);
@@ -1122,7 +1128,11 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.doesNotMatch(deployWorkflow, /candidateTreeSha:"[a-f0-9]{40}"/);
   assert.doesNotMatch(deployWorkflow, /pullRequestNumber:\d+/);
   assert.match(deployWorkflow, /candidate-staging-deployment-\$\{\{ inputs\.candidate_sha \}\}/);
-  assert.match(deployWorkflow, /state:"pending"[\s\S]*waiting for hosted acceptance/);
+  assert.match(
+    deployWorkflow,
+    /Auto-accept targeted staging candidate[\s\S]*TARGETED_STAGING_ACCEPTED/,
+  );
+  assert.match(deployWorkflow, /state:"pending"[\s\S]*waiting for auth-browser acceptance/);
   assert.match(deployWorkflow, /failure_code="stage_deployment_failed"/);
   assert.match(deployWorkflow, /failure_code="staging_slot_busy"/);
 });
@@ -1221,4 +1231,66 @@ test('production deploy requires status-bound staging acceptance and squash PR p
   );
   assert.match(workflow.slice(smokeUpload), /path: production-smoke-evidence\.json/);
   assert.match(workflow, /github\.event_name == 'workflow_dispatch'[\s\S]*inputs\.staging_run_id/);
+});
+
+test('hosted acceptance profile requires real MFA only for auth-browser changes', () => {
+  assert.equal(
+    selectHostedAcceptanceProfile(['apps/web/app/api/auth/mfa/verify/route.ts']),
+    'auth-browser',
+  );
+  assert.equal(
+    selectHostedAcceptanceProfile(['apps/web/app/mfa/mfa-challenge.tsx']),
+    'auth-browser',
+  );
+  assert.equal(
+    selectHostedAcceptanceProfile(['supabase/functions/feedback-submit/index.ts']),
+    'targeted',
+  );
+  assert.equal(selectHostedAcceptanceProfile(['docs/testing/local-autonomous-qa.md']), 'targeted');
+});
+
+test('targeted hosted acceptance is valid without MFA and cannot satisfy an auth-browser deployment', () => {
+  const targetedSuite = {
+    schemaVersion: 1,
+    state: 'TARGETED_STAGING_ACCEPTED',
+    acceptanceProfile: 'targeted',
+    candidateSha,
+    candidateTreeSha,
+    pullRequestNumber: 152,
+    deploymentRunId: '36474707377',
+    stagingOrigin: origin,
+    humanMfa: 'not-required',
+    checks: [
+      { name: 'source-drift', result: 'passed' },
+      { name: 'readiness-smoke', result: 'passed' },
+    ],
+    correlationIds: ['trace-1'],
+    acceptedAt: '2026-09-29T10:00:00.000Z',
+  };
+  const success = createStagingAcceptanceStatus({
+    candidateSha,
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    state: 'success',
+    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'targeted' }),
+    hostedSuite: targetedSuite,
+  });
+  assert.equal(success.status.state, 'success');
+  assert.equal(success.acceptance?.acceptanceProfile, 'targeted');
+  assert.equal(success.acceptance?.humanMfa, 'not-required');
+  assert.ok(Array.isArray(success.acceptance?.checks));
+  assert.throws(
+    () =>
+      createStagingAcceptanceStatus({
+        candidateSha,
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        state: 'success',
+        deployment: candidateDeploymentEvidence({ acceptanceProfile: 'auth-browser' }),
+        hostedSuite: targetedSuite,
+      }),
+    /acceptance_profile_mismatch/,
+  );
 });

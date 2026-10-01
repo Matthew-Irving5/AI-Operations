@@ -13,7 +13,7 @@
     "format:check": "prettier --check .github apps/web packages docs infrastructure supabase/migrations supabase/tests tests package.json pnpm-workspace.yaml turbo.json tsconfig.base.json playwright.config.ts playwright.live.config.ts README.md .prettierrc.json",
     "lint": "corepack pnpm -r --if-present run lint",
     "typecheck": "corepack pnpm -r --if-present run typecheck",
-    "test": "corepack pnpm -r --if-present run test && corepack pnpm exec tsx --test infrastructure/scripts/required-specs.test.ts infrastructure/scripts/environment-drift.test.ts infrastructure/scripts/release-gate.test.ts infrastructure/scripts/production-smoke.test.ts",
+    "test": "corepack pnpm -r --if-present run test && corepack pnpm exec tsx --test infrastructure/scripts/required-specs.test.ts infrastructure/scripts/environment-drift.test.ts infrastructure/scripts/release-gate.test.ts infrastructure/scripts/production-smoke.test.ts infrastructure/scripts/qa-doctor.test.ts infrastructure/scripts/local-qa-preflight.test.ts infrastructure/scripts/verify-changed.test.ts infrastructure/scripts/qa-debug.test.ts",
     "test:release-gate": "corepack pnpm exec tsx --test infrastructure/scripts/release-gate.test.ts",
     "test:db": "supabase test db",
     "test:e2e": "node --env-file-if-exists=.env --import tsx infrastructure/scripts/run-e2e.ts",
@@ -29,7 +29,11 @@
     "verify:ci": "tsx infrastructure/scripts/verify-ci.ts",
     "environment:drift": "tsx infrastructure/scripts/environment-drift.ts",
     "preflight": "tsx infrastructure/scripts/pass-preflight.ts",
-    "finish-pass": "tsx infrastructure/scripts/pass-finish.ts"
+    "finish-pass": "tsx infrastructure/scripts/pass-finish.ts",
+    "qa:doctor": "node --env-file-if-exists=.env --import tsx infrastructure/scripts/qa-doctor.ts",
+    "qa:debug": "node --env-file-if-exists=.env --import tsx infrastructure/scripts/qa-debug.ts",
+    "verify:changed": "node --env-file-if-exists=.env --import tsx infrastructure/scripts/verify-changed.ts",
+    "repo:map": "node --import tsx infrastructure/scripts/repo-map.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",

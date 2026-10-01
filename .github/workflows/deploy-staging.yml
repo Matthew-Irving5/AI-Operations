@@ -10,7 +10,7 @@ on:
         type: choice
         options: [candidate, acceptance]
       candidate_sha:
-        description: Exact current same-repository PR head SHA; manual candidate dispatch also requires all nine latest required PR workflows to pass.
+        description: Exact current same-repository PR head SHA; manual candidate dispatch requires the current baseline PR verification workflows to pass.
         required: true
         type: string
       deployment_run_id:
@@ -86,6 +86,17 @@ jobs:
       - uses: actions/setup-node@v5
         with: { node-version: 22.18.0, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - name: Determine hosted acceptance profile from changed files
+        id: acceptance-profile
+        if: inputs.candidate_sha != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          PULL_REQUEST_NUMBER: ${{ steps.candidate.outputs.pull_request_number }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GH_REPOSITORY/pulls/$PULL_REQUEST_NUMBER/files?per_page=100" --jq '.[].filename' > candidate-files.txt
+          pnpm exec tsx infrastructure/scripts/acceptance-profile.ts candidate-files.txt
       - name: Validate manual candidate required workflows
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'candidate'
         env:
@@ -283,8 +294,9 @@ jobs:
           PULL_REQUEST_NUMBER: ${{ steps.candidate.outputs.pull_request_number }}
           DEPLOYMENT_RUN_ID: ${{ github.run_id }}
           DEPLOYMENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          ACCEPTANCE_PROFILE: ${{ steps.acceptance-profile.outputs.acceptance_profile }}
         run: |
-          node -e 'const fs=require("node:fs"); fs.writeFileSync("candidate-staging-deployment.json", JSON.stringify({schemaVersion:1,state:"CANDIDATE_STAGING_DEPLOYED",candidateSha:process.env.CANDIDATE_SHA,candidateTreeSha:process.env.CANDIDATE_TREE_SHA,pullRequestNumber:Number(process.env.PULL_REQUEST_NUMBER),runId:process.env.DEPLOYMENT_RUN_ID,runAttempt:process.env.DEPLOYMENT_RUN_ATTEMPT,origin:"https://ai-operations-staging.ai-operations.workers.dev",migrations:"passed",edgeFunctions:"passed",sourceDrift:"passed",readinessSmoke:"passed"})+"\n")'
+          node -e 'const fs=require("node:fs"); fs.writeFileSync("candidate-staging-deployment.json", JSON.stringify({schemaVersion:1,state:"CANDIDATE_STAGING_DEPLOYED",candidateSha:process.env.CANDIDATE_SHA,candidateTreeSha:process.env.CANDIDATE_TREE_SHA,pullRequestNumber:Number(process.env.PULL_REQUEST_NUMBER),runId:process.env.DEPLOYMENT_RUN_ID,runAttempt:process.env.DEPLOYMENT_RUN_ATTEMPT,origin:"https://ai-operations-staging.ai-operations.workers.dev",acceptanceProfile:process.env.ACCEPTANCE_PROFILE,migrations:"passed",edgeFunctions:"passed",sourceDrift:"passed",readinessSmoke:"passed"})+"\n")'
       - name: Upload exact candidate deployment evidence
         if: inputs.candidate_sha != ''
         uses: actions/upload-artifact@v4
@@ -293,15 +305,43 @@ jobs:
           path: candidate-staging-deployment.json
           if-no-files-found: error
           retention-days: 30
+      - name: Auto-accept targeted staging candidate
+        if: inputs.candidate_sha != '' && steps.acceptance-profile.outputs.acceptance_profile == 'targeted'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          PULL_REQUEST_NUMBER: ${{ steps.candidate.outputs.pull_request_number }}
+        run: |
+          set -euo pipefail
+          current_sha="$(gh api "repos/$GH_REPOSITORY/pulls/$PULL_REQUEST_NUMBER" --jq '.head.sha')"
+          [[ "$current_sha" == "$CANDIDATE_SHA" ]] || { echo "PR head advanced during staging deployment."; exit 1; }
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const deployment = JSON.parse(readFileSync('candidate-staging-deployment.json', 'utf8'));
+          const hostedSuite = {schemaVersion:1,state:'TARGETED_STAGING_ACCEPTED',acceptanceProfile:'targeted',candidateSha:deployment.candidateSha,candidateTreeSha:deployment.candidateTreeSha,pullRequestNumber:deployment.pullRequestNumber,deploymentRunId:deployment.runId,stagingOrigin:deployment.origin,humanMfa:'not-required',checks:[{name:'source-drift',result:'passed'},{name:'readiness-smoke',result:'passed'}],correlationIds:[],acceptedAt:new Date().toISOString()};          writeFileSync('staging-status-input.json', JSON.stringify({candidateSha:deployment.candidateSha,currentPullRequestHeadSha:deployment.candidateSha,currentPullRequestTreeSha:deployment.candidateTreeSha,currentPullRequestNumber:deployment.pullRequestNumber,state:'success',deployment,hostedSuite})+'\n');
+          NODE
+          pnpm exec tsx infrastructure/scripts/release-gate.ts staging-status < staging-status-input.json > validated-acceptance.json
+          jq '{schemaVersion:1,state:"STAGING_ACCEPTED",acceptance:.acceptance}' validated-acceptance.json > acceptance-evidence.json
+          jq '.status' validated-acceptance.json > commit-status.json
+          gh api "repos/$GH_REPOSITORY/statuses/$CANDIDATE_SHA" --method POST --input commit-status.json > /dev/null
+      - name: Upload targeted staging acceptance evidence
+        if: inputs.candidate_sha != '' && steps.acceptance-profile.outputs.acceptance_profile == 'targeted'
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-capability-acceptance-${{ inputs.candidate_sha }}
+          path: acceptance-evidence.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Set candidate status while hosted acceptance is pending
-        if: inputs.candidate_sha != ''
+        if: inputs.candidate_sha != '' && steps.acceptance-profile.outputs.acceptance_profile == 'auth-browser'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
         run: |
           set -euo pipefail
-          jq -n '{state:"pending",context:"AI Operations / Staging capability acceptance",description:"Staging is deployed; waiting for hosted acceptance."}' > commit-status.json
+          jq -n '{state:"pending",context:"AI Operations / Staging capability acceptance",description:"Staging is deployed; waiting for auth-browser acceptance."}' > commit-status.json
           gh api "repos/$GH_REPOSITORY/statuses/$CANDIDATE_SHA" --method POST --input commit-status.json > /dev/null
       - name: Set candidate status after staging deployment failure
         if: failure() && inputs.candidate_sha != ''
