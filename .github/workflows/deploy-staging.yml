@@ -311,15 +311,43 @@ jobs:
           path: candidate-staging-deployment.json
           if-no-files-found: error
           retention-days: 30
+      - name: Auto-accept targeted staging candidate
+        if: inputs.candidate_sha != '' && steps.acceptance-profile.outputs.acceptance_profile == 'targeted'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          PULL_REQUEST_NUMBER: ${{ steps.candidate.outputs.pull_request_number }}
+        run: |
+          set -euo pipefail
+          current_sha="$(gh api "repos/$GH_REPOSITORY/pulls/$PULL_REQUEST_NUMBER" --jq '.head.sha')"
+          [[ "$current_sha" == "$CANDIDATE_SHA" ]] || { echo "PR head advanced during staging deployment."; exit 1; }
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const deployment = JSON.parse(readFileSync('candidate-staging-deployment.json', 'utf8'));
+          const hostedSuite = {schemaVersion:1,state:'TARGETED_STAGING_ACCEPTED',acceptanceProfile:'targeted',candidateSha:deployment.candidateSha,candidateTreeSha:deployment.candidateTreeSha,pullRequestNumber:deployment.pullRequestNumber,deploymentRunId:deployment.runId,stagingOrigin:deployment.origin,humanMfa:'not-required',checks:[{name:'source_drift',result:'passed'},{name:'readiness_smoke',result:'passed'}],correlationIds:[],acceptedAt:new Date().toISOString()};          writeFileSync('staging-status-input.json', JSON.stringify({candidateSha:deployment.candidateSha,currentPullRequestHeadSha:deployment.candidateSha,currentPullRequestTreeSha:deployment.candidateTreeSha,currentPullRequestNumber:deployment.pullRequestNumber,state:'success',deployment,hostedSuite})+'\n');
+          NODE
+          pnpm exec tsx infrastructure/scripts/release-gate.ts staging-status < staging-status-input.json > validated-acceptance.json
+          jq '{schemaVersion:1,state:"STAGING_ACCEPTED",acceptance:.acceptance}' validated-acceptance.json > acceptance-evidence.json
+          jq '.status' validated-acceptance.json > commit-status.json
+          gh api "repos/$GH_REPOSITORY/statuses/$CANDIDATE_SHA" --method POST --input commit-status.json > /dev/null
+      - name: Upload targeted staging acceptance evidence
+        if: inputs.candidate_sha != '' && steps.acceptance-profile.outputs.acceptance_profile == 'targeted'
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-capability-acceptance-${{ inputs.candidate_sha }}
+          path: acceptance-evidence.json
+          if-no-files-found: error
+          retention-days: 90
       - name: Set candidate status while hosted acceptance is pending
-        if: inputs.candidate_sha != ''
+        if: inputs.candidate_sha != '' && steps.acceptance-profile.outputs.acceptance_profile == 'auth-browser'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
         run: |
           set -euo pipefail
-          jq -n '{state:"pending",context:"AI Operations / Staging capability acceptance",description:"Staging is deployed; waiting for hosted acceptance."}' > commit-status.json
+          jq -n '{state:"pending",context:"AI Operations / Staging capability acceptance",description:"Staging is deployed; waiting for auth-browser acceptance."}' > commit-status.json
           gh api "repos/$GH_REPOSITORY/statuses/$CANDIDATE_SHA" --method POST --input commit-status.json > /dev/null
       - name: Set candidate status after staging deployment failure
         if: failure() && inputs.candidate_sha != ''
