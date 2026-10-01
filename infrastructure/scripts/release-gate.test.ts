@@ -1040,8 +1040,9 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /DISPATCH_REF: \$\{\{ github\.ref \}\}/);
   const leaseCheck = deployWorkflow.indexOf('name: Check shared staging acceptance lease');
   const deployPending = deployWorkflow.indexOf('name: Set candidate status while staging deploys');
-  const acceptancePending = deployWorkflow.indexOf(
-    'Staging is deployed; waiting for hosted acceptance.',
+  const targetedAutoAccept = deployWorkflow.indexOf('name: Auto-accept targeted staging candidate');
+  const authBrowserPending = deployWorkflow.indexOf(
+    'Staging is deployed; waiting for auth-browser acceptance.',
   );
   const manualRequiredGate = deployWorkflow.indexOf(
     'name: Validate manual candidate required workflows',
@@ -1077,10 +1078,16 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
     leaseCheck < deployPending,
     'lease guard must run before the candidate staging status/deployment begins',
   );
+  const stagingSmoke = deployWorkflow.indexOf('name: Smoke test staging Worker');
   assert.ok(
-    deployWorkflow.indexOf('name: Smoke test staging Worker') < acceptancePending,
-    'acceptance lease begins only after staging deploy/smoke succeeds',
+    stagingSmoke < targetedAutoAccept,
+    'targeted acceptance can auto-publish only after staging deploy/smoke succeeds',
   );
+  assert.ok(
+    stagingSmoke < authBrowserPending,
+    'auth-browser acceptance can become pending only after staging deploy/smoke succeeds',
+  );
+  assert.match(deployWorkflow, /current_sha=.*pulls\/\$PULL_REQUEST_NUMBER/);
   assert.match(deployWorkflow, /staging-slot-check < staging-slot-input\.json/);
   assert.match(deployWorkflow, /commits\/\$\{headSha\}\/status/);
   assert.match(deployWorkflow, /headSha === candidateSha\) continue/);
@@ -1121,7 +1128,11 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.doesNotMatch(deployWorkflow, /candidateTreeSha:"[a-f0-9]{40}"/);
   assert.doesNotMatch(deployWorkflow, /pullRequestNumber:\d+/);
   assert.match(deployWorkflow, /candidate-staging-deployment-\$\{\{ inputs\.candidate_sha \}\}/);
-  assert.match(deployWorkflow, /state:"pending"[\s\S]*waiting for hosted acceptance/);
+  assert.match(
+    deployWorkflow,
+    /Auto-accept targeted staging candidate[\s\S]*TARGETED_STAGING_ACCEPTED/,
+  );
+  assert.match(deployWorkflow, /state:"pending"[\s\S]*waiting for auth-browser acceptance/);
   assert.match(deployWorkflow, /failure_code="stage_deployment_failed"/);
   assert.match(deployWorkflow, /failure_code="staging_slot_busy"/);
 });
