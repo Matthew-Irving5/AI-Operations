@@ -6,12 +6,13 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { runLocalQaPreflight } from './local-qa-preflight';
 
-function run(args: string[], env = process.env): string {
+function run(args: string[], env = process.env, timeoutMs = 120_000): string {
   return execFileSync('corepack', ['pnpm', ...args], {
     encoding: 'utf8',
     env,
     shell: process.platform === 'win32',
     stdio: ['inherit', 'pipe', 'pipe'],
+    timeout: timeoutMs,
   });
 }
 
@@ -25,6 +26,32 @@ function sanitizedCommandError(error: unknown): string {
     .slice(-2000);
 }
 
+function cleanupDockerProject(projectId: string): void {
+  const filter = `label=com.supabase.cli.project=${projectId}`;
+  const remove = (listArgs: string[], removeArgs: string[]) => {
+    try {
+      const ids = execFileSync('docker', listArgs, {
+        encoding: 'utf8',
+        shell: process.platform === 'win32',
+      })
+        .split(/\r?\n/)
+        .filter(Boolean);
+      if (ids.length) {
+        execFileSync('docker', [...removeArgs, ...ids], {
+          encoding: 'utf8',
+          shell: process.platform === 'win32',
+          stdio: 'ignore',
+          timeout: 30_000,
+        });
+      }
+    } catch {
+      // The exact-session fallback is best effort and never touches unrelated Docker resources.
+    }
+  };
+  remove(['ps', '-aq', '--filter', filter], ['rm', '-f']);
+  remove(['volume', 'ls', '-q', '--filter', filter], ['volume', 'rm', '-f']);
+  remove(['network', 'ls', '-q', '--filter', filter], ['network', 'rm']);
+}
 function statusValue(status: string, name: string): string {
   try {
     const parsed = JSON.parse(status) as Record<string, unknown>;
@@ -210,6 +237,7 @@ async function main(): Promise<void> {
 
   const repositoryRoot = process.cwd();
   const namespace = randomUUID();
+  const projectId = `aiops-${namespace.replaceAll('-', '').slice(0, 12)}`;
   const localTestPassword = randomBytes(32).toString('base64url');
   const ports = await localPorts();
   const supabase = createIsolatedSupabaseProject(
@@ -231,10 +259,15 @@ async function main(): Promise<void> {
     }
     if (stackMayHaveStarted) {
       try {
-        run(['exec', 'supabase', 'stop', '--workdir', supabaseWorkdir, '--no-backup']);
+        run(
+          ['exec', 'supabase', 'stop', '--workdir', supabaseWorkdir, '--no-backup'],
+          process.env,
+          60_000,
+        );
       } catch {
+        cleanupDockerProject(projectId);
         process.stderr.write(
-          'Local Supabase cleanup did not finish; inspect Docker for this QA session.\n',
+          'Local Supabase CLI cleanup failed; exact-session Docker cleanup was attempted.\n',
         );
       }
     }
@@ -245,25 +278,30 @@ async function main(): Promise<void> {
   try {
     try {
       stackMayHaveStarted = true;
-      run([
-        'exec',
-        'supabase',
-        'start',
-        '--workdir',
-        supabaseWorkdir,
-        '--exclude',
-        'studio,mailpit,logflare,supavisor,vector',
-      ]);
+      process.stdout.write(`[qa:local] ${projectId}: starting isolated Supabase (max 120s).\n`);
+      run(
+        [
+          'exec',
+          'supabase',
+          'start',
+          '--workdir',
+          supabaseWorkdir,
+          '--exclude',
+          'studio,mailpit,logflare,supavisor,vector',
+        ],
+        process.env,
+        120_000,
+      );
+      process.stdout.write(`[qa:local] ${projectId}: isolated Supabase started.\n`);
     } catch (error) {
       throw new Error(
-        `Local Supabase could not start. Confirm Docker Desktop is ready and free local ports are available.${sanitizedCommandError(error) ? `\n${sanitizedCommandError(error)}` : ''}`,
+        `Local Supabase could not start within 120s or failed early. Confirm Docker Desktop is ready and pnpm qa:doctor --fix is green.${sanitizedCommandError(error) ? `\n${sanitizedCommandError(error)}` : ''}`,
       );
     }
 
     const status = run(['exec', 'supabase', 'status', '-o', 'env', '--workdir', supabaseWorkdir]);
     const anonKey = statusValue(status, 'ANON_KEY');
     const jwtSecret = statusValue(status, 'JWT_SECRET');
-    const projectId = `aiops-${namespace.replaceAll('-', '').slice(0, 12)}`;
     const signingKeys = localAuthSigningKeys(projectId);
     const supabaseUrl = statusValue(status, 'API_URL');
     await waitForLocalSupabase(supabaseUrl, anonKey);
@@ -290,11 +328,17 @@ async function main(): Promise<void> {
         shell: process.platform === 'win32',
         stdio: 'inherit',
       });
+    const playwrightArgs = process.argv.slice(2);
+    if (playwrightArgs[0] === '--') playwrightArgs.shift();
+    process.stdout.write(
+      `[qa:local] ${projectId}: running Playwright ${playwrightArgs.join(' ') || 'all projects'}.\n`,
+    );
     if (process.env.LOCAL_QA_AUTH_PROBE === 'true') {
       runPlaywright(['tests/e2e/local-test-auth.spec.ts', '--project=chromium']);
     }
-    runPlaywright([]);
+    runPlaywright(playwrightArgs);
     testsPassed = true;
+    process.stdout.write(`[qa:local] ${projectId}: Playwright passed.\n`);
   } finally {
     cleanup();
   }

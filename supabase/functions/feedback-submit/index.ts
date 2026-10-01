@@ -25,45 +25,66 @@ Deno.serve(async (request) => {
   if (
     !identity.user ||
     identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com"
-  ) return json({ code: "forbidden" }, 403);
-  if (!await consumeRateLimit(identity.user.id, "feedback_submit", 20)) {
+  ) {
+    return json({ code: "forbidden" }, 403);
+  }
+  if (!(await consumeRateLimit(identity.user.id, "feedback_submit", 20))) {
     return json({ code: "rate_limited" }, 429);
   }
-  const body = await request.json() as {
+  const body = (await request.json()) as {
     reportId?: string;
     positive?: boolean;
     categories?: string[];
     comment?: string;
   };
   if (
-    !body.reportId || typeof body.positive !== "boolean" ||
-    !Array.isArray(body.categories) || body.categories.some((category) =>
+    !body.reportId ||
+    typeof body.positive !== "boolean" ||
+    !Array.isArray(body.categories) ||
+    body.categories.some((category) =>
       typeof category !== "string" || category.length > 100
-    ) || (body.comment?.length ?? 0) > 2000
+    ) ||
+    (body.comment?.length ?? 0) > 2000
   ) {
     return json({ code: "invalid_feedback" }, 400);
   }
-  const report = await service.from("reports").select("id,run_id").eq(
-    "id",
-    body.reportId,
-  ).eq("user_id", identity.user.id).maybeSingle();
-  if (report.error || !report.data) {
+  const report = await caller
+    .from("reports")
+    .select("id,run_id")
+    .eq("id", body.reportId)
+    .eq("user_id", identity.user.id)
+    .maybeSingle();
+  if (report.error) {
+    return json(
+      {
+        code: "report_lookup_failed",
+        databaseCode: report.error.code,
+      },
+      500,
+    );
+  }
+  if (!report.data) {
     return json({ code: "report_not_found" }, 404);
   }
-  const feedback = await service.from("feedback").insert({
-    user_id: identity.user.id,
-    report_id: report.data.id,
-    positive: body.positive,
-    categories: body.categories,
-    comment: body.comment?.trim() || null,
-  }).select("id").single();
+  const feedback = await caller
+    .from("feedback")
+    .insert({
+      user_id: identity.user.id,
+      report_id: report.data.id,
+      positive: body.positive,
+      categories: body.categories,
+      comment: body.comment?.trim() || null,
+    })
+    .select("id")
+    .single();
   if (feedback.error) {
     return json({ code: "feedback_store_failed" }, 500);
   }
-  const run = await service.from("workflow_runs").select("correlation_id").eq(
-    "id",
-    report.data.run_id,
-  ).maybeSingle();
+  const run = await service
+    .from("workflow_runs")
+    .select("correlation_id")
+    .eq("id", report.data.run_id)
+    .maybeSingle();
   if (run.data) {
     await service.from("trace_events").insert({
       user_id: identity.user.id,

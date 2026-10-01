@@ -4,6 +4,7 @@ import test from 'node:test';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { localFunctionDirectories } from './edge-function-inventory.js';
 import {
   compareInventory,
   compareWorkerToExpected,
@@ -122,16 +123,12 @@ test('normalizes repository migration filenames to provider version identifiers'
   assert.throws(() => migrationVersionFromFilename('foundation.sql'));
 });
 
-test('maps all 39 local Edge Functions to configured or default JWT verification', () => {
-  const directories = readdirSync('supabase/functions', { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map(({ name }) => name);
+test('maps every local Edge Function to configured or default JWT verification', () => {
+  const directories = localFunctionDirectories();
+  assert.ok(!directories.includes('node_modules'));
   const auth = parseFunctionAuth(readFileSync('supabase/config.toml', 'utf8'), directories);
-  assert.equal(auth.size, 39);
-  assert.deepEqual(
-    [...auth.keys()].sort(),
-    directories.filter((name) => !name.startsWith('_')).sort(),
-  );
+  assert.equal(auth.size, directories.length);
+  assert.deepEqual([...auth.keys()].sort(), directories);
   assert.equal(auth.get('notification-test'), true);
   assert.equal(auth.get('onboarding-update'), true);
   assert.equal(auth.get('personal-profile'), false);

@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
+import { localFunctionDirectories } from './edge-function-inventory.js';
 
 const EnvironmentSchema = z.object({
   projectRef: z.string().min(1),
@@ -590,10 +591,7 @@ export function parseFunctionAuth(source: string, directoryNames: string[]): Map
 
 function localFunctionAuth(): Map<string, boolean> {
   const source = readFileSync('supabase/config.toml', 'utf8');
-  const directories = readdirSync('supabase/functions', { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map(({ name }) => name);
-  return parseFunctionAuth(source, directories);
+  return parseFunctionAuth(source, localFunctionDirectories());
 }
 
 function captureSourceAttestation(): z.infer<typeof SourceAttestationSchema> {

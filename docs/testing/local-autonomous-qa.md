@@ -1,21 +1,12 @@
 # Local autonomous QA
 
-Run `pnpm qa:local` from the repository root before opening a ticket PR. It runs
-`pnpm qa:preflight`, creates a private Supabase project with a unique project ID
-and ports, starts a loopback Next.js app on a free port, and runs the normal
-Chromium and WebKit E2E projects. The seeded database, Next build output,
-Playwright result directory and browser contexts are isolated to that run.
-Supabase and app processes are stopped and temporary services/build output are
-removed when Playwright exits; failure artifacts remain under
-`test-results/local/<session-id>`.
+Every implementation session starts with `pnpm qa:doctor --fix`. The doctor verifies the repository and developer runtimes, starts Docker Desktop when possible, repairs/restarts a stale local Supabase stack, warms the required Supabase Docker images, and verifies Chromium/WebKit, Deno and Python before feature investigation begins. A warm healthy session is intentionally cheap; recovery work happens once at ticket start rather than during debugging.
 
-`pnpm qa:preflight` checks the Node/pnpm versions, Docker engine, Supabase CLI,
-and Chromium/WebKit installations before starting services. The integrated
-`pnpm qa:local` command then checks the local Supabase Auth health endpoint
-before it launches Playwright. A stopped Docker engine, missing browser, bad
-authentication configuration, failed database startup, or unhealthy Auth
-endpoint returns a short actionable diagnostic before the feature journey.
+`pnpm qa:local` remains the **full isolated browser regression** command. It creates a private Supabase project with a unique project ID and ports, starts a loopback Next.js app on a free port, and runs the requested Playwright projects (Chromium and WebKit when no project filter is supplied). Use it when the impact router selects browser proof, for explicit full regression, or when debugging genuinely crosses the browser/application boundary. It is no longer a mandatory pre-PR tax for backend, release-script, DB-only or other unrelated changes.
 
+`pnpm verify:changed` is the normal final local gate. It combines the committed branch diff with staged, unstaged and untracked work, classifies the changed surface, and runs only the static/package/DB/Edge/worker/browser/security checks capable of detecting regressions in that surface. Changes to central build/test routing fail safe to broader verification. CI runs independent core and boundary lanes from the same impact plan; scheduled workflows retain the full Chromium/WebKit and Edge regression sweeps.
+
+`pnpm qa:debug -- <narrow reproduction command>` captures a sanitized failure bundle under ignored `.qa/debug/` with the failure class, changed files, diff summary, extracted source locations and the required next debugging action. Use it when a failure is not already obvious from the test output; do not use a broad suite as a search tool.
 The test runner creates a random local password for the locked application
 identity when `LOCAL_TEST_PASSWORD` is not set. This value exists only in the
 process environment for the run. The browser sends it to the local-only
@@ -56,19 +47,10 @@ key or TOTP secret is needed.
 
 ## Ticket QA and live acceptance
 
-Use the local database and seeded synthetic fixtures for feature debugging,
-including writes. Each `pnpm qa:local` run owns a separate ephemeral Supabase
-project, so parallel sessions do not share fixture rows or ports. Keep tests
-idempotent within one run and use the generated session ID when naming any
-additional artifacts. Browser tests use isolated Playwright contexts and do
-not persist browser profiles.
+Use the cheapest proof capable of detecting each changed behaviour. During implementation, rerun only the failing/affected unit, contract or component test. Add one real boundary proof for the boundary actually changed. Do not run a broad suite while a narrow reproducer is still red, and stop speculative patching after two unsupported fix hypotheses.
 
-Before the single ticket PR, exercise the acceptance happy path plus ownership,
-permission, validation, empty/degraded, retry/recovery and responsive states
-that apply to the ticket. CI runs the same isolated local E2E command. Keep the
-PR open while its candidate is deployed to staging. Staging is reserved for
-real hosted Auth/AAL2, Supabase/RLS/function and provider boundaries, with one
-manual user MFA checkpoint in the same visible browser where needed. Never
-automate staging TOTP or reuse the local JWT against a hosted environment.
-After staging acceptance, merge that PR and perform only the bounded production
-smoke required by the project QA standard.
+Before the single ticket PR, run `pnpm verify:changed`. Browser changes normally receive Chromium proof on the PR path; WebKit/full browser regression is reserved for explicit compatibility/auth/design-system acceptance and the scheduled regression. DB, Edge, worker and security checks are selected only when their surfaces changed. CI is independent verification, not the primary debugging environment, and superseded CI runs are cancelled.
+
+Staging is reserved for boundaries localhost cannot faithfully prove: hosted Auth/AAL2, deployment/provenance behaviour, real provider callbacks/credentials, and similarly hosted-only contracts. A ticket should normally declare at most one or two live-only scenarios. Manual MFA remains a parked human gate rather than blocking unrelated development throughput. After staging acceptance, promote through the existing release provenance gates and perform only the bounded affected-capability production smoke.
+
+Every deterministic defect first found in CI, staging or production must leave a cheaper regression or invariant below that layer before the ticket completes. The same deterministic failure should not be able to escape to the same stage twice.

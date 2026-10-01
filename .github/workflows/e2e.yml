@@ -1,8 +1,16 @@
-name: E2E
-on: [pull_request, merge_group]
+name: Full regression
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
+
+concurrency:
+  group: full-regression
+  cancel-in-progress: true
 
 permissions:
   contents: read
+
 jobs:
   playwright:
     runs-on: ubuntu-latest
