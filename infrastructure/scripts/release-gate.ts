@@ -65,7 +65,7 @@ const AcceptanceEvidenceSchema = z
   })
   .strict();
 
-const PromotionEvidenceSchema = z
+export const ProductionPromotionEvidenceSchema = z
   .object({
     schemaVersion: z.literal(1),
     state: z.literal('PRODUCTION_PROMOTION_READY'),
@@ -199,7 +199,7 @@ const ProductionPromotionInputSchema = z
 const ProductionSmokeInputSchema = z
   .object({
     deployedSha: ShaSchema,
-    promotion: PromotionEvidenceSchema,
+    promotion: ProductionPromotionEvidenceSchema,
     probes: ProductionSmokeSchema.shape.probes,
   })
   .strict();
@@ -355,7 +355,7 @@ export interface StagingAcceptanceStatusEvidence {
 export type StagingDeploymentEvidence = z.infer<typeof StagingDeploymentSchema>;
 export type StagingReadyEvidence = z.infer<typeof ReadyEvidenceSchema>;
 export type StagingAcceptanceEvidence = z.infer<typeof AcceptanceEvidenceSchema>;
-export type ProductionPromotionEvidence = z.infer<typeof PromotionEvidenceSchema>;
+export type ProductionPromotionEvidence = z.infer<typeof ProductionPromotionEvidenceSchema>;
 export type ProductionSmokeEvidence = z.infer<typeof ProductionSmokeSchema>;
 export type ReleaseGateCommand =
   | 'candidate-readiness'
@@ -857,7 +857,7 @@ export function authorizeProductionPromotion(input: {
       candidateTreeSha,
       mergeCommitTreeSha,
     );
-  return PromotionEvidenceSchema.parse({
+  return ProductionPromotionEvidenceSchema.parse({
     schemaVersion: 1,
     state: 'PRODUCTION_PROMOTION_READY',
     candidateSha,
@@ -881,7 +881,7 @@ export function recordProductionSmoke(input: {
   }>;
 }): ProductionSmokeEvidence {
   const promotion = parseEvidence(
-    PromotionEvidenceSchema,
+    ProductionPromotionEvidenceSchema,
     input.promotion,
     'production.smoke',
     'unknown',

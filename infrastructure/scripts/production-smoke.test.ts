@@ -1,9 +1,26 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { runProductionSmokeProbes } from './production-smoke.js';
+import { parseProductionPromotionEvidence, runProductionSmokeProbes } from './production-smoke.js';
 
 const productionOrigin = 'https://ai-operations-production.ai-operations.workers.dev';
 const expectedSha = 'a'.repeat(40);
+
+test('production smoke accepts the top-level promotion evidence written by the release gate', () => {
+  const promotion = {
+    schemaVersion: 1 as const,
+    state: 'PRODUCTION_PROMOTION_READY' as const,
+    candidateSha: 'b'.repeat(40),
+    candidateTreeSha: 'c'.repeat(40),
+    pullRequestNumber: 1,
+    mergeCommitSha: expectedSha,
+    mergeCommitTreeSha: 'c'.repeat(40),
+    requestedSha: expectedSha,
+    stagingDeploymentRunId: '1',
+  };
+
+  assert.deepEqual(parseProductionPromotionEvidence(promotion), promotion);
+  assert.throws(() => parseProductionPromotionEvidence({ evidence: promotion }));
+});
 
 function fetcherFor(responses: (url: string) => Response | Promise<Response>) {
   const requests: Array<{ url: string; init: RequestInit }> = [];
