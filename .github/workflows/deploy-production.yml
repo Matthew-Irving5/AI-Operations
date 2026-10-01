@@ -32,8 +32,11 @@ jobs:
           GH_REPOSITORY: ${{ github.repository }}
           STAGING_RUN_ID: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || inputs.staging_run_id }}
           GITHUB_SERVER_URL: ${{ github.server_url }}
+          PROMOTION_EVIDENCE_DIR: ${{ runner.temp }}/ai-operations-production-release-evidence
         run: |
           set -euo pipefail
+          mkdir -p "$PROMOTION_EVIDENCE_DIR"
+          cd "$PROMOTION_EVIDENCE_DIR"
           [[ "$STAGING_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]] || { echo "Staging run ID is invalid."; exit 1; }
           gh api "repos/$GH_REPOSITORY/actions/runs/$STAGING_RUN_ID" > staging-run.json
           jq -e --arg repo "$GH_REPOSITORY" '
@@ -138,18 +141,20 @@ jobs:
           CANDIDATE_PR_NUMBER: ${{ steps.staging-run.outputs.pr_number }}
           MERGE_SHA: ${{ steps.staging-run.outputs.sha }}
           REPOSITORY_FULL_NAME: ${{ github.repository }}
+          PROMOTION_EVIDENCE_DIR: ${{ runner.temp }}/ai-operations-production-release-evidence
         run: |
           set -euo pipefail
           node --input-type=module <<'NODE'
           import { readFileSync, writeFileSync } from 'node:fs';
           const read = (path) => JSON.parse(readFileSync(path, 'utf8'));
+          const readPromotionEvidence = (name) => read(`${process.env.PROMOTION_EVIDENCE_DIR}/${name}`);
           const acceptanceRecord = read('hosted-acceptance/acceptance-evidence.json');
           const acceptance = acceptanceRecord.acceptance;
           const deployment = read('candidate-deployment/candidate-staging-deployment.json');
           const candidateRun = read('candidate-deployment-run.json');
-          const stagingRun = read('staging-run.json');
-          const mergeCommit = read('merge-commit.json');
-          const pullRequests = read('merged-pulls.json');
+          const stagingRun = readPromotionEvidence('staging-run.json');
+          const mergeCommit = readPromotionEvidence('merge-commit.json');
+          const pullRequests = readPromotionEvidence('merged-pulls.json');
           const matchingPrs = pullRequests.filter((pr) => pr.state === 'closed' && pr.merged_at && pr.base?.ref === 'main' && pr.merge_commit_sha === process.env.MERGE_SHA && pr.head?.repo?.full_name === process.env.REPOSITORY_FULL_NAME);
           if (matchingPrs.length !== 1 || matchingPrs[0].number !== Number(process.env.CANDIDATE_PR_NUMBER) || matchingPrs[0].head?.sha !== process.env.CANDIDATE_SHA) {
             throw new Error('Merge commit must map to the accepted PR number and exact candidate head uniquely.');
