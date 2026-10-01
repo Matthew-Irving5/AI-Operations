@@ -1,7 +1,11 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
-import { recordProductionSmoke, type ProductionPromotionEvidence } from './release-gate.js';
+import {
+  ProductionPromotionEvidenceSchema,
+  recordProductionSmoke,
+  type ProductionPromotionEvidence,
+} from './release-gate.js';
 
 const ProductionOrigin = 'https://ai-operations-production.ai-operations.workers.dev';
 const ShaSchema = z.string().regex(/^[a-f0-9]{40}$/i);
@@ -22,6 +26,10 @@ export interface ProductionSmokeDependencies {
   maxReleaseAttempts?: number;
   retryDelayMs?: number;
   timeoutMs?: number;
+}
+
+export function parseProductionPromotionEvidence(input: unknown): ProductionPromotionEvidence {
+  return ProductionPromotionEvidenceSchema.parse(input);
 }
 
 const defaultDependencies: ProductionSmokeDependencies = {
@@ -186,11 +194,9 @@ async function main(): Promise<void> {
   const promotionPath =
     process.env.PRODUCTION_PROMOTION_PATH ?? 'production-promotion-evidence.json';
   const outputPath = process.env.PRODUCTION_SMOKE_OUTPUT_PATH ?? 'production-smoke-evidence.json';
-  const promotionResult = JSON.parse(await readFile(promotionPath, 'utf8')) as {
-    evidence?: ProductionPromotionEvidence;
-  };
-  const promotion = promotionResult.evidence;
-  if (!promotion) throw new Error('Validated production promotion evidence is unavailable.');
+  const promotion = parseProductionPromotionEvidence(
+    JSON.parse(await readFile(promotionPath, 'utf8')),
+  );
   const probes = await runProductionSmokeProbes({ productionOrigin, expectedSha });
   const evidence = recordProductionSmoke({ deployedSha: expectedSha, promotion, probes });
   await writeFile(outputPath, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
