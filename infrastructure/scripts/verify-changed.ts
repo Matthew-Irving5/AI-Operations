@@ -16,13 +16,20 @@ type ImpactPlan = {
   security: boolean;
 };
 
+export function shellSafeArguments(args: string[], platform = process.platform): string[] {
+  if (platform !== 'win32') return args;
+  return args.map((argument) =>
+    /[\s()&|<>^]/.test(argument) ? `"${argument.replaceAll('"', '""')}"` : argument,
+  );
+}
+
 function run(
   command: string,
   args: string[],
   options: { cwd?: string; timeout?: number } = {},
 ): void {
   process.stdout.write(`\n$ ${[command, ...args].join(' ')}\n`);
-  execFileSync(command, args, {
+  execFileSync(command, shellSafeArguments(args), {
     cwd: options.cwd,
     stdio: 'inherit',
     shell: process.platform === 'win32',
@@ -31,7 +38,7 @@ function run(
 }
 
 function output(command: string, args: string[]): string {
-  return execFileSync(command, args, {
+  return execFileSync(command, shellSafeArguments(args), {
     encoding: 'utf8',
     shell: process.platform === 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],
