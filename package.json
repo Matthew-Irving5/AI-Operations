@@ -53,14 +53,17 @@
       "nanoid": "3.3.18",
       "playwright": "1.61.1",
       "postcss": "8.5.25",
-      "sharp": "0.35.4",
+      "sharp": "0.35.5",
       "undici": "7.29.1",
       "vitest": "4.1.11",
       "js-yaml": "4.3.2",
       "qs": "6.16.0",
-      "brace-expansion@<1.1.20": "1.1.20",
-      "brace-expansion@>=2.0.0 <2.1.6": "2.1.6",
-      "brace-expansion@>=4.0.0 <5.0.11": "5.0.11"
+      "braces": "workspace:@ai-operations/braces-safe@*",
+      "proxy-addr": "2.0.8",
+      "source-map-js": "1.2.2",
+      "brace-expansion@<1.1.21": "1.1.21",
+      "brace-expansion@>=2.0.0 <2.1.7": "2.1.7",
+      "brace-expansion@>=4.0.0 <5.0.12": "5.0.12"
     }
   }
 }

@@ -1,0 +1,14 @@
+{
+  "name": "@ai-operations/braces-safe",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Maintained local backport of braces 3.0.3 with bounded AST traversal",
+  "main": "index.js",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test test/*.test.cjs"
+  },
+  "dependencies": {
+    "fill-range": "7.1.1"
+  }
+}
