@@ -59,7 +59,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000202', true);
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000202","aal":"aal2"}', true);
 select is((select count(*) from public.workflow_runs), 0::bigint, 'a synthetic second user cannot read the primary user workflow run');
-select is((select count(*) from public.app_users), 0::bigint, 'a synthetic second user cannot read the primary user identity row');
+select ok(not has_table_privilege('authenticated', 'public.app_users', 'SELECT'), 'authenticated users cannot directly read application identity rows');
 
 reset role;
 set local role authenticated;
