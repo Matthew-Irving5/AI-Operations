@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { requireAal2 } from '../../lib/auth';
+import { ThemeToggle } from '@ai-operations/ui';
 import { SessionActivity } from './session-activity';
 const links = [
   'Overview',
@@ -28,6 +29,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
     <div className="shell">
       <nav>
         <strong>AI Operations</strong>
+        <ThemeToggle />
         <SessionActivity />
         {links.map((label) => (
           <Link

@@ -1,0 +1,270 @@
+/* Primitive palette, semantic system, component defaults, and layout scale. */
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --color-neutral-0: #ffffff;
+  --color-neutral-50: #fbfcfd;
+  --color-neutral-100: #f6f8fa;
+  --color-neutral-150: #f1f4f6;
+  --color-neutral-200: #edf2f4;
+  --color-neutral-400: #98a2a9;
+  --color-neutral-500: #75828a;
+  --color-neutral-600: #53616a;
+  --color-neutral-900: #11181c;
+  --color-neutral-950: #0e1215;
+  --color-signal-50: #e4f5f5;
+  --color-signal-100: rgba(8, 127, 140, 0.08);
+  --color-signal-600: #087f8c;
+  --color-signal-700: #056a74;
+  --color-focus-600: #067a9c;
+  --color-success-700: #187a54;
+  --color-success-50: #eaf7f0;
+  --color-warning-700: #a96500;
+  --color-warning-50: #fff4da;
+  --color-danger-700: #b43a45;
+  --color-danger-50: #fdecee;
+  --color-info-700: #246b9e;
+  --color-info-50: #eaf3fa;
+  --overlay-backdrop: rgba(17, 24, 28, 0.44);
+  --button-primary-text: #ffffff;
+  --button-danger-text: #ffffff;
+
+  --canvas: var(--color-neutral-100);
+  --canvas-elevated: var(--color-neutral-50);
+  --surface: var(--color-neutral-0);
+  --surface-subtle: var(--color-neutral-150);
+  --surface-hover: var(--color-neutral-200);
+  --text-primary: var(--color-neutral-900);
+  --text-secondary: var(--color-neutral-600);
+  --text-tertiary: var(--color-neutral-500);
+  --text-disabled: var(--color-neutral-400);
+  --border-subtle: rgba(17, 24, 28, 0.08);
+  --border-default: rgba(17, 24, 28, 0.13);
+  --border-strong: rgba(17, 24, 28, 0.22);
+  --signal: var(--color-signal-600);
+  --signal-strong: var(--color-signal-700);
+  --signal-soft: var(--color-signal-50);
+  --signal-ghost: var(--color-signal-100);
+  --focus: var(--color-focus-600);
+  --success: var(--color-success-700);
+  --success-soft: var(--color-success-50);
+  --warning: var(--color-warning-700);
+  --warning-soft: var(--color-warning-50);
+  --danger: var(--color-danger-700);
+  --danger-soft: var(--color-danger-50);
+  --info: var(--color-info-700);
+  --info-soft: var(--color-info-50);
+
+  --font-sans: 'Mona Sans Variable', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'Cascadia Code', 'Consolas', monospace;
+  --text-display-size: 2.75rem;
+  --text-display-line: 3rem;
+  --text-title-size: 2rem;
+  --text-title-line: 2.375rem;
+  --text-heading-size: 1.5rem;
+  --text-heading-line: 1.875rem;
+  --text-subheading-size: 1.1875rem;
+  --text-subheading-line: 1.625rem;
+  --text-component-size: 1rem;
+  --text-component-line: 1.375rem;
+  --text-body-size: 0.9375rem;
+  --text-body-line: 1.375rem;
+  --text-compact-size: 0.875rem;
+  --text-compact-line: 1.25rem;
+  --text-meta-size: 0.8125rem;
+  --text-meta-line: 1.125rem;
+  --text-micro-size: 0.75rem;
+  --text-micro-line: 1rem;
+  --weight-regular: 430;
+  --weight-medium: 520;
+  --weight-semibold: 620;
+  --weight-bold: 720;
+
+  --space-1: 0.125rem;
+  --space-2: 0.25rem;
+  --space-3: 0.375rem;
+  --space-4: 0.5rem;
+  --space-6: 0.75rem;
+  --space-8: 1rem;
+  --space-10: 1.25rem;
+  --space-12: 1.5rem;
+  --space-16: 2rem;
+  --space-20: 2.5rem;
+  --space-24: 3rem;
+  --space-32: 4rem;
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.4375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.125rem;
+  --radius-round: 999px;
+  --border-width: 1px;
+  --shadow-1: 0 1px 2px rgba(17, 24, 28, 0.04), 0 2px 8px rgba(17, 24, 28, 0.03);
+  --shadow-2: 0 8px 24px rgba(17, 24, 28, 0.08), 0 2px 6px rgba(17, 24, 28, 0.05);
+  --shadow-3: 0 16px 48px rgba(17, 24, 28, 0.12), 0 4px 12px rgba(17, 24, 28, 0.06);
+  --motion-instant: 80ms;
+  --motion-fast: 130ms;
+  --motion-normal: 190ms;
+  --motion-slow: 280ms;
+  --motion-scene: 380ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-overlay: 30;
+  --z-modal: 50;
+  --control-height-sm: 2rem;
+  --control-height-md: 2.5rem;
+  --control-height-lg: 3rem;
+  --content-reading: 47.5rem;
+  --content-operational: 80rem;
+  --content-data: 100rem;
+
+  /* Temporary compatibility aliases for existing application CSS. */
+  --bg: var(--canvas);
+  --line: var(--border-default);
+  --text: var(--text-primary);
+  --muted: var(--text-secondary);
+  --accent: var(--signal);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --color-neutral-0: #0e1215;
+  --color-neutral-50: #12181c;
+  --color-neutral-100: #171d21;
+  --color-neutral-150: #1c2429;
+  --color-neutral-200: #222c31;
+  --color-neutral-400: #87959c;
+  --color-neutral-500: #aeb9bf;
+  --color-neutral-600: #c5cdd1;
+  --color-neutral-900: #f2f5f6;
+  --color-neutral-950: #ffffff;
+  --color-signal-50: rgba(68, 190, 195, 0.14);
+  --color-signal-100: rgba(68, 190, 195, 0.1);
+  --color-signal-600: #58c3c8;
+  --color-signal-700: #8bd9dc;
+  --color-focus-600: #70cce5;
+  --color-success-700: #72d0a4;
+  --color-success-50: rgba(24, 122, 84, 0.2);
+  --color-warning-700: #f0bd68;
+  --color-warning-50: rgba(169, 101, 0, 0.22);
+  --color-danger-700: #ef8d95;
+  --color-danger-50: rgba(180, 58, 69, 0.2);
+  --color-info-700: #8dc5ed;
+  --color-info-50: rgba(36, 107, 158, 0.22);
+  --overlay-backdrop: rgba(0, 0, 0, 0.56);
+  --button-primary-text: #0e1215;
+  --button-danger-text: #0e1215;
+  --canvas: var(--color-neutral-0);
+  --canvas-elevated: var(--color-neutral-50);
+  --surface: var(--color-neutral-100);
+  --surface-subtle: var(--color-neutral-150);
+  --surface-hover: var(--color-neutral-200);
+  --text-primary: var(--color-neutral-900);
+  --text-secondary: var(--color-neutral-600);
+  --text-tertiary: var(--color-neutral-500);
+  --text-disabled: var(--color-neutral-400);
+  --border-subtle: rgba(242, 245, 246, 0.07);
+  --border-default: rgba(242, 245, 246, 0.12);
+  --border-strong: rgba(242, 245, 246, 0.2);
+  --signal: var(--color-signal-600);
+  --signal-strong: var(--color-signal-700);
+  --signal-soft: var(--color-signal-50);
+  --signal-ghost: var(--color-signal-100);
+  --focus: var(--color-focus-600);
+  --success: var(--color-success-700);
+  --success-soft: var(--color-success-50);
+  --warning: var(--color-warning-700);
+  --warning-soft: var(--color-warning-50);
+  --danger: var(--color-danger-700);
+  --danger-soft: var(--color-danger-50);
+  --info: var(--color-info-700);
+  --info-soft: var(--color-info-50);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.2), 0 2px 8px rgba(0, 0, 0, 0.16);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.28), 0 2px 6px rgba(0, 0, 0, 0.2);
+  --shadow-3: 0 16px 48px rgba(0, 0, 0, 0.36), 0 4px 12px rgba(0, 0, 0, 0.24);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--canvas);
+  scroll-behavior: smooth;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  background: var(--canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-body-size);
+  font-weight: var(--weight-regular);
+  line-height: 1.47;
+  font-optical-sizing: auto;
+  font-synthesis: none;
+}
+
+button,
+input,
+select,
+textarea {
+  color: inherit;
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--signal-soft);
+  color: var(--text-primary);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

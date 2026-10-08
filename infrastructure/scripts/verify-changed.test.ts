@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildImpactPlan, playwrightInstallArgs, prettierFiles } from './verify-changed';
+import {
+  buildImpactPlan,
+  playwrightInstallArgs,
+  prettierFiles,
+  shellSafeArguments,
+} from './verify-changed';
 
 test('release-only changes do not pay browser E2E', () => {
   const plan = buildImpactPlan(['infrastructure/scripts/release-gate.ts']);
@@ -23,6 +28,16 @@ test('database security changes select DB and security proof', () => {
 test('Deno Edge files bypass Prettier and use the Edge formatter lane', () => {
   assert.deepEqual(prettierFiles(['supabase/functions/feedback-submit/index.ts']), []);
   assert.deepEqual(prettierFiles(['apps/web/app/page.tsx']), ['apps/web/app/page.tsx']);
+});
+
+test('Windows command arguments preserve route-group paths through cmd.exe', () => {
+  const path = 'apps/web/app/(app)/design-system/page.tsx';
+
+  assert.deepEqual(shellSafeArguments(['--check', path], 'win32'), [
+    '--check',
+    '"apps/web/app/(app)/design-system/page.tsx"',
+  ]);
+  assert.deepEqual(shellSafeArguments(['--check', path], 'linux'), ['--check', path]);
 });
 
 test('clean Linux runners install Chromium system dependencies only when selected', () => {

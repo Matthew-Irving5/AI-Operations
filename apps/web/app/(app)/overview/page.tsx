@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { operationsData, reportsData, spendData } from '../../../lib/platform-data';
+import { Alert, EmptyState, Heading, Surface, Text } from '@ai-operations/ui';
 
 const money = (value: number) => `$${value.toFixed(2)}`;
 
@@ -19,48 +20,49 @@ export default async function Overview() {
   ];
   return (
     <>
-      <h1>Overview</h1>
-      <p className="notice">
+      <Heading level={1}>Overview</Heading>
+      <Text className="notice">
         AAL2 control-plane status is calculated from your own operational records. Schedules remain
         off until production onboarding is accepted.
-      </p>
+      </Text>
       {(operationsError ?? reportsError ?? forecast.error ?? calls.error) ? (
-        <p className="notice" role="alert">
+        <Alert tone="danger" title="Overview data is incomplete">
           {operationsError ?? reportsError ?? forecast.error ?? calls.error}
-        </p>
+        </Alert>
       ) : null}
-      <section className="grid">
+      <section aria-label="Operations summary" className="ui-metric-grid">
         {cards.map(([label, value]) => (
-          <article className="card" key={label}>
-            <div className="label">{label}</div>
-            <div className="value">{value}</div>
-          </article>
+          <Surface as="article" className="ui-metric" key={label}>
+            <Text className="label" size="meta" tone="secondary">
+              {label}
+            </Text>
+            <strong className="ui-metric__value tabular-nums">{value}</strong>
+          </Surface>
         ))}
       </section>
-      <h2>Latest reports</h2>
+      <Heading level={2}>Latest reports</Heading>
       {reports.length === 0 ? (
-        <p className="card">
-          No reports yet. Connect approved sources and use an individual bounded request or accepted
-          schedule.
-        </p>
+        <EmptyState title="No reports yet">
+          Connect approved sources and use an individual bounded request or accepted schedule.
+        </EmptyState>
       ) : (
-        <section className="stack">
+        <section aria-label="Latest reports" className="ui-report-list">
           {reports.slice(0, 5).map((report) => (
-            <article className="card" key={report.id}>
-              <div className="label">
+            <Surface as="article" className="ui-report" key={report.id}>
+              <Text className="label" size="meta" tone="secondary">
                 {report.report_type} ·{' '}
                 {new Date(report.created_at).toLocaleString('en-GB', { timeZone: 'Europe/London' })}
-              </div>
-              <h3>{report.title}</h3>
-              <p>{report.summary}</p>
-            </article>
+              </Text>
+              <Heading level={3}>{report.title}</Heading>
+              <Text>{report.summary}</Text>
+            </Surface>
           ))}
         </section>
       )}
-      <p className="card">
+      <Surface as="aside" variant="subtle">
         Review <Link href="/operations">operations</Link>, <Link href="/approvals">approvals</Link>,
         and <Link href="/spend-forecasting">spend forecasts</Link> for actionable detail.
-      </p>
+      </Surface>
     </>
   );
 }
