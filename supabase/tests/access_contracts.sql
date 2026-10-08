@@ -47,7 +47,7 @@ insert into expected_authenticated_access(table_name, select_grant, policy_name)
   ('time_preferences', true, 'own_time_preferences'),
   ('worker_devices', false, 'own_worker_devices');
 
-select plan(21);
+select plan(25);
 
 select ok(
   not exists (
@@ -162,14 +162,19 @@ select ok(
         'authenticated', relation.oid,
         'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
       )
-      and relation.relname <> 'mfa_reauthentication_events'
+      and relation.relname not in ('feedback', 'mfa_reauthentication_events')
+  )
+  and has_table_privilege('authenticated', 'public.feedback', 'INSERT')
+  and not has_table_privilege(
+    'authenticated', 'public.feedback',
+    'UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
   )
   and has_table_privilege('authenticated', 'public.mfa_reauthentication_events', 'INSERT')
   and not has_table_privilege(
     'authenticated', 'public.mfa_reauthentication_events',
     'SELECT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
   ),
-  'authenticated has no direct table writes except the MFA event insert'
+  'direct table writes are limited to feedback and MFA event inserts'
 );
 
 -- Application migrations create future public objects as postgres. The
@@ -281,6 +286,20 @@ select ok(
   'MFA event inserts are user-bound and require the allowed AAL2 session'
 );
 
+select ok(
+  has_table_privilege('authenticated', 'public.feedback', 'INSERT')
+    and exists (
+      select 1 from pg_policies
+      where schemaname = 'public'
+        and tablename = 'feedback'
+        and policyname = 'own_feedback'
+        and cmd = 'ALL'
+        and with_check::text like '%auth.uid()%'
+        and with_check::text like '%is_allowed_aal2%'
+    ),
+  'feedback-submit has INSERT privilege while owner and AAL2 checks remain enforced'
+);
+
 alter table public.app_users drop constraint app_users_email_check;
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -302,6 +321,40 @@ insert into public.personal_locations(user_id, label, encrypted_address, locatio
 values ('00000000-0000-0000-0000-000000000101', 'Synthetic home', 'synthetic-ciphertext', 'home');
 
 set local role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000202', true);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000202","aal":"aal2"}', true);
+select throws_ok($$
+  insert into public.feedback(user_id, report_id, positive, categories, comment)
+  values (
+    '00000000-0000-0000-0000-000000000101',
+    '00000000-0000-4000-8000-000000000505', true, array['ownership'],
+    'Synthetic cross-user feedback must be denied.'
+  )
+$$, 'new row violates row-level security policy for table "feedback"',
+  'feedback INSERT grant cannot write for another user');
+
+select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000101', true);
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000101","aal":"aal1"}', true);
+select throws_ok($$
+  insert into public.feedback(user_id, report_id, positive, categories, comment)
+  values (
+    '00000000-0000-0000-0000-000000000101',
+    '00000000-0000-4000-8000-000000000505', true, array['aal'],
+    'Synthetic AAL1 feedback must be denied.'
+  )
+$$, 'new row violates row-level security policy for table "feedback"',
+  'feedback INSERT remains denied to an AAL1 session');
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000101","aal":"aal2"}', true);
+select lives_ok($$
+  insert into public.feedback(user_id, report_id, positive, categories, comment)
+  values (
+    '00000000-0000-0000-0000-000000000101',
+    '00000000-0000-4000-8000-000000000505', true, array['access-contract'],
+    'Synthetic owner feedback is allowed at AAL2.'
+  )
+$$, 'the owner can insert feedback with an AAL2 JWT');
+
 select set_config('request.jwt.claim.sub', '00000000-0000-0000-0000-000000000202', true);
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000202","aal":"aal2"}', true);
 select is(
