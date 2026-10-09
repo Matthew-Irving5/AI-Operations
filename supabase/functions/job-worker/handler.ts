@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "npm:zod@4.1.5";
 
 const uuidSchema = z.string().uuid();
 const jobSchema = z.object({
