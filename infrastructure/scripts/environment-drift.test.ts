@@ -179,6 +179,97 @@ test('generated database type parity retains real nullable-column, enum, and RPC
   );
 });
 
+test('generated type parity ignores object property order but preserves enum order', () => {
+  const generated = `export type Database = { public: {
+    Tables: { records: { Row: { id: string; payload: Json | null }; Insert: { id: string; payload?: Json | null }; Update: { id?: string; payload?: Json | null } } };
+    Views: {};
+    Functions: { is_allowed_aal2: { Args: never; Returns: boolean } };
+    Enums: { state: 'ready' | 'done' };
+    CompositeTypes: {};
+  } };`;
+  const reordered = `export type Database = { public: {
+    Tables: { records: { Row: { payload: Json | null; id: string }; Insert: { payload?: Json | null; id: string }; Update: { payload?: Json | null; id?: string } } };
+    Views: {};
+    Functions: { is_allowed_aal2: { Returns: boolean; Args: Record<PropertyKey, never> } };
+    Enums: { state: 'ready' | 'done' };
+    CompositeTypes: {};
+  } };`;
+  const metadata = [
+    {
+      table_name: 'records',
+      column_name: 'id',
+      data_type: 'text',
+      is_nullable: 'NO',
+      is_generated: 'NEVER',
+    },
+    {
+      table_name: 'records',
+      column_name: 'payload',
+      data_type: 'jsonb',
+      is_nullable: 'YES',
+      is_generated: 'NEVER',
+    },
+  ];
+
+  assert.equal(generatedTypesMatch(generated, reordered, metadata), true);
+  assert.equal(
+    generatedTypesMatch(
+      generated,
+      reordered.replace("'ready' | 'done'", "'done' | 'ready'"),
+      metadata,
+    ),
+    false,
+  );
+});
+
+test('generated type parity compares overloaded RPC argument and return signatures', () => {
+  const generated = `export type Database = { public: {
+    Tables: { records: { Row: { id: string }; Insert: { id: string }; Update: { id?: string } } };
+    Views: {};
+    Functions: { run_record:
+      | { Args: { id: string }; Returns: boolean }
+      | { Args: { id: number }; Returns: boolean };
+      is_allowed_aal2: { Args: never; Returns: boolean } };
+    Enums: {};
+    CompositeTypes: {};
+  } };`;
+  const combined = `export type Database = { public: {
+    Tables: { records: { Row: { id: string }; Insert: { id: string }; Update: { id?: string } } };
+    Views: {};
+    Functions: { run_record: { Args: { id: number } | { id: string }; Returns: boolean };
+      is_allowed_aal2: { Args: Record<PropertyKey, never>; Returns: boolean } };
+    Enums: {};
+    CompositeTypes: {};
+  } };`;
+  const metadata = [
+    {
+      table_name: 'records',
+      column_name: 'id',
+      data_type: 'text',
+      is_nullable: 'NO',
+      is_generated: 'NEVER',
+    },
+  ];
+
+  assert.equal(generatedTypesMatch(generated, combined, metadata), true);
+  assert.equal(
+    generatedTypesMatch(
+      generated,
+      combined.replace('{ id: number } | { id: string }', '{ id: string }'),
+      metadata,
+    ),
+    false,
+  );
+  assert.equal(
+    generatedTypesMatch(
+      generated,
+      combined.replace('Returns: boolean', 'Returns: string'),
+      metadata,
+    ),
+    false,
+  );
+});
+
 test('column metadata contract rejects incomplete catalog responses without echoing values', () => {
   assert.deepEqual(
     parseColumnTypeMetadata([

@@ -6,6 +6,8 @@ Keep schedules disabled until production onboarding completes. On an authenticat
 
 Inspect the redacted trace by correlation ID. A leased job automatically becomes eligible again when its lease expires. Failed jobs are requeued with exponential backoff and jitter until the maximum attempts is reached; then the job is dead-lettered and the run is marked failed. Do not edit queue rows directly.
 
+Long-running OpenAI Responses release the worker lease into `awaiting_provider` and retain the exact response ID and attempt. A verified webhook completes the queue and workflow run in the same transaction as report and cost settlement. The response ID is retrievable for ten minutes after submission; if no verified completion arrives before expiry, the job is dead-lettered with `provider_response_timeout` and requires operator review. Do not automatically resubmit timed-out accepted work because it may duplicate billed execution.
+
 ## Scheduler recovery
 
 `pg_cron` invokes `dispatch_due_schedules()` every five minutes. The dispatcher takes a transaction advisory lock and inserts runs with schedule-time idempotency keys, so a recovery invocation through the authenticated scheduler function is safe while the normal job exists. Verify the `ai-operations-scheduler-dispatch-5m` cron job and inspect redacted `run_queued` trace events before manually invoking recovery.

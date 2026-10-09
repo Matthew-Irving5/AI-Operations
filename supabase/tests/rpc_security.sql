@@ -14,6 +14,10 @@ insert into rpc_security_expected values
   ('public.reserve_recurring_budget(uuid,uuid,numeric)', false, false, false),
   ('public.dispatch_due_schedules(timestamptz)', false, false, true),
   ('public.complete_job_queue(uuid,text,boolean,text)', false, false, true),
+  -- AI-18 queue-owned submission and completion RPCs.
+  ('public.complete_job_queue(uuid,text,text,text)', false, false, true),
+  ('public.submit_workflow_job_response(uuid,text)', false, false, true),
+  ('public.complete_provider_queue_job(uuid,text,text,text)', false, false, true),
   ('public.create_on_demand_run(uuid,uuid,text,numeric,text,integer,text)', false, false, true),
   ('public.decide_approval(uuid,uuid,public.approval_decision,text)', false, false, true),
   ('public.execute_systems_workflow(uuid)', false, false, true),
