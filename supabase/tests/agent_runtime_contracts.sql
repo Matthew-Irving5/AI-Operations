@@ -1,7 +1,11 @@
 begin;
-select plan(15);
+select plan(19);
 
 select ok((select count(distinct m.code)=8 from public.manager_capabilities c join public.managers m on m.id=c.manager_id where c.contract_version=1), 'capabilities are seeded for all eight canonical managers');
+select ok(has_column_privilege('service_role','public.managers','id','SELECT'), 'trusted fixture lookup can read manager IDs');
+select ok(has_column_privilege('service_role','public.managers','code','SELECT'), 'trusted fixture lookup can filter by manager code');
+select ok(not has_column_privilege('service_role','public.managers','configuration','SELECT'), 'trusted fixture lookup cannot read manager configuration');
+select ok(not has_column_privilege('anon','public.managers','id','SELECT'), 'anonymous callers cannot read manager IDs');
 select ok((select relrowsecurity from pg_class where relname='conversations' and relnamespace='public'::regnamespace), 'canonical conversations enable RLS');
 select ok(exists(select 1 from pg_policies where schemaname='public' and tablename='conversations' and policyname='deny_data_api_clients'), 'conversation Data API access has an explicit deny policy');
 select ok(not has_table_privilege('authenticated','public.conversation_messages','SELECT,INSERT,UPDATE,DELETE'), 'authenticated callers have no direct message table access');
