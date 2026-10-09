@@ -1,12 +1,6 @@
-export type ManagerCode =
-  | 'finance'
-  | 'career'
-  | 'personal'
-  | 'health'
-  | 'systems'
-  | 'digital_estate'
-  | 'travel'
-  | 'procurement';
+import type { ActionProposal, ManagerCode } from '@ai-operations/contracts';
+
+export type { ActionProposal, ManagerCode } from '@ai-operations/contracts';
 
 export type WorkflowDefinition = Readonly<{
   code: string;
@@ -19,11 +13,6 @@ export type WorkflowDefinition = Readonly<{
 export type RunContext = Readonly<{ runId: string; correlationId: string; timezone: string }>;
 export type ValidationResult = Readonly<{ valid: boolean; reasons: readonly string[] }>;
 export type ManagerOutput = Readonly<{ summary: string; evidenceIds: readonly string[] }>;
-export type ActionProposal = Readonly<{
-  type: string;
-  title: string;
-  risk: 'low' | 'medium' | 'high' | 'critical';
-}>;
 export type Report = Readonly<{ title: string; markdown: string }>;
 export type NotificationRequest = Readonly<{ subject: string; body: string; dedupeKey: string }>;
 

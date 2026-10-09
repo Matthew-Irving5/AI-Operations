@@ -106,6 +106,17 @@ verify_jwt = true
 [functions.personal-profile]
   verify_jwt = false
 
+[functions.agent-runtime-contracts]
+enabled = true
+verify_jwt = true
+import_map = "./functions/agent-runtime-contracts/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/agent-runtime-contracts/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/agent-runtime-contracts/*.html" ]
+
 [functions.onboarding-accept]
 verify_jwt = true
 
@@ -117,3 +128,6 @@ enabled = true
 port = 54321
 [db]
 port = 54322
+
+[db.seed]
+sql_paths = ["./seed.sql", "./fixtures/local_application_role_acl_baseline.sql"]

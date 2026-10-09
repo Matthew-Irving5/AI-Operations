@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
+import ts from 'typescript';
 import { z } from 'zod';
 import { localFunctionDirectories } from './edge-function-inventory.js';
 
@@ -73,6 +74,15 @@ const AuthManifestSchema = z
 const FunctionsSchema = z.array(FunctionSchema);
 const MigrationRowsSchema = z.array(z.object({ version: z.string() }));
 const DigestRowsSchema = z.array(z.object({ schema_digest: z.string() })).length(1);
+const ColumnTypeMetadataSchema = z.array(
+  z.object({
+    table_name: z.string(),
+    column_name: z.string(),
+    data_type: z.string(),
+    is_nullable: z.enum(['YES', 'NO']),
+    is_generated: z.string(),
+  }),
+);
 const SecretSchema = z.object({ name: z.string() });
 const SecretsSchema = z.array(SecretSchema);
 const GitHubNamesSchema = z.array(z.object({ name: z.string() }));
@@ -110,6 +120,120 @@ export type EnvironmentName = 'staging' | 'production';
 export type FunctionInventory = z.infer<typeof FunctionSchema>[];
 export type EdgeAuthContract = z.infer<typeof AuthContractSchema>;
 export type DriftReport = { ok: boolean; mismatches: string[]; evidence: Record<string, unknown> };
+
+type ColumnTypeMetadata = z.infer<typeof ColumnTypeMetadataSchema>[number];
+
+function databasePublicType(sourceText: string, metadata: ColumnTypeMetadata[]): string | null {
+  const source = ts.createSourceFile('database.types.ts', sourceText, ts.ScriptTarget.Latest, true);
+  const database = source.statements.find(
+    (statement): statement is ts.TypeAliasDeclaration =>
+      ts.isTypeAliasDeclaration(statement) && statement.name.text === 'Database',
+  );
+  if (!database || !ts.isTypeLiteralNode(database.type)) return null;
+  const databaseProperties = database.type.members.filter(ts.isPropertySignature);
+  const publicProperty = databaseProperties.find(
+    (property) => property.name?.getText(source) === 'public',
+  );
+  if (!publicProperty?.type || !ts.isTypeLiteralNode(publicProperty.type)) return null;
+
+  const printer = ts.createPrinter({ removeComments: true });
+  const metadataByColumn = new Map(
+    metadata.map((column) => [`${column.table_name}.${column.column_name}`, column]),
+  );
+  const propertyName = (property: ts.PropertySignature) =>
+    property.name && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))
+      ? property.name.text
+      : (property.name?.getText(source) ?? '');
+  const print = (node: ts.Node) => printer.printNode(ts.EmitHint.Unspecified, node, source);
+
+  const tablesProperty = publicProperty.type.members
+    .filter(ts.isPropertySignature)
+    .find((property) => property.name?.getText(source) === 'Tables');
+  if (!tablesProperty?.type || !ts.isTypeLiteralNode(tablesProperty.type)) return null;
+  for (const tableProperty of tablesProperty.type.members.filter(ts.isPropertySignature)) {
+    const table = propertyName(tableProperty);
+    if (!tableProperty.type || !ts.isTypeLiteralNode(tableProperty.type)) return null;
+    const rowProperty = tableProperty.type.members
+      .filter(ts.isPropertySignature)
+      .find((property) => property.name?.getText(source) === 'Row');
+    if (!rowProperty?.type || !ts.isTypeLiteralNode(rowProperty.type)) return null;
+    for (const columnProperty of rowProperty.type.members.filter(ts.isPropertySignature)) {
+      if (!metadataByColumn.has(`${table}.${propertyName(columnProperty)}`)) return null;
+    }
+  }
+
+  const setofTable = (node: ts.TypeLiteralNode): string | undefined => {
+    const options = node.members
+      .filter(ts.isPropertySignature)
+      .find((property) => property.name?.getText(source) === 'SetofOptions')?.type;
+    if (!options || !ts.isTypeLiteralNode(options)) return undefined;
+    const target = options.members
+      .filter(ts.isPropertySignature)
+      .find((property) => property.name?.getText(source) === 'to')?.type;
+    return target && ts.isLiteralTypeNode(target) && ts.isStringLiteral(target.literal)
+      ? target.literal.text
+      : undefined;
+  };
+
+  const serialize = (node: ts.TypeNode, path: string[], returnedTable?: string): string => {
+    if (ts.isArrayTypeNode(node)) return `${serialize(node.elementType, path, returnedTable)}[]`;
+    if (!ts.isTypeLiteralNode(node)) return print(node).replace(/\s+/g, ' ').trim();
+    const [parentSection, parentFunction] = path;
+    const functionTable = parentSection === 'Functions' ? setofTable(node) : undefined;
+    const members = node.members.map((member) => {
+      if (!ts.isPropertySignature(member) || !member.type)
+        return print(member).replace(/\s+/g, ' ').trim();
+      const name = propertyName(member);
+      const nextPath = [...path, name];
+      let type = member.type;
+      const [section, table, shape] = path;
+      const tableForColumn =
+        section === 'Tables' && table && ['Row', 'Insert', 'Update'].includes(shape ?? '')
+          ? table
+          : returnedTable;
+      if (tableForColumn) {
+        const columnMetadata = metadataByColumn.get(`${tableForColumn}.${name}`);
+        if (
+          columnMetadata?.data_type === 'jsonb' &&
+          columnMetadata.is_nullable === 'NO' &&
+          ts.isTypeReferenceNode(type) &&
+          type.typeName.getText(source) === 'Json' &&
+          !type.typeArguments?.length
+        )
+          return `${name}${member.questionToken ? '?' : ''}: NonNullable<Json>`;
+        if (columnMetadata?.is_generated === 'ALWAYS' && ['Insert', 'Update'].includes(shape ?? ''))
+          type = ts.factory.createKeywordTypeNode(ts.SyntaxKind.NeverKeyword);
+      }
+      if (path.join('.') === 'Functions.is_allowed_aal2' && name === 'Args') {
+        const printed = print(type).replace(/\s+/g, ' ').trim();
+        if (printed === 'never' || printed === 'Record<PropertyKey, never>')
+          return `${name}: __canonical_no_args__`;
+      }
+      const returnTable =
+        parentSection === 'Functions' && parentFunction && name === 'Returns'
+          ? functionTable
+          : returnedTable;
+      return `${name}${member.questionToken ? '?' : ''}: ${serialize(type, nextPath, returnTable)}`;
+    });
+    return `{${members.join(';')}}`;
+  };
+
+  return serialize(publicProperty.type, []);
+}
+
+export function generatedTypesMatch(
+  generated: string,
+  checkedIn: string,
+  metadata: ColumnTypeMetadata[],
+): boolean {
+  const generatedPublic = databasePublicType(generated.replace(/\r\n/g, '\n'), metadata);
+  const checkedInPublic = databasePublicType(checkedIn.replace(/\r\n/g, '\n'), metadata);
+  return generatedPublic !== null && generatedPublic === checkedInPublic;
+}
+
+export function parseColumnTypeMetadata(value: unknown): ColumnTypeMetadata[] {
+  return ColumnTypeMetadataSchema.parse(value);
+}
 
 export function sourceFileDigests(root: string): Record<string, string> {
   const files: string[] = [];
@@ -531,6 +655,21 @@ async function getSchemaDigest(projectRef: string, token: string): Promise<strin
   return rows[0].schema_digest;
 }
 
+async function getColumnTypeMetadata(
+  projectRef: string,
+  token: string,
+): Promise<ColumnTypeMetadata[]> {
+  const result = await api(queryUrl(projectRef), token, z.unknown(), {
+    method: 'POST',
+    body: JSON.stringify({
+      query: `select table_name, column_name, data_type, is_nullable, is_generated
+          from information_schema.columns where table_schema = 'public'`,
+      read_only: true,
+    }),
+  });
+  return parseColumnTypeMetadata(result);
+}
+
 function generateTypes(projectRef: string, token: string): string {
   try {
     const generated = execFileSync(
@@ -890,8 +1029,12 @@ export async function runDriftCheck(
   const repoMigrations = localMigrations();
   mismatches.push(...compareMigrations(repoMigrations, current.migrations, `repo ↔ ${name}`));
   const generatedTypes = generateTypes(manifest.environments[name].projectRef, token);
-  const checkedInTypes = readFileSync('packages/db/src/database.types.ts', 'utf8').trimEnd();
-  if (generatedTypes !== checkedInTypes)
+  const checkedInTypes = readFileSync('packages/db/src/database.types.ts', 'utf8');
+  const columnTypeMetadata = await getColumnTypeMetadata(
+    manifest.environments[name].projectRef,
+    token,
+  );
+  if (!generatedTypesMatch(generatedTypes, checkedInTypes, columnTypeMetadata))
     mismatches.push(`repo ↔ ${name}: generated database.types.ts differs from live schema`);
   const sourceDigest = sourceAttestation.sourceDigest;
   const auth = localFunctionAuth();

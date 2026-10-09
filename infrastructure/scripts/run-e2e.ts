@@ -5,6 +5,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { requiredBrowsersFromPlaywrightArgs, runLocalQaPreflight } from './local-qa-preflight';
+import { copyLocalSupabaseWorkspaceFiles } from './qa-workspace-dependencies';
 
 function run(args: string[], env = process.env, timeoutMs = 120_000): string {
   return execFileSync('corepack', ['pnpm', ...args], {
@@ -139,6 +140,7 @@ function createIsolatedSupabaseProject(
       !source.includes(`${join('supabase', '.temp')}`) &&
       !source.includes(`${join('supabase', '.branches')}`),
   });
+  copyLocalSupabaseWorkspaceFiles(repositoryRoot, workdir);
   const configPath = join(projectDirectory, 'config.toml');
   let config = readFileSync(configPath, 'utf8');
   config = config.replace(

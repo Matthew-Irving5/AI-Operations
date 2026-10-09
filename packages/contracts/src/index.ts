@@ -1,14 +1,9 @@
 import { z } from 'zod';
-export const managerCodeSchema = z.enum([
-  'finance',
-  'career',
-  'personal',
-  'health',
-  'systems',
-  'digital_estate',
-  'travel',
-  'procurement',
-]);
+export * from './agents.ts';
+export * from './conversations.ts';
+export * from './evidence.ts';
+export * from './execution.ts';
+
 export const capabilitySchema = z.enum([
   'view_sensitive_data',
   'configure_managers',
@@ -25,25 +20,33 @@ export const actionRequestSchema = z.object({
   targetId: z.string().uuid(),
   reason: z.string().max(1000),
 });
-export type ManagerCode = z.infer<typeof managerCodeSchema>;
-
 export const budgetCategorySchema = z.enum(['recurring', 'on_demand']);
-export const aiOutputSchema = z.object({
-  summary: z.string().min(1),
-  findings: z.array(z.object({ claim: z.string(), evidenceIds: z.array(z.string()).min(1) })),
-  recommendations: z.array(z.string()),
-  actions: z.array(
-    z.object({
-      type: z.string(),
-      title: z.string(),
-      risk: z.enum(['low', 'medium', 'high', 'critical']),
-    }),
-  ),
-  alerts: z.array(z.string()),
-  evidence: z.array(z.object({ id: z.string(), source: z.string() })),
-  uncertainties: z.array(z.string()),
-  report_sections: z.array(z.object({ code: z.string(), title: z.string(), content: z.string() })),
-});
+export const aiOutputSchema = z
+  .object({
+    summary: z.string().min(1),
+    findings: z.array(
+      z
+        .object({ claim: z.string().min(1), evidenceIds: z.array(z.string().min(1)).min(1) })
+        .strict(),
+    ),
+    recommendations: z.array(z.string()),
+    actions: z.array(
+      z
+        .object({
+          type: z.string().min(1),
+          title: z.string().min(1),
+          risk: z.enum(['low', 'medium', 'high', 'critical']),
+        })
+        .strict(),
+    ),
+    alerts: z.array(z.string()),
+    evidence: z.array(z.object({ id: z.string().min(1), source: z.string().min(1) }).strict()),
+    uncertainties: z.array(z.string()),
+    report_sections: z.array(
+      z.object({ code: z.string().min(1), title: z.string().min(1), content: z.string() }).strict(),
+    ),
+  })
+  .strict();
 export type AiOutput = z.infer<typeof aiOutputSchema>;
 export const notificationRequestSchema = z.object({
   type: z.string().min(1),
