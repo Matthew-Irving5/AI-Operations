@@ -3478,6 +3478,47 @@ export type Database = {
           },
         ];
       };
+      job_provider_submissions: {
+        Row: {
+          attempt_count: number;
+          completed_at: string | null;
+          error_code: string | null;
+          expires_at: string;
+          job_id: string;
+          response_id: string;
+          status: string;
+          submitted_at: string;
+        };
+        Insert: {
+          attempt_count: number;
+          completed_at?: string | null;
+          error_code?: string | null;
+          expires_at: string;
+          job_id: string;
+          response_id: string;
+          status?: string;
+          submitted_at?: string;
+        };
+        Update: {
+          attempt_count?: number;
+          completed_at?: string | null;
+          error_code?: string | null;
+          expires_at?: string;
+          job_id?: string;
+          response_id?: string;
+          status?: string;
+          submitted_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'job_provider_submissions_job_id_fkey';
+            columns: ['job_id'];
+            isOneToOne: false;
+            referencedRelation: 'job_queue';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       job_queue: {
         Row: {
           attempt_count: number;
@@ -3543,47 +3584,6 @@ export type Database = {
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'app_users';
-            referencedColumns: ['id'];
-          },
-        ];
-      };
-      job_provider_submissions: {
-        Row: {
-          attempt_count: number;
-          completed_at: string | null;
-          error_code: string | null;
-          expires_at: string;
-          job_id: string;
-          response_id: string;
-          status: string;
-          submitted_at: string;
-        };
-        Insert: {
-          attempt_count: number;
-          completed_at?: string | null;
-          error_code?: string | null;
-          expires_at: string;
-          job_id: string;
-          response_id: string;
-          status?: string;
-          submitted_at?: string;
-        };
-        Update: {
-          attempt_count?: number;
-          completed_at?: string | null;
-          error_code?: string | null;
-          expires_at?: string;
-          job_id?: string;
-          response_id?: string;
-          status?: string;
-          submitted_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: 'job_provider_submissions_job_id_fkey';
-            columns: ['job_id'];
-            isOneToOne: false;
-            referencedRelation: 'job_queue';
             referencedColumns: ['id'];
           },
         ];
@@ -6643,104 +6643,69 @@ export type Database = {
         };
       };
       complete_deterministic_workflow_run: { Args: { p_run_id: string }; Returns: string };
-      complete_job_queue: {
-        Args:
-          | {
-              p_job_id: string;
-              p_redacted_error?: string;
-              p_succeeded: boolean;
-              p_worker_id: string;
-            }
-          | {
+      complete_job_queue:
+        | {
+            Args: {
               p_job_id: string;
               p_outcome: string;
               p_redacted_error?: string;
               p_worker_id: string;
             };
-        Returns: {
-          attempt_count: number;
-          available_at: string;
-          completed_at: string | null;
-          created_at: string;
-          deduplication_key: string;
-          id: string;
-          job_type: string;
-          lease_expires_at: string | null;
-          lease_owner: string | null;
-          maximum_attempts: number;
-          payload: NonNullable<Json>;
-          priority: number;
-          run_id: string;
-          status: Database['public']['Enums']['job_status'];
-          user_id: string;
-        };
-        SetofOptions: {
-          from: '*';
-          to: 'job_queue';
-          isOneToOne: true;
-          isSetofReturn: false;
-        };
-      };
-      complete_provider_queue_job: {
-        Args: {
-          p_error_code?: string;
-          p_job_id: string;
-          p_outcome: string;
-          p_response_id: string;
-        };
-        Returns: {
-          attempt_count: number;
-          available_at: string;
-          completed_at: string | null;
-          created_at: string;
-          deduplication_key: string;
-          id: string;
-          job_type: string;
-          lease_expires_at: string | null;
-          lease_owner: string | null;
-          maximum_attempts: number;
-          payload: NonNullable<Json>;
-          priority: number;
-          run_id: string;
-          status: Database['public']['Enums']['job_status'];
-          user_id: string;
-        };
-        SetofOptions: {
-          from: '*';
-          to: 'job_queue';
-          isOneToOne: true;
-          isSetofReturn: false;
-        };
-      };
-      submit_workflow_job_response: {
-        Args: {
-          p_run_id: string;
-          p_response_id: string;
-        };
-        Returns: {
-          attempt_count: number;
-          available_at: string;
-          completed_at: string | null;
-          created_at: string;
-          deduplication_key: string;
-          id: string;
-          job_type: string;
-          lease_expires_at: string | null;
-          lease_owner: string | null;
-          maximum_attempts: number;
-          payload: NonNullable<Json>;
-          priority: number;
-          run_id: string;
-          status: Database['public']['Enums']['job_status'];
-          user_id: string;
-        };
-        SetofOptions: {
-          from: '*';
-          to: 'job_queue';
-          isOneToOne: true;
-          isSetofReturn: false;
-        };
-      };
+            Returns: {
+              attempt_count: number;
+              available_at: string;
+              completed_at: string | null;
+              created_at: string;
+              deduplication_key: string;
+              id: string;
+              job_type: string;
+              lease_expires_at: string | null;
+              lease_owner: string | null;
+              maximum_attempts: number;
+              payload: NonNullable<Json>;
+              priority: number;
+              run_id: string;
+              status: Database['public']['Enums']['job_status'];
+              user_id: string;
+            };
+            SetofOptions: {
+              from: '*';
+              to: 'job_queue';
+              isOneToOne: true;
+              isSetofReturn: false;
+            };
+          }
+        | {
+            Args: {
+              p_job_id: string;
+              p_redacted_error?: string;
+              p_succeeded: boolean;
+              p_worker_id: string;
+            };
+            Returns: {
+              attempt_count: number;
+              available_at: string;
+              completed_at: string | null;
+              created_at: string;
+              deduplication_key: string;
+              id: string;
+              job_type: string;
+              lease_expires_at: string | null;
+              lease_owner: string | null;
+              maximum_attempts: number;
+              payload: NonNullable<Json>;
+              priority: number;
+              run_id: string;
+              status: Database['public']['Enums']['job_status'];
+              user_id: string;
+            };
+            SetofOptions: {
+              from: '*';
+              to: 'job_queue';
+              isOneToOne: true;
+              isSetofReturn: false;
+            };
+          };
       complete_notification_delivery: {
         Args: {
           p_error?: string;
@@ -6770,6 +6735,32 @@ export type Database = {
         SetofOptions: {
           from: '*';
           to: 'notifications';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      complete_provider_queue_job: {
+        Args: { p_error_code?: string; p_job_id: string; p_outcome: string; p_response_id: string };
+        Returns: {
+          attempt_count: number;
+          available_at: string;
+          completed_at: string | null;
+          created_at: string;
+          deduplication_key: string;
+          id: string;
+          job_type: string;
+          lease_expires_at: string | null;
+          lease_owner: string | null;
+          maximum_attempts: number;
+          payload: NonNullable<Json>;
+          priority: number;
+          run_id: string;
+          status: Database['public']['Enums']['job_status'];
+          user_id: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'job_queue';
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -7055,6 +7046,32 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      submit_workflow_job_response: {
+        Args: { p_response_id: string; p_run_id: string };
+        Returns: {
+          attempt_count: number;
+          available_at: string;
+          completed_at: string | null;
+          created_at: string;
+          deduplication_key: string;
+          id: string;
+          job_type: string;
+          lease_expires_at: string | null;
+          lease_owner: string | null;
+          maximum_attempts: number;
+          payload: NonNullable<Json>;
+          priority: number;
+          run_id: string;
+          status: Database['public']['Enums']['job_status'];
+          user_id: string;
+        };
+        SetofOptions: {
+          from: '*';
+          to: 'job_queue';
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       update_google_source_selection: {
         Args: {
           p_connection_id: string;
@@ -7118,10 +7135,10 @@ export type Database = {
       job_status:
         | 'queued'
         | 'leased'
-        | 'awaiting_provider'
         | 'succeeded'
         | 'dead_letter'
-        | 'cancelled';
+        | 'cancelled'
+        | 'awaiting_provider';
       risk_class: 'low' | 'medium' | 'high' | 'critical';
       run_status:
         | 'queued'
@@ -7298,10 +7315,10 @@ export const Constants = {
       job_status: [
         'queued',
         'leased',
-        'awaiting_provider',
         'succeeded',
         'dead_letter',
         'cancelled',
+        'awaiting_provider',
       ],
       risk_class: ['low', 'medium', 'high', 'critical'],
       run_status: [

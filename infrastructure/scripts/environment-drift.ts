@@ -175,46 +175,87 @@ function databasePublicType(sourceText: string, metadata: ColumnTypeMetadata[]):
       : undefined;
   };
 
+  const property = (node: ts.TypeLiteralNode, name: string) =>
+    node.members.filter(ts.isPropertySignature).find((member) => propertyName(member) === name);
+
+  const serializeFunction = (node: ts.TypeNode, path: string[]): string => {
+    const overloads = ts.isUnionTypeNode(node) ? node.types : [node];
+    const signatures = overloads.flatMap((overload) => {
+      if (!ts.isTypeLiteralNode(overload)) return [serialize(overload, path)];
+      const args = property(overload, 'Args')?.type;
+      const returns = property(overload, 'Returns')?.type;
+      const options = property(overload, 'SetofOptions')?.type;
+      if (!args || !returns) return [serialize(overload, path)];
+      const argsVariants = ts.isUnionTypeNode(args) ? args.types : [args];
+      const returnedTable =
+        options && ts.isTypeLiteralNode(options) ? setofTable(overload) : undefined;
+      return argsVariants.map((argsVariant) => {
+        const printedArgs = print(argsVariant).replace(/\s+/g, ' ').trim();
+        const serializedArgs =
+          path[1] === 'is_allowed_aal2' &&
+          (printedArgs === 'never' || printedArgs === 'Record<PropertyKey, never>')
+            ? '__canonical_no_args__'
+            : serialize(argsVariant, [...path, 'Args']);
+        return `{Args:${serializedArgs};Returns:${serialize(
+          returns,
+          [...path, 'Returns'],
+          returnedTable,
+        )};SetofOptions:${options ? serialize(options, [...path, 'SetofOptions']) : 'none'}}`;
+      });
+    });
+    return `Overloads[${signatures.sort().join('|')}]`;
+  };
+
   const serialize = (node: ts.TypeNode, path: string[], returnedTable?: string): string => {
+    if (path[0] === 'Functions' && path.length === 2) return serializeFunction(node, path);
     if (ts.isArrayTypeNode(node)) return `${serialize(node.elementType, path, returnedTable)}[]`;
     if (!ts.isTypeLiteralNode(node)) return print(node).replace(/\s+/g, ' ').trim();
     const [parentSection, parentFunction] = path;
     const functionTable = parentSection === 'Functions' ? setofTable(node) : undefined;
-    const members = node.members.map((member) => {
-      if (!ts.isPropertySignature(member) || !member.type)
-        return print(member).replace(/\s+/g, ' ').trim();
-      const name = propertyName(member);
-      const nextPath = [...path, name];
-      let type = member.type;
-      const [section, table, shape] = path;
-      const tableForColumn =
-        section === 'Tables' && table && ['Row', 'Insert', 'Update'].includes(shape ?? '')
-          ? table
-          : returnedTable;
-      if (tableForColumn) {
-        const columnMetadata = metadataByColumn.get(`${tableForColumn}.${name}`);
-        if (
-          columnMetadata?.data_type === 'jsonb' &&
-          columnMetadata.is_nullable === 'NO' &&
-          ts.isTypeReferenceNode(type) &&
-          type.typeName.getText(source) === 'Json' &&
-          !type.typeArguments?.length
-        )
-          return `${name}${member.questionToken ? '?' : ''}: NonNullable<Json>`;
-        if (columnMetadata?.is_generated === 'ALWAYS' && ['Insert', 'Update'].includes(shape ?? ''))
-          type = ts.factory.createKeywordTypeNode(ts.SyntaxKind.NeverKeyword);
-      }
-      if (path.join('.') === 'Functions.is_allowed_aal2' && name === 'Args') {
-        const printed = print(type).replace(/\s+/g, ' ').trim();
-        if (printed === 'never' || printed === 'Record<PropertyKey, never>')
-          return `${name}: __canonical_no_args__`;
-      }
-      const returnTable =
-        parentSection === 'Functions' && parentFunction && name === 'Returns'
-          ? functionTable
-          : returnedTable;
-      return `${name}${member.questionToken ? '?' : ''}: ${serialize(type, nextPath, returnTable)}`;
-    });
+    const members = [...node.members]
+      .sort((left, right) => {
+        const leftName = ts.isPropertySignature(left) ? propertyName(left) : print(left);
+        const rightName = ts.isPropertySignature(right) ? propertyName(right) : print(right);
+        return leftName.localeCompare(rightName);
+      })
+      .map((member) => {
+        if (!ts.isPropertySignature(member) || !member.type)
+          return print(member).replace(/\s+/g, ' ').trim();
+        const name = propertyName(member);
+        const nextPath = [...path, name];
+        let type = member.type;
+        const [section, table, shape] = path;
+        const tableForColumn =
+          section === 'Tables' && table && ['Row', 'Insert', 'Update'].includes(shape ?? '')
+            ? table
+            : returnedTable;
+        if (tableForColumn) {
+          const columnMetadata = metadataByColumn.get(`${tableForColumn}.${name}`);
+          if (
+            columnMetadata?.data_type === 'jsonb' &&
+            columnMetadata.is_nullable === 'NO' &&
+            ts.isTypeReferenceNode(type) &&
+            type.typeName.getText(source) === 'Json' &&
+            !type.typeArguments?.length
+          )
+            return `${name}${member.questionToken ? '?' : ''}: NonNullable<Json>`;
+          if (
+            columnMetadata?.is_generated === 'ALWAYS' &&
+            ['Insert', 'Update'].includes(shape ?? '')
+          )
+            type = ts.factory.createKeywordTypeNode(ts.SyntaxKind.NeverKeyword);
+        }
+        if (path.join('.') === 'Functions.is_allowed_aal2' && name === 'Args') {
+          const printed = print(type).replace(/\s+/g, ' ').trim();
+          if (printed === 'never' || printed === 'Record<PropertyKey, never>')
+            return `${name}: __canonical_no_args__`;
+        }
+        const returnTable =
+          parentSection === 'Functions' && parentFunction && name === 'Returns'
+            ? functionTable
+            : returnedTable;
+        return `${name}${member.questionToken ? '?' : ''}: ${serialize(type, nextPath, returnTable)}`;
+      });
     return `{${members.join(';')}}`;
   };
 
