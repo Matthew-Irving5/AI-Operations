@@ -6,6 +6,14 @@ alter default privileges for role postgres in schema public
 alter default privileges for role postgres in schema public
   revoke all on sequences from service_role;
 
+-- Match the hosted service-role contract for existing workflow tables too.
+-- Keep the direct notification-test path and canonical workflow reads/writes;
+-- SECURITY DEFINER RPCs own stage and queue lifecycle mutations.
+revoke insert, select, update, delete on table public.run_steps from service_role;
+revoke insert, update, delete on table public.workflow_definitions from service_role;
+revoke insert, delete on table public.workflow_runs from service_role;
+revoke delete on table public.notifications from service_role;
+
 -- These parsers and diagnostics are implementation details reached from the
 -- SECURITY DEFINER ingestion/adaptation entry points, not direct RPCs.
 revoke execute on function public.mobile_adapter_validation_issues(text, text, jsonb),
