@@ -23,7 +23,7 @@ Apply authority by subject: the Agent Spec controls agent behavior and provider 
 ## Linear issue execution and completion
 
 - Linear describes **feature intent**, not a duplicated engineering manual. A ready ticket should contain: objective, feature-specific constraints, 1–3 observable acceptance outcomes, one test profile, any genuinely live-only proof, and out-of-scope items.
-- The repository owns the execution method. Every ticket starts with `pnpm qa:doctor --fix`; do not copy Docker/browser/test recovery instructions into individual tickets.
+- The repository owns the execution method. Every ticket starts with `corepack pnpm qa:doctor --fix`; use Corepack for every pnpm command so the repository-pinned version is used. Do not copy Docker/browser/test recovery instructions into individual tickets.
 - Use **In Progress** only while a development lane actively owns the ticket. One coding agent owns implementation and remains accountable through merge; do not add reviewer/best-of-N agents by default.
 - Compatible tickets may develop in parallel. Do not let CI, staging, MFA, provider waits, or another ticket's release wait consume an otherwise-free development lane. Park external-human gates with an exact resume command.
 - A ticket is Done when its selected local/CI proofs pass, its explicitly required live-only proof (if any) passes, and a deployable change has the bounded production smoke required by the release pipeline. Full live E2E is **not** a universal per-ticket requirement.
@@ -100,20 +100,20 @@ Never:
 
 Agent debugging optimizes **localisation time**, not the number of patches attempted.
 
-1. Reproduce the failure with the narrowest command possible. If useful, run `pnpm qa:debug -- <command>` to capture a sanitized failure bundle, changed files and likely source locations.
+1. Reproduce the failure with the narrowest command possible. If useful, run `corepack pnpm qa:debug -- <command>` to capture a sanitized failure bundle, changed files and likely source locations.
 2. Classify the failure before reading broadly: `CODE`, `CONTRACT`, `ENVIRONMENT`, `INFRASTRUCTURE`, `FLAKE`, or `UNKNOWN`. Environment failures go back to `qa:doctor`; do not search application code for them.
 3. Search in this order: exact error evidence → failing test → current diff → direct producer/consumer/caller → correlated logs → git history → external documentation/web. Stop when evidence localizes the failing boundary.
 4. Make the smallest causal fix and rerun **only the narrow reproducer**. Do not run a broad suite while that reproducer is red.
 5. After two unsupported/failed fix hypotheses, stop patching. Revert speculative changes, restate the misunderstood invariant, reduce to a smaller reproduction, improve diagnostics if needed, and only then edit again.
-6. Once narrow green, run the changed-surface proof with `pnpm verify:changed`. CI/staging are independent verification, not the primary debugger.
+6. Once narrow green, run the changed-surface proof with `corepack pnpm verify:changed`. CI/staging are independent verification, not the primary debugger.
 7. Every escaped deterministic bug leaves three artifacts: the fix, a regression test, and an earlier diagnostic/invariant so the same class cannot escape to that stage again.
 
 Errors must be actionable without secret/personal-data leakage: identify the failed invariant, boundary/subsystem, expected vs actual state, correlation ID when available, owning contract/source when known, and the exact reproduction command.
 ## Pass start protocol
 
 1. Verify `Matthew-Irving5/AI-Operations`, fetch/prune and start from current `origin/main` without disturbing another active worktree.
-2. Run `pnpm qa:doctor --fix`. Do not investigate the feature until it is green. This verifies/recovers Docker, local Supabase/images, browsers and required developer runtimes.
-3. Read the active Linear issue and only the authoritative spec sections/repo-map entries relevant to its changed surface. Run `pnpm repo:map` when the generated routing map is stale.
+2. Run `corepack pnpm qa:doctor --fix`. Do not investigate the feature until it is green. This verifies/recovers Docker, local Supabase/images, browsers and required developer runtimes.
+3. Read the active Linear issue and only the authoritative spec sections/repo-map entries relevant to its changed surface. Run `corepack pnpm repo:map` when the generated routing map is stale.
 4. Define 1–3 observable acceptance outcomes and identify the cheapest test layer capable of proving each. Add a live/staging proof only for a boundary localhost cannot faithfully prove.
 5. Run a narrow existing baseline only when it materially validates the starting assumption; do not pay the full-suite tax before editing.
 6. Create the issue branch and implement in one owning session.
@@ -123,15 +123,15 @@ Use the cheapest proof capable of catching each defect class exactly once.
 
 - Inner loop: affected unit/contract/component tests only.
 - Boundary proof: exactly the real boundary changed (DB/API/queue/browser/provider), not unrelated product journeys.
-- Final local gate: `pnpm verify:changed`. Its impact router selects affected static/package/DB/Edge/worker/browser/security checks and fails safe to the broader suite when central build/test routing changes.
+- Final local gate: `corepack pnpm verify:changed`. Its impact router selects affected static/package/DB/Edge/worker/browser/security checks and fails safe to the broader suite when central build/test routing changes. Independent selected checks continue after a failure; dependent checks are explicitly skipped, and the overall gate remains non-zero.
 - Chromium is the default PR browser proof when browser behaviour changed. WebKit/full cross-browser runs belong to explicit compatibility/auth/design-system acceptance or scheduled full regression, not every backend/release edit.
-- `pnpm verify` / `pnpm verify:ci` are fallback/full-regression commands, not the default feature inner loop.
+- `corepack pnpm verify` / `corepack pnpm verify:ci` are fallback/full-regression commands, not the default feature inner loop.
 - Never repeat the same capability proof locally, in CI and on staging unless the higher layer exercises a boundary the lower layer physically cannot prove.
 - Long-running independent checks should run in parallel. Do not create many tiny jobs when runner/setup overhead exceeds the test value.
 - Never skip/loosen a required assertion to gain speed; reduce scope to the relevant proof instead.
 ## PR protocol
 
-- Before opening the PR, run `pnpm verify:changed`; do not reflexively run the full CI-equivalent suite.
+- Before opening the PR, run `corepack pnpm verify:changed`; do not reflexively run the full CI-equivalent suite.
 - Push one coherent branch/PR. The same ticket owner remains responsible for defects until merge, but waiting on CI/release does not block another compatible development lane.
 - PR CI consists of parallel changed-surface **core** and **boundary** lanes. Superseded runs are cancelled. Full browser/Edge regression is scheduled separately.
 - If CI fails, use its exact failing command as the narrow reproducer; use `qa:debug` where useful. Fix locally, prove the narrow failure green, then push once. Do not debug by speculative GitHub Actions commits.
