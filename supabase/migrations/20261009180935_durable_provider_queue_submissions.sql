@@ -24,6 +24,13 @@ create index job_provider_submissions_expiry_idx
   where status = 'awaiting_provider';
 
 alter table public.job_provider_submissions enable row level security;
+create policy deny_data_api_clients
+  on public.job_provider_submissions
+  as restrictive
+  for all
+  to anon, authenticated
+  using (false)
+  with check (false);
 revoke all privileges on table
   public.job_provider_submissions
 from public, anon, authenticated, service_role;

@@ -1,5 +1,5 @@
 begin;
-select plan(26);
+select plan(28);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -52,7 +52,28 @@ select ok(
 );
 select ok(
   not has_table_privilege('service_role', 'public.job_provider_submissions', 'SELECT,INSERT,UPDATE,DELETE'),
-  'provider response references are accessible only through queue RPCs'
+  'service role cannot access provider response references directly'
+);
+select ok(
+  not has_table_privilege('anon', 'public.job_provider_submissions', 'SELECT,INSERT,UPDATE,DELETE')
+    and not has_table_privilege('authenticated', 'public.job_provider_submissions', 'SELECT,INSERT,UPDATE,DELETE'),
+  'API client roles cannot access provider response references directly'
+);
+select is(
+  (
+    select count(*)
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'job_provider_submissions'
+      and policyname = 'deny_data_api_clients'
+      and permissive = 'RESTRICTIVE'
+      and cmd = 'ALL'
+      and roles @> array['anon'::name, 'authenticated'::name]
+      and regexp_replace(coalesce(qual, ''), '[()]', '', 'g') = 'false'
+      and regexp_replace(coalesce(with_check, ''), '[()]', '', 'g') = 'false'
+  ),
+  1::bigint,
+  'provider response references have a restrictive deny-all policy for API clients'
 );
 
 select public.submit_workflow_job_response('00000000-0000-4000-8000-000000001851', 'resp_success0001');

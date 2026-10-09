@@ -389,7 +389,8 @@ select is(
         'mobile_ingestion_records',
         'mobile_ingestion_attachments',
         'mobile_record_adaptations',
-        'mobile_typed_deduplication_keys'
+        'mobile_typed_deduplication_keys',
+        'job_provider_submissions'
       ])
       and policyname = 'deny_data_api_clients'
       and permissive = 'RESTRICTIVE'
@@ -398,8 +399,8 @@ select is(
       and regexp_replace(coalesce(qual, ''), '[()]', '', 'g') = 'false'
       and regexp_replace(coalesce(with_check, ''), '[()]', '', 'g') = 'false'
   ),
-  9::bigint,
-  'all nine intentional service-only tables have a restrictive deny-all client policy'
+  10::bigint,
+  'all ten intentional service-only tables have a restrictive deny-all client policy'
 );
 
 select is(
