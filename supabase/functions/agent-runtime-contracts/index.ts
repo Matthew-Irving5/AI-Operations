@@ -12,6 +12,10 @@ import type {
   Json,
 } from "../../../packages/db/src/database.types.ts";
 import { getAal2Identity } from "../_shared/auth-assurance.ts";
+import {
+  agentRuntimeFixtureUpsertSteps,
+  agentRuntimeFixtureWriteFailure,
+} from "../_shared/agent-runtime-diagnostics.ts";
 import { consumeRateLimit } from "../_shared/rate-limit.ts";
 
 const url = Deno.env.get("SUPABASE_URL") ?? "";
@@ -94,7 +98,24 @@ async function createFixture(userId: string, fixtureKey: string) {
     .select("id")
     .eq("code", action.managerCode)
     .single();
-  if (managerError || !manager) return null;
+  if (managerError) {
+    console.error(JSON.stringify(agentRuntimeFixtureWriteFailure(
+      "manager_lookup",
+      managerError,
+      conversation.correlationId,
+    )));
+    return null;
+  }
+  if (!manager) {
+    console.error(JSON.stringify({
+      event: "agent_runtime_fixture_write_failed",
+      step: "manager_lookup",
+      table: "managers",
+      reason: "manager_not_found",
+      correlationId: conversation.correlationId,
+    }));
+    return null;
+  }
   const inserts = [
     service.from("conversations").upsert(
       {
@@ -231,9 +252,18 @@ async function createFixture(userId: string, fixtureKey: string) {
       { onConflict: "id", ignoreDuplicates: true },
     ),
   ];
-  for (const insert of inserts) {
+  for (const [index, insert] of inserts.entries()) {
     const { error } = await insert;
-    if (error) return null;
+    if (error) {
+      const step = agentRuntimeFixtureUpsertSteps[index];
+      if (!step) return null;
+      console.error(JSON.stringify(agentRuntimeFixtureWriteFailure(
+        step,
+        error,
+        conversation.correlationId,
+      )));
+      return null;
+    }
   }
   const { error: auditError } = await service.from("audit_events").upsert({
     id: conversation.id,
@@ -247,7 +277,14 @@ async function createFixture(userId: string, fixtureKey: string) {
     result: "success",
     redacted_after: { fixture: "ai14-live-e2e", fixtureKey },
   });
-  if (auditError) return null;
+  if (auditError) {
+    console.error(JSON.stringify(agentRuntimeFixtureWriteFailure(
+      "audit_upsert",
+      auditError,
+      conversation.correlationId,
+    )));
+    return null;
+  }
   return {
     fixtureKey,
     conversationId: conversation.id,
