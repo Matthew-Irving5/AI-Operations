@@ -1,7 +1,8 @@
 import {
   createClient,
   type SupabaseClient,
-} from "https://esm.sh/@supabase/supabase-js@2.57.0";
+} from "npm:@supabase/supabase-js@2.57.0";
+import { isWellFormedSharedSecret } from "./auth-contract.ts";
 
 export type WorkerDevice = {
   id: string;
@@ -41,7 +42,9 @@ export async function authenticateWorker(
   { device: WorkerDevice } | { code: "unauthorised" | "device_revoked" }
 > {
   const providedSecret = request.headers.get("x-worker-secret");
-  if (!providedSecret || providedSecret.length < 32) {
+  if (
+    providedSecret === null || !isWellFormedSharedSecret(providedSecret)
+  ) {
     return { code: "unauthorised" };
   }
   const result = await client.from("worker_devices").select(

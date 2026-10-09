@@ -1,0 +1,317 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "slug": "ai-execute",
+      "authMode": "worker_or_service_secret",
+      "verifyJwt": false,
+      "principal": "internal execution worker",
+      "identitySource": "bounded internal secret; run identity is loaded from the persisted run",
+      "rationale": "The executor is invoked by the internal worker and accepts no browser user session."
+    },
+    {
+      "slug": "apple-bridge-actions",
+      "authMode": "apple_device_token",
+      "verifyJwt": false,
+      "principal": "paired Apple bridge device",
+      "identitySource": "active device token hash resolves the owner and enabled action scope",
+      "rationale": "The Apple Shortcut client authenticates with its revocable device token."
+    },
+    {
+      "slug": "apple-bridge-device",
+      "authMode": "user_jwt_mfa_gate",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "Supabase Auth user plus one-time user-bound MFA gate",
+      "rationale": "Device enrollment and token rotation require the authenticated owner and a fresh MFA gate."
+    },
+    {
+      "slug": "apple-bridge-ingest",
+      "authMode": "apple_device_token",
+      "verifyJwt": false,
+      "principal": "paired Apple bridge device",
+      "identitySource": "database ingestion RPC validates the active device token hash",
+      "rationale": "The Apple Shortcut client authenticates with its revocable device token."
+    },
+    {
+      "slug": "approval-decide",
+      "authMode": "user_jwt_aal2",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user and signed AAL2 claim",
+      "rationale": "Approval decisions are user initiated and require AAL2."
+    },
+    {
+      "slug": "device-register",
+      "authMode": "user_jwt_mfa_gate",
+      "verifyJwt": false,
+      "principal": "allowlisted user",
+      "identitySource": "Supabase Auth user plus one-time user-bound MFA gate",
+      "rationale": "The handler validates the user JWT and consumes a fresh MFA gate so missing or malformed credentials receive its structured diagnostic envelope."
+    },
+    {
+      "slug": "device-revoke",
+      "authMode": "user_jwt_mfa_gate",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "Supabase Auth user plus one-time user-bound MFA gate",
+      "rationale": "Revocation is user initiated and consumes a fresh MFA gate."
+    },
+    {
+      "slug": "digital-plan-approve",
+      "authMode": "user_jwt_aal2",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user and signed AAL2 claim",
+      "rationale": "Approving a local action plan requires the authenticated owner at AAL2."
+    },
+    {
+      "slug": "digital-scan-create",
+      "authMode": "user_jwt_mfa_gate",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "Supabase Auth user plus one-time user-bound MFA gate",
+      "rationale": "Creating a worker scan consumes a fresh user-bound MFA gate."
+    },
+    {
+      "slug": "feedback-submit",
+      "authMode": "user_jwt",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user; database writes are owner-scoped",
+      "rationale": "Feedback is submitted by the authenticated owner."
+    },
+    {
+      "slug": "finance-control",
+      "authMode": "user_jwt_mfa_gate",
+      "verifyJwt": false,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user plus one-time user-bound MFA gate",
+      "rationale": "The handler validates the user JWT and consumes its MFA gate because the browser may resume with its pre-challenge AAL1 cookie."
+    },
+    {
+      "slug": "finance-import",
+      "authMode": "user_jwt_mfa_gate",
+      "verifyJwt": false,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user plus one-time user-bound MFA gate",
+      "rationale": "The handler validates the user JWT and consumes its MFA gate because the browser may resume with its pre-challenge AAL1 cookie."
+    },
+    {
+      "slug": "github-career-sync",
+      "authMode": "user_jwt_mfa_gate",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user plus one-time user-bound MFA gate",
+      "rationale": "Starting the GitHub integration sync requires the authenticated owner and fresh MFA."
+    },
+    {
+      "slug": "google-connection-revoke",
+      "authMode": "user_jwt_mfa_gate",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user, AAL2 check, and one-time MFA gate",
+      "rationale": "Connection revocation is user initiated and requires fresh MFA."
+    },
+    {
+      "slug": "google-connection-sources",
+      "authMode": "user_jwt_aal2_mfa_gate",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user, AAL2 check, and one-time MFA gate",
+      "rationale": "Connection source permissions require the authenticated owner at AAL2 and a single-use gate."
+    },
+    {
+      "slug": "google-connection-sync",
+      "authMode": "user_jwt_aal2",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user and database AAL2 check",
+      "rationale": "Manual sync is user initiated and scoped to a connection owned by the authenticated user."
+    },
+    {
+      "slug": "google-oauth-callback",
+      "authMode": "google_oauth_state",
+      "verifyJwt": false,
+      "principal": "Google OAuth provider redirect",
+      "identitySource": "single-use, expiring OAuth state bound to the initiating user and role",
+      "rationale": "Google redirects without a Supabase user JWT; the callback consumes the stored OAuth state and validates the provider identity."
+    },
+    {
+      "slug": "google-oauth-start",
+      "authMode": "user_jwt_aal2",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user and database AAL2 check",
+      "rationale": "Starting OAuth is user initiated and requires the authenticated owner at AAL2."
+    },
+    {
+      "slug": "google-sync",
+      "authMode": "google_sync_secret",
+      "verifyJwt": false,
+      "principal": "internal Google sync worker",
+      "identitySource": "configured server-to-server sync secret",
+      "rationale": "The internal sync worker calls this function without a user JWT."
+    },
+    {
+      "slug": "health-ingest",
+      "authMode": "health_ingest_secret",
+      "verifyJwt": false,
+      "principal": "authorized health export integration",
+      "identitySource": "configured server-to-server health ingestion secret",
+      "rationale": "The health export integration authenticates with a server-only secret and never a browser credential."
+    },
+    {
+      "slug": "job-complete",
+      "authMode": "worker_secret",
+      "verifyJwt": false,
+      "principal": "internal job worker",
+      "identitySource": "configured worker secret and persisted queue lease",
+      "rationale": "The job worker calls this endpoint without a user JWT; the completion RPC binds the result to the leased job."
+    },
+    {
+      "slug": "job-worker",
+      "authMode": "worker_secret",
+      "verifyJwt": false,
+      "principal": "internal job worker",
+      "identitySource": "configured worker secret",
+      "rationale": "The queue worker calls this endpoint without a user JWT."
+    },
+    {
+      "slug": "manager-list",
+      "authMode": "user_jwt",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user",
+      "rationale": "Manager data is available only to the authenticated owner."
+    },
+    {
+      "slug": "mobile-snapshot-ingest",
+      "authMode": "mobile_device_token",
+      "verifyJwt": false,
+      "principal": "registered mobile device",
+      "identitySource": "database ingestion RPC validates the active device token hash and idempotency key",
+      "rationale": "The mobile shortcut authenticates with a revocable device token rather than a Supabase user session."
+    },
+    {
+      "slug": "notification-dispatch",
+      "authMode": "notification_secret",
+      "verifyJwt": false,
+      "principal": "internal notification worker",
+      "identitySource": "configured server-to-server notification secret",
+      "rationale": "The internal notification worker calls this endpoint without a user JWT."
+    },
+    {
+      "slug": "notification-test",
+      "authMode": "user_jwt_mfa_gate",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user plus one-time user-bound MFA gate",
+      "rationale": "A real delivery test is user initiated and rate limited after MFA authorization."
+    },
+    {
+      "slug": "onboarding-accept",
+      "authMode": "user_jwt",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user",
+      "rationale": "Production acceptance is recorded only by the authenticated owner."
+    },
+    {
+      "slug": "onboarding-update",
+      "authMode": "user_jwt",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user",
+      "rationale": "Onboarding checklist changes are owner initiated."
+    },
+    {
+      "slug": "openai-webhook",
+      "authMode": "openai_webhook_signature",
+      "verifyJwt": false,
+      "principal": "OpenAI webhook service",
+      "identitySource": "verified Standard Webhooks signature, timestamp, and event id",
+      "rationale": "OpenAI webhooks do not carry a Supabase user JWT and are authenticated by their signed payload."
+    },
+    {
+      "slug": "personal-profile",
+      "authMode": "user_jwt_aal2",
+      "verifyJwt": false,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user and database AAL2 check",
+      "rationale": "The function performs its own user and AAL2 validation because interactive MFA may resume with the pre-challenge browser cookie."
+    },
+    {
+      "slug": "schedule-update",
+      "authMode": "user_jwt_aal2_mfa_gate",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user, signed AAL2 claim, and one-time gate when required",
+      "rationale": "Schedule configuration is user initiated and sensitive changes require fresh MFA."
+    },
+    {
+      "slug": "scheduler-dispatch",
+      "authMode": "scheduler_secret",
+      "verifyJwt": false,
+      "principal": "Supabase Cron scheduler",
+      "identitySource": "configured scheduler secret",
+      "rationale": "Cron invokes this endpoint without a user JWT."
+    },
+    {
+      "slug": "worker-heartbeat",
+      "authMode": "worker_device_secret",
+      "verifyJwt": false,
+      "principal": "paired Windows worker device",
+      "identitySource": "device-bound worker secret hash and active device record",
+      "rationale": "The outbound-only Windows worker authenticates with its revocable device credential."
+    },
+    {
+      "slug": "worker-pair",
+      "authMode": "worker_pairing_code",
+      "verifyJwt": false,
+      "principal": "new Windows worker device",
+      "identitySource": "one-time pairing code bound to a pending device and checked against expiry",
+      "rationale": "The pairing client has no prior device credential; pairing consumes the short-lived code created after user MFA."
+    },
+    {
+      "slug": "worker-poll",
+      "authMode": "worker_device_secret",
+      "verifyJwt": false,
+      "principal": "paired Windows worker device",
+      "identitySource": "device-bound worker secret hash and active device record",
+      "rationale": "The outbound-only Windows worker authenticates with its revocable device credential."
+    },
+    {
+      "slug": "worker-submit-action-result",
+      "authMode": "worker_device_secret",
+      "verifyJwt": false,
+      "principal": "paired Windows worker device",
+      "identitySource": "device-bound worker secret hash, active device record, and unexpired single-use manifest",
+      "rationale": "The outbound-only Windows worker authenticates with its revocable device credential."
+    },
+    {
+      "slug": "worker-submit-result",
+      "authMode": "worker_device_signature",
+      "verifyJwt": false,
+      "principal": "paired Windows worker device",
+      "identitySource": "device-bound worker secret hash, active device record, and Ed25519 result signature",
+      "rationale": "The outbound-only Windows worker authenticates with its revocable device credential and signs result content."
+    },
+    {
+      "slug": "workflow-cancel",
+      "authMode": "user_jwt_aal2",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user and signed AAL2 claim",
+      "rationale": "Canceling a workflow is an authenticated user command."
+    },
+    {
+      "slug": "workflow-launch",
+      "authMode": "user_jwt_aal2",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user and signed AAL2 claim",
+      "rationale": "Launching a workflow is an authenticated user command with an idempotency key."
+    }
+  ]
+}

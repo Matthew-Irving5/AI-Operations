@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
+import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { normalizeCategoryNames } from "../_shared/finance-contract.ts";
 
 const url = Deno.env.get("SUPABASE_URL") ?? "";

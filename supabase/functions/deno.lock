@@ -97,7 +97,7 @@
     }
   },
   "remote": {
-    "https://esm.sh/@supabase/supabase-js@2.57.0": "119dc185b1310fd98a9ee7cb6a660879a2562ea3730ebed9b80e85ecc8c7e3ee",
+    "npm:@supabase/supabase-js@2.57.0": "119dc185b1310fd98a9ee7cb6a660879a2562ea3730ebed9b80e85ecc8c7e3ee",
     "https://esm.sh/zod@4.1.5": "716d4c669ca0dcea7c085f01741ee8cdd092826892d169cc025a5b1b79871b1f"
   }
 }

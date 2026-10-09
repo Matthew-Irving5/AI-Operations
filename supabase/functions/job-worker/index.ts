@@ -1,4 +1,5 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
+import { createClient } from "npm:@supabase/supabase-js@2.57.0";
+import { verifySharedSecret } from "../_shared/auth-contract.ts";
 
 const service = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
@@ -12,8 +13,14 @@ const json = (body: unknown, status = 200) =>
 
 Deno.serve(async (request) => {
   if (
-    request.headers.get("x-worker-secret") !== Deno.env.get("WORKER_SECRET")
-  ) return json({ code: "unauthorised" }, 401);
+    !verifySharedSecret(
+      request,
+      "x-worker-secret",
+      Deno.env.get("WORKER_SECRET"),
+    )
+  ) {
+    return json({ code: "unauthorised" }, 401);
+  }
   const workerId = request.headers.get("x-worker-id")?.slice(0, 100);
   if (!workerId) return json({ code: "worker_id_required" }, 400);
   const { data: jobs, error } = await service.rpc("claim_job_queue", {

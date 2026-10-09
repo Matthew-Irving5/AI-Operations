@@ -35,6 +35,41 @@ const FunctionSchema = z.object({
   version: z.number(),
   ezbr_sha256: z.string().min(1),
 });
+const AuthModeSchema = z.enum([
+  'worker_or_service_secret',
+  'apple_device_token',
+  'mobile_device_token',
+  'user_jwt',
+  'user_jwt_aal2',
+  'user_jwt_mfa_gate',
+  'user_jwt_aal2_mfa_gate',
+  'google_oauth_state',
+  'google_sync_secret',
+  'health_ingest_secret',
+  'worker_secret',
+  'notification_secret',
+  'openai_webhook_signature',
+  'scheduler_secret',
+  'worker_device_secret',
+  'worker_pairing_code',
+  'worker_device_signature',
+]);
+const AuthContractSchema = z
+  .object({
+    slug: z.string().regex(/^[a-zA-Z0-9_-]+$/),
+    authMode: AuthModeSchema,
+    verifyJwt: z.boolean(),
+    principal: z.string().min(1),
+    identitySource: z.string().min(1),
+    rationale: z.string().min(1),
+  })
+  .strict();
+const AuthManifestSchema = z
+  .object({
+    version: z.literal(1),
+    functions: z.array(AuthContractSchema).min(1),
+  })
+  .strict();
 const FunctionsSchema = z.array(FunctionSchema);
 const MigrationRowsSchema = z.array(z.object({ version: z.string() }));
 const DigestRowsSchema = z.array(z.object({ schema_digest: z.string() })).length(1);
@@ -73,10 +108,12 @@ const SnapshotReportSchema = z.object({
 
 export type EnvironmentName = 'staging' | 'production';
 export type FunctionInventory = z.infer<typeof FunctionSchema>[];
+export type EdgeAuthContract = z.infer<typeof AuthContractSchema>;
 export type DriftReport = { ok: boolean; mismatches: string[]; evidence: Record<string, unknown> };
 
 export function sourceFileDigests(root: string): Record<string, string> {
   const files: string[] = [];
+  const authManifest = join(root, '_shared', 'auth-manifest.json');
   const walk = (directory: string) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const path = join(directory, entry.name);
@@ -86,6 +123,7 @@ export function sourceFileDigests(root: string): Record<string, string> {
     }
   };
   if (existsSync(root)) walk(root);
+  if (existsSync(authManifest) && !files.includes(authManifest)) files.push(authManifest);
   const sourceFiles = new Set(files);
   const entrypoints = files.filter((path) => {
     const rel = relative(root, path).split(sep).join('/');
@@ -113,7 +151,8 @@ export function sourceFileDigests(root: string): Record<string, string> {
       }
     };
     for (const entrypoint of entrypoints) visit(entrypoint);
-    for (const path of files) if (!reachable.has(path)) sourceFiles.delete(path);
+    for (const path of files)
+      if (!reachable.has(path) && path !== authManifest) sourceFiles.delete(path);
   }
   return Object.fromEntries(
     [...sourceFiles]
@@ -589,9 +628,79 @@ export function parseFunctionAuth(source: string, directoryNames: string[]): Map
   return result;
 }
 
-function localFunctionAuth(): Map<string, boolean> {
+export function parseAuthManifest(source: string): EdgeAuthContract[] {
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(source);
+  } catch {
+    throw new Error('Edge Function auth manifest is not valid JSON.');
+  }
+  const parsed = AuthManifestSchema.parse(decoded);
+  const slugs = parsed.functions.map((contract) => contract.slug);
+  if (new Set(slugs).size !== slugs.length)
+    throw new Error('Edge Function auth manifest contains duplicate slugs.');
+  return parsed.functions;
+}
+
+export function validateAuthManifest(
+  contracts: EdgeAuthContract[],
+  directoryNames: string[],
+  configuredAuth: Map<string, boolean>,
+  configSource: string,
+): string[] {
+  const mismatches: string[] = [];
+  const manifestBySlug = new Map(contracts.map((contract) => [contract.slug, contract]));
+  const directories = sorted(directoryNames.filter((name) => !name.startsWith('_')));
+  for (const slug of sorted([...new Set([...directories, ...manifestBySlug.keys()])])) {
+    const contract = manifestBySlug.get(slug);
+    if (!directories.includes(slug)) {
+      mismatches.push(`Edge Function auth manifest includes unknown function ${slug}.`);
+      continue;
+    }
+    if (!contract) {
+      mismatches.push(`Edge Function ${slug} is missing from the auth manifest.`);
+      continue;
+    }
+    const configured = configuredAuth.get(slug);
+    if (configured === undefined || contract.verifyJwt !== configured)
+      mismatches.push(
+        `Edge Function ${slug} auth manifest verifyJwt differs from supabase/config.toml.`,
+      );
+  }
+
+  const sections = configSource
+    .split(/(?=^\[[^\]]+\])/m)
+    .filter((block) => block.startsWith('[functions.'));
+  const explicitSlugs = new Set<string>();
+  for (const block of sections) {
+    const header = /^\[functions\.([a-zA-Z0-9_-]+)\]\s*(?:#.*)?$/m.exec(block);
+    if (!header?.[1]) continue;
+    const verifyLines = block.match(/^[ \t]*verify_jwt[ \t]*=.*$/gm) ?? [];
+    if (verifyLines.length === 1) explicitSlugs.add(header[1]);
+  }
+  for (const slug of directories) {
+    if (!explicitSlugs.has(slug))
+      mismatches.push(
+        `Edge Function ${slug} must declare verify_jwt explicitly in supabase/config.toml.`,
+      );
+  }
+  for (const slug of [...explicitSlugs]) {
+    if (!directories.includes(slug))
+      mismatches.push(`Supabase function config declares unknown local function ${slug}.`);
+  }
+  return mismatches;
+}
+
+function localFunctionAuth(): Map<string, EdgeAuthContract> {
+  const directories = localFunctionDirectories();
   const source = readFileSync('supabase/config.toml', 'utf8');
-  return parseFunctionAuth(source, localFunctionDirectories());
+  const configuredAuth = parseFunctionAuth(source, directories);
+  const contracts = parseAuthManifest(
+    readFileSync('supabase/functions/_shared/auth-manifest.json', 'utf8'),
+  );
+  const mismatches = validateAuthManifest(contracts, directories, configuredAuth, source);
+  if (mismatches.length) throw new Error(mismatches.join('\n'));
+  return new Map(contracts.map((contract) => [contract.slug, contract]));
 }
 
 function captureSourceAttestation(): z.infer<typeof SourceAttestationSchema> {
@@ -792,7 +901,7 @@ export async function runDriftCheck(
     const deployed = current.functions.find((fn) => fn.slug === slug);
     if (!auth.has(slug) || !deployed)
       mismatches.push(`repo ↔ ${name}: Edge Function ${slug} exists in only one inventory`);
-    else if (auth.get(slug) !== deployed.verify_jwt)
+    else if (auth.get(slug)?.verifyJwt !== deployed.verify_jwt)
       mismatches.push(
         `${name}: Edge Function ${slug} verify_jwt differs from supabase/config.toml`,
       );
@@ -819,12 +928,17 @@ export async function runDriftCheck(
       providerBundleHashesAreReleaseInvariants: true,
     },
     functionCount: current.functions.length,
-    functions: current.functions.map(({ slug, verify_jwt, version, ezbr_sha256 }) => ({
-      slug,
-      verify_jwt,
-      version,
-      deploymentHash: ezbr_sha256 ?? null,
-    })),
+    functions: current.functions.map(({ slug, verify_jwt, version, ezbr_sha256 }) => {
+      const contract = auth.get(slug);
+      return {
+        slug,
+        verify_jwt,
+        auth_mode: contract?.authMode ?? null,
+        principal: contract?.principal ?? null,
+        version,
+        deploymentHash: ezbr_sha256 ?? null,
+      };
+    }),
     edgeSecretNames: current.secrets,
     githubEnvironment,
     worker: current.worker,

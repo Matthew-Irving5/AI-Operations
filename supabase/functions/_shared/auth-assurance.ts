@@ -1,12 +1,9 @@
+import { authenticateUserToken, type UserLookup } from "./auth-contract.ts";
+
 type AuthenticatedUser = {
   id: string;
   email?: string | null;
 };
-
-type UserLookup = (jwt: string) => Promise<{
-  data: { user: AuthenticatedUser | null };
-  error: unknown | null;
-}>;
 
 type AccessTokenClaims = {
   sub?: unknown;
@@ -45,12 +42,12 @@ export async function getAal2Identity(
   lookupUser: UserLookup,
 ): Promise<{ user: AuthenticatedUser | null }> {
   if (!jwt.trim()) return { user: null };
-  const { data, error } = await lookupUser(jwt);
-  if (error || !data.user) return { user: null };
+  const user = await authenticateUserToken(jwt, lookupUser);
+  if (!user) return { user: null };
 
   const claims = readAccessTokenClaims(jwt);
-  if (claims?.sub !== data.user.id || claims.aal !== "aal2") {
+  if (claims?.sub !== user.id || claims.aal !== "aal2") {
     return { user: null };
   }
-  return { user: data.user };
+  return { user };
 }

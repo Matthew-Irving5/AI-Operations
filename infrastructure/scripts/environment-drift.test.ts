@@ -12,7 +12,9 @@ import {
   compareSourceAttestations,
   compareSourceDigests,
   migrationVersionFromFilename,
+  parseAuthManifest,
   parseFunctionAuth,
+  validateAuthManifest,
   sourceFileDigests,
   validateConfig,
   missingGitHubEnvironmentNames,
@@ -134,6 +136,92 @@ test('maps every local Edge Function to configured or default JWT verification',
   assert.equal(auth.get('personal-profile'), false);
 });
 
+test('auth manifest covers every function and matches explicit platform JWT settings', () => {
+  const directories = localFunctionDirectories();
+  const config = readFileSync('supabase/config.toml', 'utf8');
+  const configuredAuth = parseFunctionAuth(config, directories);
+  const contracts = parseAuthManifest(
+    readFileSync('supabase/functions/_shared/auth-manifest.json', 'utf8'),
+  );
+  assert.equal(contracts.length, directories.length);
+  assert.deepEqual(validateAuthManifest(contracts, directories, configuredAuth, config), []);
+  assert.ok(contracts.every((contract) => contract.principal && contract.identitySource));
+  assert.ok(
+    contracts
+      .filter((contract) => !contract.verifyJwt)
+      .every((contract) => contract.rationale.length > 20),
+  );
+});
+
+test('auth manifest rejects missing, unlisted, and changed auth contracts', () => {
+  const contracts = parseAuthManifest(
+    readFileSync('supabase/functions/_shared/auth-manifest.json', 'utf8'),
+  );
+  const directories = localFunctionDirectories();
+  const config = readFileSync('supabase/config.toml', 'utf8');
+  const configuredAuth = parseFunctionAuth(config, directories);
+  const missing = contracts.filter((contract) => contract.slug !== 'manager-list');
+  assert.ok(
+    validateAuthManifest(missing, directories, configuredAuth, config).some((value) =>
+      value.includes('manager-list is missing from the auth manifest'),
+    ),
+  );
+  assert.throws(() =>
+    parseAuthManifest(
+      JSON.stringify({
+        version: 1,
+        functions: [contracts[0], contracts[0]],
+      }),
+    ),
+  );
+  assert.ok(
+    validateAuthManifest(
+      contracts.map((contract) =>
+        contract.slug === 'manager-list' ? { ...contract, verifyJwt: false } : contract,
+      ),
+      directories,
+      configuredAuth,
+      config,
+    ).some((value) => value.includes('manager-list auth manifest verifyJwt differs')),
+  );
+  assert.ok(
+    validateAuthManifest(
+      contracts,
+      directories,
+      configuredAuth,
+      config.replace(
+        /\[functions\.manager-list\]\r?\nverify_jwt = true/,
+        '[functions.manager-list]',
+      ),
+    ).some((value) => value.includes('manager-list must declare verify_jwt explicitly')),
+  );
+});
+
+test('Edge Functions use the locked Supabase SDK npm graph instead of esm.sh', () => {
+  const sourceFiles: string[] = [];
+  const visit = (directory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (entry.isFile() && /\.(?:ts|tsx|js|jsx)$/.test(entry.name)) {
+        sourceFiles.push(path);
+      }
+    }
+  };
+  visit('supabase/functions');
+  const esmMirrorImports = sourceFiles.filter((path) =>
+    readFileSync(path, 'utf8').includes('https://esm.sh/@supabase/supabase-js@2.57.0'),
+  );
+  assert.deepEqual(esmMirrorImports, []);
+
+  const lock = JSON.parse(readFileSync('supabase/functions/deno.lock', 'utf8')) as {
+    specifiers: Record<string, string>;
+    npm: Record<string, unknown>;
+  };
+  assert.equal(lock.specifiers['npm:@supabase/supabase-js@2.57.0'], '2.57.0');
+  assert.ok(lock.npm['@supabase/storage-js@2.117.2']);
+});
+
 test('fails closed on malformed and duplicate function auth configuration', () => {
   assert.throws(() => parseFunctionAuth('[functions.bad]\nverify_jwt = perhaps\n', ['bad']));
   assert.throws(() =>
@@ -153,12 +241,14 @@ test('fingerprints runtime TypeScript while excluding test-only source files', (
       'import { contract } from "./_shared/contract.ts";\nexport const value = contract;\n',
     );
     writeFileSync(join(root, '_shared', 'contract.ts'), 'export const contract = true;\n');
+    writeFileSync(join(root, '_shared', 'auth-manifest.json'), '{"version":1}\n');
     writeFileSync(join(root, '_shared', 'contract_test.ts'), 'test-only fixture');
     writeFileSync(join(root, '_shared', 'unused.ts'), 'not included by any runtime import');
     const expected = sourceFileDigests(root);
     const deployed = { ...expected, '_shared/contract.ts': 'different-digest' };
     assert.deepEqual(compareSourceDigests(expected, deployed), ['_shared/contract.ts']);
     assert.equal(Object.hasOwn(expected, '_shared/contract_test.ts'), false);
+    assert.equal(Object.hasOwn(expected, '_shared/auth-manifest.json'), true);
     assert.equal(Object.hasOwn(expected, '_shared/unused.ts'), false);
   } finally {
     rmSync(root, { recursive: true, force: true });

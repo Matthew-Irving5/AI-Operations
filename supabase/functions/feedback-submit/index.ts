@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
+import { authenticateUserRequest } from "../_shared/auth-contract.ts";
 import { consumeRateLimit } from "../_shared/rate-limit.ts";
 
 const url = Deno.env.get("SUPABASE_URL") ?? "";
@@ -16,16 +17,19 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") {
     return json({ code: "method_not_allowed" }, 405);
   }
-  const token = request.headers.get("authorization");
-  if (!token?.startsWith("Bearer ")) return json({ code: "unauthorised" }, 401);
+  const authorization = request.headers.get("authorization");
+  if (!authorization) {
+    return json({ code: "unauthorised" }, 401);
+  }
   const caller = createClient(url, Deno.env.get("SUPABASE_ANON_KEY") ?? "", {
-    global: { headers: { Authorization: token } },
+    global: { headers: { Authorization: authorization } },
   });
-  const { data: identity } = await caller.auth.getUser();
-  if (
-    !identity.user ||
-    identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com"
-  ) {
+  const identity = await authenticateUserRequest(
+    request,
+    (jwt) => caller.auth.getUser(jwt),
+  );
+  if (!identity) return json({ code: "unauthorised" }, 401);
+  if (identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com") {
     return json({ code: "forbidden" }, 403);
   }
   if (!(await consumeRateLimit(identity.user.id, "feedback_submit", 20))) {
