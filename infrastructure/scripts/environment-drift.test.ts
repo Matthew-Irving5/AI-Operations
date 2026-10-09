@@ -129,7 +129,22 @@ test('maps every local Edge Function to configured or default JWT verification',
   const directories = localFunctionDirectories();
   assert.ok(!directories.includes('node_modules'));
   const auth = parseFunctionAuth(readFileSync('supabase/config.toml', 'utf8'), directories);
-  assert.equal(auth.size, directories.length);
+  const sortedDirectories = [...directories].sort();
+  const authKeys = [...auth.keys()].sort();
+  assert.equal(
+    auth.size,
+    directories.length,
+    JSON.stringify(
+      {
+        directories: sortedDirectories,
+        authKeys,
+        missing: sortedDirectories.filter((name) => !auth.has(name)),
+        extra: authKeys.filter((name) => !directories.includes(name)),
+      },
+      null,
+      2,
+    ),
+  );
   assert.deepEqual([...auth.keys()].sort(), directories);
   assert.equal(auth.get('notification-test'), true);
   assert.equal(auth.get('onboarding-update'), true);
