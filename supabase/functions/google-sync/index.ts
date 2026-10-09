@@ -1,5 +1,6 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
+import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { z } from "https://esm.sh/zod@4.1.5";
+import { verifySharedSecret } from "../_shared/auth-contract.ts";
 import {
   isGoogleSyncError,
   syncGoogleConnection,
@@ -23,10 +24,13 @@ const json = (body: unknown, status = 200) =>
   });
 
 Deno.serve(async (request) => {
-  const syncSecret = Deno.env.get("GOOGLE_SYNC_SECRET");
   if (
     request.method !== "POST" ||
-    !syncSecret || request.headers.get("x-google-sync-secret") !== syncSecret
+    !verifySharedSecret(
+      request,
+      "x-google-sync-secret",
+      Deno.env.get("GOOGLE_SYNC_SECRET"),
+    )
   ) {
     return json({ code: "unauthorised" }, 401);
   }

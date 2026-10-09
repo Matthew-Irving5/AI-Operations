@@ -1,4 +1,5 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
+import { createClient } from "npm:@supabase/supabase-js@2.57.0";
+import { verifySharedSecret } from "../_shared/auth-contract.ts";
 
 const service = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
@@ -52,8 +53,11 @@ Deno.serve(async (request) => {
     return json({ code: "method_not_allowed" }, 405);
   }
   if (
-    request.headers.get("x-health-ingest-secret") !==
-      Deno.env.get("HEALTH_INGEST_SECRET")
+    !verifySharedSecret(
+      request,
+      "x-health-ingest-secret",
+      Deno.env.get("HEALTH_INGEST_SECRET"),
+    )
   ) {
     return json({ code: "unauthorised" }, 401);
   }
