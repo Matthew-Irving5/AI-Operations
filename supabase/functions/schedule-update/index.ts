@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { consumeRateLimit } from "../_shared/rate-limit.ts";
 import { getAal2Identity } from "../_shared/auth-assurance.ts";
+import { runScheduleUpdateWithGate } from "./auth.ts";
 
 const url = Deno.env.get("SUPABASE_URL") ?? "";
 const service = createClient(
@@ -27,15 +28,18 @@ Deno.serve(async (request) => {
     accessToken,
     (jwt) => caller.auth.getUser(jwt),
   );
-  const body = await request.json().catch(() => null) as {
+  const body = (await request.json().catch(() => null)) as {
     scheduleId?: string;
     enabled?: boolean;
+    mfaGateId?: string;
   } | null;
   if (
     !identity.user ||
     identity.user.email?.toLowerCase() !== "matthewirving99@gmail.com"
-  ) return json({ code: "fresh_mfa_required" }, 403);
-  if (!await consumeRateLimit(identity.user.id, "schedule_update", 10)) {
+  ) {
+    return json({ code: "fresh_mfa_required" }, 403);
+  }
+  if (!(await consumeRateLimit(identity.user.id, "schedule_update", 10))) {
     return json({ code: "rate_limited" }, 429);
   }
   if (!body?.scheduleId || typeof body.enabled !== "boolean") {
@@ -49,23 +53,42 @@ Deno.serve(async (request) => {
       return json({ code: "onboarding_incomplete" }, 422);
     }
   }
-  const update = await service.from("workflow_schedules").update({
-    enabled: body.enabled,
-  }).eq("id", body.scheduleId).eq("user_id", identity.user.id).select(
-    "id,enabled",
-  ).maybeSingle();
-  if (update.error || !update.data) {
+  const gatedUpdate = await runScheduleUpdateWithGate(
+    body.mfaGateId,
+    async (gateId) => {
+      const result = await caller.rpc("consume_mfa_action_gate", {
+        p_gate_id: gateId,
+        p_action_key: "schedule_update",
+      });
+      return !result.error && result.data === true;
+    },
+    async () => {
+      const update = await service
+        .from("workflow_schedules")
+        .update({
+          enabled: body.enabled,
+        })
+        .eq("id", body.scheduleId!)
+        .eq("user_id", identity.user!.id)
+        .select("id,enabled")
+        .maybeSingle();
+      if (update.error || !update.data) return null;
+      await service.from("audit_events").insert({
+        user_id: identity.user!.id,
+        actor_type: "user",
+        action_type: "schedule_updated",
+        target_type: "workflow_schedule",
+        target_id: body.scheduleId!,
+        aal: "aal2_fresh",
+        result: "success",
+        redacted_after: { enabled: body.enabled },
+      });
+      return update.data;
+    },
+  );
+  if (!gatedUpdate.authorized) return json({ code: "fresh_mfa_required" }, 403);
+  if (!gatedUpdate.result) {
     return json({ code: "schedule_unavailable" }, 404);
   }
-  await service.from("audit_events").insert({
-    user_id: identity.user.id,
-    actor_type: "user",
-    action_type: "schedule_updated",
-    target_type: "workflow_schedule",
-    target_id: body.scheduleId,
-    aal: "aal2_fresh",
-    result: "success",
-    redacted_after: { enabled: body.enabled },
-  });
-  return json({ schedule: update.data });
+  return json({ schedule: gatedUpdate.result });
 });

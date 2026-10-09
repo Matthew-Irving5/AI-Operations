@@ -1,8 +1,12 @@
 import { schedulesData } from '../../../lib/platform-data';
+import { createSupabaseServerClient } from '../../../lib/supabase-server';
 import { ScheduleToggle } from './schedule-toggle';
 
 export default async function AutomationsPage() {
   const { data: schedules, error } = await schedulesData();
+  const supabase = await createSupabaseServerClient();
+  const { data: factors } = await supabase.auth.mfa.listFactors();
+  const factorId = factors?.totp?.find((factor) => factor.status === 'verified')?.id;
   return (
     <>
       <h1>Automations</h1>
@@ -32,7 +36,11 @@ export default async function AutomationsPage() {
                     })
                   : 'not scheduled'}
               </p>
-              <ScheduleToggle scheduleId={schedule.id} enabled={schedule.enabled} />
+              <ScheduleToggle
+                scheduleId={schedule.id}
+                enabled={schedule.enabled}
+                {...(factorId ? { factorId } : {})}
+              />
             </article>
           ))}
         </section>
