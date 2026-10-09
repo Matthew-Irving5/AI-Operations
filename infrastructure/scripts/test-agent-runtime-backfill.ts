@@ -35,6 +35,13 @@ supabase([
   'fixtures/ai14_legacy_backfill_seed.sql',
 ]);
 supabase(['migration', 'up', '--local']);
+supabase([
+  'db',
+  'query',
+  '--local',
+  '--file',
+  join('supabase', 'fixtures', 'local_application_role_acl_baseline.sql'),
+]);
 supabase(['test', 'db', '--local', join('supabase', 'tests', 'agent_runtime_backfill.sql')]);
 supabase(['test', 'db', '--local']);
 process.stdout.write('AI-14 legacy backfill and full database tests passed.\n');

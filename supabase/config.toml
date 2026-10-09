@@ -128,3 +128,6 @@ enabled = true
 port = 54321
 [db]
 port = 54322
+
+[db.seed]
+sql_paths = ["./seed.sql", "./fixtures/local_application_role_acl_baseline.sql"]
