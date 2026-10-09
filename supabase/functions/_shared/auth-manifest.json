@@ -2,6 +2,14 @@
   "version": 1,
   "functions": [
     {
+      "slug": "agent-runtime-contracts",
+      "authMode": "user_jwt_aal2",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user and signed AAL2 claim",
+      "rationale": "Synthetic runtime fixtures and handoff transitions are restricted to the authenticated owner at AAL2."
+    },
+    {
       "slug": "ai-execute",
       "authMode": "worker_or_service_secret",
       "verifyJwt": false,
