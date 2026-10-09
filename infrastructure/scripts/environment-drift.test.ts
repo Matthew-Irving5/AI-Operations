@@ -20,6 +20,7 @@ import {
   missingGitHubEnvironmentNames,
   validateStagingSnapshot,
   inventoryFromWrangler,
+  generatedTypesMatch,
   type FunctionInventory,
   type WorkerInventory,
 } from './environment-drift.js';
@@ -27,6 +28,14 @@ import {
 function hashValue(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
+
+test('generated database types compare across newline conventions but retain content drift', () => {
+  const generated = 'export type Database = {\n  public: {};\n};\n';
+  const checkedIn = generated.replaceAll('\n', '\r\n');
+
+  assert.equal(generatedTypesMatch(generated, checkedIn), true);
+  assert.equal(generatedTypesMatch(generated, `${checkedIn}// changed type\r\n`), false);
+});
 
 const functions: FunctionInventory = [
   { slug: 'manager-list', verify_jwt: true, version: 10, ezbr_sha256: 'sha-a' },

@@ -111,6 +111,11 @@ export type FunctionInventory = z.infer<typeof FunctionSchema>[];
 export type EdgeAuthContract = z.infer<typeof AuthContractSchema>;
 export type DriftReport = { ok: boolean; mismatches: string[]; evidence: Record<string, unknown> };
 
+export function generatedTypesMatch(generated: string, checkedIn: string): boolean {
+  const normalize = (value: string) => value.replace(/\r\n/g, '\n').trimEnd();
+  return normalize(generated) === normalize(checkedIn);
+}
+
 export function sourceFileDigests(root: string): Record<string, string> {
   const files: string[] = [];
   const authManifest = join(root, '_shared', 'auth-manifest.json');
@@ -890,8 +895,8 @@ export async function runDriftCheck(
   const repoMigrations = localMigrations();
   mismatches.push(...compareMigrations(repoMigrations, current.migrations, `repo ↔ ${name}`));
   const generatedTypes = generateTypes(manifest.environments[name].projectRef, token);
-  const checkedInTypes = readFileSync('packages/db/src/database.types.ts', 'utf8').trimEnd();
-  if (generatedTypes !== checkedInTypes)
+  const checkedInTypes = readFileSync('packages/db/src/database.types.ts', 'utf8');
+  if (!generatedTypesMatch(generatedTypes, checkedInTypes))
     mismatches.push(`repo ↔ ${name}: generated database.types.ts differs from live schema`);
   const sourceDigest = sourceAttestation.sourceDigest;
   const auth = localFunctionAuth();
