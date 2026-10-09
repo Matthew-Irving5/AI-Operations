@@ -82,6 +82,16 @@ test('parallel local sessions receive independent protected browser sessions', a
     const secondAuthCookie = secondCookies.find((cookie) => cookie.name.endsWith('-auth-token'));
     expect(firstAuthCookie).toBeDefined();
     expect(secondAuthCookie).toBeDefined();
+    expect(firstAuthCookie).toMatchObject({
+      httpOnly: true,
+      sameSite: 'Lax',
+      secure: false,
+    });
+    expect(secondAuthCookie).toMatchObject({
+      httpOnly: true,
+      sameSite: 'Lax',
+      secure: false,
+    });
     expect(firstAuthCookie?.value).not.toBe(secondAuthCookie?.value);
     await Promise.all([firstPage.goto('/reports'), secondPage.goto('/reports')]);
     await Promise.all([

@@ -2,7 +2,7 @@
 
 The sole production identity is allowlisted in the database. Authenticated routes require Supabase AAL2, privileged actions require MFA completed within five minutes, and RLS defaults to deny. Browser clients receive only public Supabase configuration; privileged operations are JWT-verified Edge Functions. Audit payloads are redacted.
 
-State-changing Next.js routes reject requests without a same-origin `Origin` header and authenticate the user with Supabase `getUser` before an access token is relayed to a JWT-verified Edge Function. Supabase session cookies are server-managed. Service-role credentials, access tokens, database passwords, Cloudflare tokens, and R2 credentials remain server/deployment secrets and must never be bundled into frontend output.
+State-changing Next.js routes reject requests without a same-origin `Origin` header and authenticate the user with Supabase `getUser` before an access token is relayed to a JWT-verified Edge Function. Supabase session cookies are server-managed, HttpOnly, SameSite=Lax, and Secure in hosted environments. Password recovery is restricted to the allowlisted identity, uses a PKCE callback and a short-lived HttpOnly marker, then revokes all sessions after a successful password update. Service-role credentials, access tokens, database passwords, Cloudflare tokens, and R2 credentials remain server/deployment secrets and must never be bundled into frontend output.
 
 The Google OAuth start function verifies the active Supabase session and the
 production identity allowlist. It does not impose a second five-minute MFA

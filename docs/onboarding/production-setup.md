@@ -15,6 +15,11 @@ The Settings checklist is the authoritative acknowledgement record. Complete its
 7. Run an encrypted backup and a staging-only restore drill with synthetic data. Record the checksum, manifest count, representative read-back and date in the operational log.
 8. After all sixteen entries are recorded, use the final Settings control under fresh MFA. Enable schedules one by one and verify their first redacted trace and notification.
 
+Before recording authentication acceptance in each hosted environment, verify the password and MFA
+settings in [authentication-configuration.md](../security/authentication-configuration.md). In
+particular, public signup must be disabled, TOTP and leaked-password protection must be enabled, and
+the recovery callback must match that environment's exact application origin.
+
 `Deploy production` is triggered only from a successful staging deployment on `main` (or an explicitly approved workflow dispatch). It applies forward migrations, deploys every Edge Function, and requires the production login smoke check before it succeeds. If any step fails, keep schedules disabled, investigate in staging, and deploy a forward fix; never roll production schema backward.
 
 For Pass 3, configure `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
