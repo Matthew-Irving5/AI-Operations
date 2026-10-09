@@ -12,6 +12,7 @@ const valid = {
 describe('live E2E staging target guard', () => {
   it('accepts only the explicitly configured staging app and Supabase project', () => {
     expect(parseLiveE2eEnvironment(valid, 'suite')).toMatchObject(valid);
+    expect(parseLiveE2eEnvironment(valid, 'auth-acceptance')).toMatchObject(valid);
   });
 
   it('does not require or return automated MFA configuration', () => {
@@ -53,6 +54,12 @@ describe('live E2E staging target guard', () => {
   it('fails closed before making a request when the base origin points elsewhere', () => {
     expect(() =>
       parseLiveE2eEnvironment({ ...valid, LIVE_E2E_BASE_URL: 'https://app.example.com' }, 'suite'),
+    ).toThrow(/fixed staging origin/);
+    expect(() =>
+      parseLiveE2eEnvironment(
+        { ...valid, LIVE_E2E_BASE_URL: 'https://app.example.com' },
+        'auth-acceptance',
+      ),
     ).toThrow(/fixed staging origin/);
   });
 

@@ -23,7 +23,7 @@ export default async function AutomationsPage() {
       ) : (
         <section className="stack" aria-label="Workflow schedules">
           {schedules.map((schedule) => (
-            <article className="card" key={schedule.id}>
+            <article className="card" key={schedule.id} data-schedule-id={schedule.id}>
               <div className="label">
                 {schedule.enabled ? 'Enabled' : 'Disabled'} · {schedule.timezone}
               </div>
