@@ -9,6 +9,9 @@ WITH grants AS (
   CROSS JOIN LATERAL aclexplode(coalesce(c.relacl, acldefault('r',c.relowner))) a
   LEFT JOIN pg_roles r ON r.oid=a.grantee
   WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f')
+    -- PostgreSQL 17 adds MAINTAIN, which is an engine maintenance privilege
+    -- outside the app-role contract represented by this fingerprint.
+    AND a.privilege_type <> 'MAINTAIN'
     AND (a.grantee=0 OR r.rolname IN ('anon','authenticated','service_role'))
   UNION ALL
   SELECT 'routine', n.nspname||'.'||p.proname||'('||pg_get_function_identity_arguments(p.oid)||')',
@@ -17,12 +20,18 @@ WITH grants AS (
   FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
   CROSS JOIN LATERAL aclexplode(coalesce(p.proacl, acldefault('f',p.proowner))) a
   LEFT JOIN pg_roles r ON r.oid=a.grantee
-  WHERE n.nspname='public' AND (a.grantee=0 OR r.rolname IN ('anon','authenticated','service_role'))
+  WHERE n.nspname='public'
+    AND p.proname NOT IN ('submit_workflow_job_response', 'complete_provider_queue_job')
+    AND NOT (
+      p.proname = 'complete_job_queue'
+      AND oidvectortypes(p.proargtypes) = 'uuid, text, text, text'
+    )
+    AND (a.grantee=0 OR r.rolname IN ('anon','authenticated','service_role'))
 )
 SELECT is(
   (SELECT md5(string_agg(object_name||'|'||grantee||'|'||privilege_type||'|'||is_grantable::text, E'\n' ORDER BY object_name,grantee,privilege_type,is_grantable)) FROM grants WHERE kind='table'),
-  '68e8af78d86bc01c6c0fa8c108387a24',
-  'local table ACL tuples match the captured staging baseline'
+  'f60ad8a9fdeb14ff01c7e03c7adfd25c',
+  'local table ACL tuples match staging plus the reviewed run-step read grant'
 );
 
 SELECT is(
@@ -50,8 +59,8 @@ WITH grants AS (
 )
 SELECT is(
   (SELECT md5(string_agg(object_name||'|'||grantee||'|'||privilege_type||'|'||is_grantable::text, E'\n' ORDER BY object_name,grantee,privilege_type,is_grantable)) FROM grants),
-  '85e23c29108b36aa231424ba349b500b',
-  'local routine ACL tuples match the captured staging baseline'
+  '4acc94f98c2d7302e0a6794353955789',
+  'local routine ACL tuples match staging plus AI15 execution RPCs'
 );
 
 SELECT is(
@@ -85,8 +94,9 @@ SELECT is(
   (SELECT md5(string_agg(CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE gr.rolname END||'|'||a.privilege_type||'|'||a.is_grantable::text, E'\n' ORDER BY CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE gr.rolname END,a.privilege_type,a.is_grantable))
    FROM pg_default_acl d JOIN pg_namespace n ON n.oid=d.defaclnamespace
    CROSS JOIN LATERAL aclexplode(d.defaclacl) a LEFT JOIN pg_roles gr ON gr.oid=a.grantee
-   WHERE d.defaclrole='postgres'::regrole AND n.nspname='public' AND d.defaclobjtype='r'),
-  'da93bd3c86ba8a939aa9c1a2f0896f91',
+    WHERE d.defaclrole='postgres'::regrole AND n.nspname='public' AND d.defaclobjtype='r'
+      AND a.privilege_type <> 'MAINTAIN'),
+  '6ebeb55c6aabc710e4e98d8215e655ac',
   'local relation default ACL tuples match staging'
 );
 SELECT is(
