@@ -1,11 +1,26 @@
 begin;
-select plan(19);
+select plan(34);
 
 select ok((select count(distinct m.code)=8 from public.manager_capabilities c join public.managers m on m.id=c.manager_id where c.contract_version=1), 'capabilities are seeded for all eight canonical managers');
 select ok(has_column_privilege('service_role','public.managers','id','SELECT'), 'trusted fixture lookup can read manager IDs');
 select ok(has_column_privilege('service_role','public.managers','code','SELECT'), 'trusted fixture lookup can filter by manager code');
 select ok(not has_column_privilege('service_role','public.managers','configuration','SELECT'), 'trusted fixture lookup cannot read manager configuration');
 select ok(not has_column_privilege('anon','public.managers','id','SELECT'), 'anonymous callers cannot read manager IDs');
+select ok(has_table_privilege('service_role','public.actions','INSERT'), 'trusted fixture path can insert existing canonical actions');
+select ok(not has_table_privilege('service_role','public.actions','SELECT'), 'service role has no broad action table read privilege');
+select ok(has_column_privilege('service_role','public.actions','id','SELECT'), 'trusted idempotent action upsert can read its conflict key');
+select ok(has_column_privilege('service_role','public.actions','user_id','SELECT'), 'trusted action readers can filter by owner');
+select ok(has_column_privilege('service_role','public.actions','conversation_id','SELECT'), 'trusted fixture reader can filter by conversation');
+select ok(has_column_privilege('service_role','public.actions','status','SELECT'), 'trusted action readers can filter or return status');
+select ok(has_column_privilege('service_role','public.actions','approval_state','SELECT'), 'trusted fixture reader can return approval state');
+select ok(has_column_privilege('service_role','public.actions','title','SELECT'), 'Apple bridge can return action titles');
+select ok(has_column_privilege('service_role','public.actions','description','SELECT'), 'Apple bridge can return action descriptions');
+select ok(has_column_privilege('service_role','public.actions','created_at','SELECT'), 'Apple bridge can order and return action creation times');
+select ok(not has_column_privilege('service_role','public.actions','manager_id','SELECT'), 'service role cannot read unrelated action manager fields');
+select ok(not has_column_privilege('service_role','public.actions','proposed_payload','SELECT'), 'service role cannot read action payloads through table grants');
+select ok(not has_column_privilege('anon','public.actions','id','SELECT'), 'anonymous callers cannot read action IDs');
+select ok(has_table_privilege('authenticated','public.actions','SELECT'), 'authenticated action reads retain their existing table grant');
+select ok(exists(select 1 from pg_policies where schemaname='public' and tablename='actions' and policyname='own_actions' and cmd='ALL'), 'authenticated action reads remain owner-scoped by the existing RLS policy');
 select ok((select relrowsecurity from pg_class where relname='conversations' and relnamespace='public'::regnamespace), 'canonical conversations enable RLS');
 select ok(exists(select 1 from pg_policies where schemaname='public' and tablename='conversations' and policyname='deny_data_api_clients'), 'conversation Data API access has an explicit deny policy');
 select ok(not has_table_privilege('authenticated','public.conversation_messages','SELECT,INSERT,UPDATE,DELETE'), 'authenticated callers have no direct message table access');

@@ -343,7 +343,9 @@ async function readFixture(userId: string, conversationId: string) {
         .select("*")
         .eq("source_conversation_id", conversationId)
         .eq("user_id", userId),
-      service.from("actions").select("*").eq("conversation_id", conversationId)
+      service.from("actions").select(
+        "id,user_id,conversation_id,status,approval_state",
+      ).eq("conversation_id", conversationId)
         .eq("user_id", userId),
     ]);
   if (
