@@ -1,23 +1,5 @@
 import OpenAI from 'openai';
-import { z } from 'zod';
-
-const aiOutputSchema = z.object({
-  summary: z.string().min(1),
-  findings: z.array(z.object({ claim: z.string(), evidenceIds: z.array(z.string()).min(1) })),
-  recommendations: z.array(z.string()),
-  actions: z.array(
-    z.object({
-      type: z.string(),
-      title: z.string(),
-      risk: z.enum(['low', 'medium', 'high', 'critical']),
-    }),
-  ),
-  alerts: z.array(z.string()),
-  evidence: z.array(z.object({ id: z.string(), source: z.string() })),
-  uncertainties: z.array(z.string()),
-  report_sections: z.array(z.object({ code: z.string(), title: z.string(), content: z.string() })),
-});
-type AiOutput = z.infer<typeof aiOutputSchema>;
+import { aiOutputSchema, type AiOutput } from '@ai-operations/contracts';
 
 export type ResponsesRequest = Readonly<{
   model: 'gpt-5.6-luna' | 'gpt-5.6-terra' | 'gpt-5.6-sol';

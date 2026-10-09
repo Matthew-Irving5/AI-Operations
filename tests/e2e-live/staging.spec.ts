@@ -1,4 +1,5 @@
 import { writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { expect, test, webkit } from '@playwright/test';
 import { parseLiveE2eEnvironment } from '../../apps/web/lib/live-e2e-safety';
 import { writeLiveStagingAcceptanceEvidence } from '../../infrastructure/scripts/live-acceptance-evidence.js';
@@ -168,6 +169,23 @@ async function serviceRows<T>(table: string, query: string): Promise<T[]> {
   return (await response.json()) as T[];
 }
 
+async function postAgentRuntime(
+  page: import('@playwright/test').Page,
+  body: Record<string, unknown>,
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  return page.evaluate(async (payload) => {
+    const response = await fetch('/api/agent-runtime/contracts', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return {
+      status: response.status,
+      body: (await response.json()) as Record<string, unknown>,
+    };
+  }, body);
+}
+
 if (process.env.LIVE_E2E_FIXTURE_MISMATCH_EXPECTED_COUNT !== undefined) {
   test('deliberate staging fixture mismatch emits redacted failure diagnostics', async ({
     page,
@@ -215,6 +233,170 @@ test('staging live journey proves unauthorised rejection, manual MFA, AAL2, Trav
   await expect(page.getByText(/Multi-factor authentication is required/)).toBeVisible();
 
   await signInWithFreshMfa(page);
+
+  const fixtureKey = `ai14-live-e2e:${randomUUID()}`;
+  const createdFixtureResponse = await postAgentRuntime(page, {
+    operation: 'create_fixture',
+    fixtureKey,
+  });
+  expect(createdFixtureResponse.status).toBe(201);
+  const createdFixture = createdFixtureResponse.body as {
+    fixtureKey: string;
+    conversationId: string;
+    ids: {
+      messageId: string;
+      handoffId: string;
+      attentionId: string;
+      actionId: string;
+      evidenceReferenceId: string;
+    };
+  };
+  expect(createdFixture.fixtureKey).toBe(fixtureKey);
+  expect(createdFixture.conversationId).toMatch(/^[0-9a-f-]{36}$/i);
+  expect(createdFixture.ids.handoffId).toMatch(/^[0-9a-f-]{36}$/i);
+
+  const contractRead = await postAgentRuntime(page, {
+    operation: 'read_fixture',
+    conversationId: createdFixture.conversationId,
+  });
+  expect(contractRead.status).toBe(200);
+  const contractGraph = contractRead.body as {
+    conversation: { id: string; currentManagerCode: string; metadata: Record<string, unknown> };
+    messages: Array<{ id: string; authority: string }>;
+    handoffs: Array<{ id: string; status: string }>;
+    attentionItems: Array<{ id: string; status: string }>;
+    actions: Array<{ id: string; status: string; approval_state: string }>;
+    evidenceReferences: Array<{ id: string; source_type: string }>;
+    evidenceLinks: Array<{ entity_id: string; entity_type: string }>;
+  };
+  expect(contractGraph.conversation).toMatchObject({
+    id: createdFixture.conversationId,
+    currentManagerCode: 'systems',
+    metadata: { fixture: 'ai14-live-e2e', fixtureKey },
+  });
+  expect(contractGraph.messages).toContainEqual(
+    expect.objectContaining({ id: createdFixture.ids.messageId, authority: 'system_generated' }),
+  );
+  expect(contractGraph.handoffs).toContainEqual(
+    expect.objectContaining({ id: createdFixture.ids.handoffId, status: 'requested' }),
+  );
+  expect(contractGraph.attentionItems).toContainEqual(
+    expect.objectContaining({ id: createdFixture.ids.attentionId, status: 'new' }),
+  );
+  expect(contractGraph.actions).toContainEqual(
+    expect.objectContaining({
+      id: createdFixture.ids.actionId,
+      status: 'proposed',
+      approval_state: 'not_required',
+    }),
+  );
+  expect(contractGraph.evidenceReferences).toContainEqual(
+    expect.objectContaining({
+      id: createdFixture.ids.evidenceReferenceId,
+      source_type: 'legacy_reference',
+    }),
+  );
+  expect(contractGraph.evidenceLinks).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        entity_id: createdFixture.conversationId,
+        entity_type: 'conversation',
+      }),
+      expect.objectContaining({
+        entity_id: createdFixture.ids.handoffId,
+        entity_type: 'conversation_handoff',
+      }),
+      expect.objectContaining({ entity_id: createdFixture.ids.actionId, entity_type: 'action' }),
+    ]),
+  );
+
+  const acceptedHandoff = await postAgentRuntime(page, {
+    operation: 'transition_handoff',
+    handoffId: createdFixture.ids.handoffId,
+    status: 'accepted',
+  });
+  expect(acceptedHandoff.status).toBe(200);
+  expect(acceptedHandoff.body).toMatchObject({
+    id: createdFixture.ids.handoffId,
+    status: 'accepted',
+  });
+  const invalidHandoffTransition = await postAgentRuntime(page, {
+    operation: 'transition_handoff',
+    handoffId: createdFixture.ids.handoffId,
+    status: 'requested',
+  });
+  expect(invalidHandoffTransition).toMatchObject({
+    status: 409,
+    body: { code: 'invalid_transition' },
+  });
+
+  const persistedGraph = await Promise.all([
+    serviceRows<{ id: string; current_manager_code: string; status: string }>(
+      'conversations',
+      `select=id,current_manager_code,status&id=eq.${createdFixture.conversationId}`,
+    ),
+    serviceRows<{ id: string; authority: string }>(
+      'conversation_messages',
+      `select=id,authority&id=eq.${createdFixture.ids.messageId}`,
+    ),
+    serviceRows<{ id: string; status: string; accepted_at: string | null }>(
+      'conversation_handoffs',
+      `select=id,status,accepted_at&id=eq.${createdFixture.ids.handoffId}`,
+    ),
+    serviceRows<{ status: string }>(
+      'conversation_handoff_events',
+      `select=status&handoff_id=eq.${createdFixture.ids.handoffId}&order=created_at.asc`,
+    ),
+    serviceRows<{ id: string; status: string }>(
+      'attention_items',
+      `select=id,status&id=eq.${createdFixture.ids.attentionId}`,
+    ),
+    serviceRows<{ id: string; status: string; approval_state: string }>(
+      'actions',
+      `select=id,status,approval_state&id=eq.${createdFixture.ids.actionId}`,
+    ),
+    serviceRows<{ id: string; source_type: string }>(
+      'evidence_references',
+      `select=id,source_type&id=eq.${createdFixture.ids.evidenceReferenceId}`,
+    ),
+    serviceRows<{ entity_id: string; entity_type: string }>(
+      'evidence_links',
+      `select=entity_id,entity_type&evidence_reference_id=eq.${createdFixture.ids.evidenceReferenceId}`,
+    ),
+  ]);
+  expect(persistedGraph[0][0]).toMatchObject({
+    id: createdFixture.conversationId,
+    current_manager_code: 'personal',
+    status: 'open',
+  });
+  expect(persistedGraph[1][0]).toMatchObject({
+    id: createdFixture.ids.messageId,
+    authority: 'system_generated',
+  });
+  expect(persistedGraph[2][0]?.status).toBe('accepted');
+  expect(persistedGraph[2][0]?.accepted_at).toBeTruthy();
+  expect(persistedGraph[3].map(({ status }) => status)).toEqual(['requested', 'accepted']);
+  expect(persistedGraph[4][0]?.status).toBe('new');
+  expect(persistedGraph[5][0]).toMatchObject({
+    status: 'proposed',
+    approval_state: 'not_required',
+  });
+  expect(persistedGraph[6][0]?.source_type).toBe('legacy_reference');
+  expect(persistedGraph[7]).toHaveLength(5);
+
+  const acceptedContractRead = await postAgentRuntime(page, {
+    operation: 'read_fixture',
+    conversationId: createdFixture.conversationId,
+  });
+  expect(acceptedContractRead.status).toBe(200);
+  expect(
+    (acceptedContractRead.body as { conversation: { currentManagerCode: string } }).conversation
+      .currentManagerCode,
+  ).toBe('personal');
+  expect(
+    (acceptedContractRead.body as { handoffs: Array<{ status: string }> }).handoffs[0]?.status,
+  ).toBe('accepted');
+
   const aal2Probe = await page.evaluate(async () => {
     const response = await fetch('/api/auth/mfa/aal2-probe', {
       method: 'POST',

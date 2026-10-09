@@ -1,57 +1,109 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: '14.5';
-  };
   public: {
     Tables: {
       actions: {
         Row: {
           action_type: string;
+          approval_required: boolean;
+          approval_state: string;
+          authority: string;
+          contract_version: number;
+          conversation_id: string | null;
+          correlation_id: string;
           created_at: string;
           description: string;
           id: string;
-          proposed_payload: Json;
+          idempotency_key: string;
+          manager_id: string | null;
+          proposed_payload: NonNullable<Json>;
+          required_capability: string | null;
+          required_permissions: string[];
           risk_class: Database['public']['Enums']['risk_class'];
           run_id: string | null;
+          source_message_id: string | null;
           status: string;
           title: string;
+          updated_at: string;
           user_id: string;
         };
         Insert: {
           action_type: string;
+          approval_required?: boolean;
+          approval_state?: string;
+          authority?: string;
+          contract_version?: number;
+          conversation_id?: string | null;
+          correlation_id?: string;
           created_at?: string;
           description: string;
           id?: string;
-          proposed_payload?: Json;
+          idempotency_key?: string;
+          manager_id?: string | null;
+          proposed_payload?: NonNullable<Json>;
+          required_capability?: string | null;
+          required_permissions?: string[];
           risk_class: Database['public']['Enums']['risk_class'];
           run_id?: string | null;
+          source_message_id?: string | null;
           status?: string;
           title: string;
+          updated_at?: string;
           user_id: string;
         };
         Update: {
           action_type?: string;
+          approval_required?: boolean;
+          approval_state?: string;
+          authority?: string;
+          contract_version?: number;
+          conversation_id?: string | null;
+          correlation_id?: string;
           created_at?: string;
           description?: string;
           id?: string;
-          proposed_payload?: Json;
+          idempotency_key?: string;
+          manager_id?: string | null;
+          proposed_payload?: NonNullable<Json>;
+          required_capability?: string | null;
+          required_permissions?: string[];
           risk_class?: Database['public']['Enums']['risk_class'];
           run_id?: string | null;
+          source_message_id?: string | null;
           status?: string;
           title?: string;
+          updated_at?: string;
           user_id?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: 'actions_conversation_user_fk';
+            columns: ['conversation_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'conversations';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'actions_manager_id_fkey';
+            columns: ['manager_id'];
+            isOneToOne: false;
+            referencedRelation: 'managers';
+            referencedColumns: ['id'];
+          },
           {
             foreignKeyName: 'actions_run_id_fkey';
             columns: ['run_id'];
             isOneToOne: false;
             referencedRelation: 'workflow_runs';
             referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'actions_source_message_user_fk';
+            columns: ['source_message_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'conversation_messages';
+            referencedColumns: ['id', 'user_id'];
           },
           {
             foreignKeyName: 'actions_user_id_fkey';
@@ -74,9 +126,9 @@ export type Database = {
           id: string;
           model_id: string | null;
           prompt_version_id: string | null;
-          provider_usage: Json;
+          provider_usage: NonNullable<Json>;
           reasoning_tokens: number;
-          redacted_trace: Json;
+          redacted_trace: NonNullable<Json>;
           request_id: string | null;
           response_id: string | null;
           run_id: string | null;
@@ -97,9 +149,9 @@ export type Database = {
           id?: string;
           model_id?: string | null;
           prompt_version_id?: string | null;
-          provider_usage?: Json;
+          provider_usage?: NonNullable<Json>;
           reasoning_tokens?: number;
-          redacted_trace?: Json;
+          redacted_trace?: NonNullable<Json>;
           request_id?: string | null;
           response_id?: string | null;
           run_id?: string | null;
@@ -120,9 +172,9 @@ export type Database = {
           id?: string;
           model_id?: string | null;
           prompt_version_id?: string | null;
-          provider_usage?: Json;
+          provider_usage?: NonNullable<Json>;
           reasoning_tokens?: number;
-          redacted_trace?: Json;
+          redacted_trace?: NonNullable<Json>;
           request_id?: string | null;
           response_id?: string | null;
           run_id?: string | null;
@@ -409,6 +461,110 @@ export type Database = {
           },
         ];
       };
+      attention_items: {
+        Row: {
+          acknowledged_at: string | null;
+          acknowledgement_required: boolean;
+          contract_version: number;
+          correlation_id: string;
+          created_at: string;
+          deadline_at: string | null;
+          deduplication_key: string;
+          evidence_reference_ids: string[];
+          expires_at: string | null;
+          finding: string;
+          id: string;
+          item_type: string;
+          priority: number;
+          recommended_action: string | null;
+          recommended_communication: string;
+          resolved_at: string | null;
+          source_conversation_id: string | null;
+          source_manager_code: string;
+          source_run_id: string | null;
+          status: Database['public']['Enums']['attention_status'];
+          urgency: string;
+          user_id: string;
+        };
+        Insert: {
+          acknowledged_at?: string | null;
+          acknowledgement_required?: boolean;
+          contract_version?: number;
+          correlation_id?: string;
+          created_at?: string;
+          deadline_at?: string | null;
+          deduplication_key: string;
+          evidence_reference_ids?: string[];
+          expires_at?: string | null;
+          finding: string;
+          id?: string;
+          item_type: string;
+          priority?: number;
+          recommended_action?: string | null;
+          recommended_communication: string;
+          resolved_at?: string | null;
+          source_conversation_id?: string | null;
+          source_manager_code: string;
+          source_run_id?: string | null;
+          status?: Database['public']['Enums']['attention_status'];
+          urgency?: string;
+          user_id: string;
+        };
+        Update: {
+          acknowledged_at?: string | null;
+          acknowledgement_required?: boolean;
+          contract_version?: number;
+          correlation_id?: string;
+          created_at?: string;
+          deadline_at?: string | null;
+          deduplication_key?: string;
+          evidence_reference_ids?: string[];
+          expires_at?: string | null;
+          finding?: string;
+          id?: string;
+          item_type?: string;
+          priority?: number;
+          recommended_action?: string | null;
+          recommended_communication?: string;
+          resolved_at?: string | null;
+          source_conversation_id?: string | null;
+          source_manager_code?: string;
+          source_run_id?: string | null;
+          status?: Database['public']['Enums']['attention_status'];
+          urgency?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'attention_items_source_conversation_id_user_id_fkey';
+            columns: ['source_conversation_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'conversations';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'attention_items_source_manager_code_fkey';
+            columns: ['source_manager_code'];
+            isOneToOne: false;
+            referencedRelation: 'managers';
+            referencedColumns: ['code'];
+          },
+          {
+            foreignKeyName: 'attention_items_source_run_id_user_id_fkey';
+            columns: ['source_run_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'workflow_runs';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'attention_items_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'app_users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       audit_events: {
         Row: {
           aal: string | null;
@@ -590,7 +746,7 @@ export type Database = {
           evidence_kind: string;
           id: string;
           owner_login: string;
-          payload: Json;
+          payload: NonNullable<Json>;
           repository_external_id: number;
           repository_name: string;
           retrieved_at: string;
@@ -602,7 +758,7 @@ export type Database = {
           evidence_kind: string;
           id?: string;
           owner_login: string;
-          payload?: Json;
+          payload?: NonNullable<Json>;
           repository_external_id: number;
           repository_name: string;
           retrieved_at: string;
@@ -614,7 +770,7 @@ export type Database = {
           evidence_kind?: string;
           id?: string;
           owner_login?: string;
-          payload?: Json;
+          payload?: NonNullable<Json>;
           repository_external_id?: number;
           repository_name?: string;
           retrieved_at?: string;
@@ -634,7 +790,7 @@ export type Database = {
       career_goals: {
         Row: {
           created_at: string;
-          evidence_plan: Json;
+          evidence_plan: NonNullable<Json>;
           id: string;
           status: string;
           target_date: string | null;
@@ -644,7 +800,7 @@ export type Database = {
         };
         Insert: {
           created_at?: string;
-          evidence_plan?: Json;
+          evidence_plan?: NonNullable<Json>;
           id?: string;
           status?: string;
           target_date?: string | null;
@@ -654,7 +810,7 @@ export type Database = {
         };
         Update: {
           created_at?: string;
-          evidence_plan?: Json;
+          evidence_plan?: NonNullable<Json>;
           id?: string;
           status?: string;
           target_date?: string | null;
@@ -720,7 +876,7 @@ export type Database = {
         Row: {
           assessed_at: string;
           confidence: number;
-          evidence_refs: Json;
+          evidence_refs: NonNullable<Json>;
           id: string;
           skill_code: string;
           user_id: string;
@@ -728,7 +884,7 @@ export type Database = {
         Insert: {
           assessed_at?: string;
           confidence: number;
-          evidence_refs: Json;
+          evidence_refs: NonNullable<Json>;
           id?: string;
           skill_code: string;
           user_id: string;
@@ -736,7 +892,7 @@ export type Database = {
         Update: {
           assessed_at?: string;
           confidence?: number;
-          evidence_refs?: Json;
+          evidence_refs?: NonNullable<Json>;
           id?: string;
           skill_code?: string;
           user_id?: string;
@@ -825,7 +981,7 @@ export type Database = {
         Row: {
           account_label: string;
           account_role: string;
-          configuration: Json;
+          configuration: NonNullable<Json>;
           created_at: string;
           encrypted_credential_reference: string | null;
           environment: string;
@@ -839,7 +995,7 @@ export type Database = {
         Insert: {
           account_label: string;
           account_role?: string;
-          configuration?: Json;
+          configuration?: NonNullable<Json>;
           created_at?: string;
           encrypted_credential_reference?: string | null;
           environment?: string;
@@ -853,7 +1009,7 @@ export type Database = {
         Update: {
           account_label?: string;
           account_role?: string;
-          configuration?: Json;
+          configuration?: NonNullable<Json>;
           created_at?: string;
           encrypted_credential_reference?: string | null;
           environment?: string;
@@ -867,6 +1023,510 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: 'connections_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'app_users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      conversation_attachments: {
+        Row: {
+          contract_version: number;
+          created_at: string;
+          data_classification: string;
+          extraction_reference: string | null;
+          extraction_status: string;
+          id: string;
+          malware_scan_status: string;
+          message_id: string;
+          original_filename: string;
+          retention_state: string;
+          source_object_id: string;
+          user_id: string;
+        };
+        Insert: {
+          contract_version?: number;
+          created_at?: string;
+          data_classification: string;
+          extraction_reference?: string | null;
+          extraction_status?: string;
+          id?: string;
+          malware_scan_status?: string;
+          message_id: string;
+          original_filename: string;
+          retention_state?: string;
+          source_object_id: string;
+          user_id: string;
+        };
+        Update: {
+          contract_version?: number;
+          created_at?: string;
+          data_classification?: string;
+          extraction_reference?: string | null;
+          extraction_status?: string;
+          id?: string;
+          malware_scan_status?: string;
+          message_id?: string;
+          original_filename?: string;
+          retention_state?: string;
+          source_object_id?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'conversation_attachments_message_id_user_id_fkey';
+            columns: ['message_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'conversation_messages';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'conversation_attachments_source_object_id_user_id_fkey';
+            columns: ['source_object_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'source_objects';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'conversation_attachments_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'app_users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      conversation_entity_links: {
+        Row: {
+          contract_version: number;
+          conversation_id: string;
+          created_at: string;
+          entity_id: string;
+          entity_type: string;
+          id: string;
+          message_id: string | null;
+          relation: string;
+          user_id: string;
+        };
+        Insert: {
+          contract_version?: number;
+          conversation_id: string;
+          created_at?: string;
+          entity_id: string;
+          entity_type: string;
+          id?: string;
+          message_id?: string | null;
+          relation: string;
+          user_id: string;
+        };
+        Update: {
+          contract_version?: number;
+          conversation_id?: string;
+          created_at?: string;
+          entity_id?: string;
+          entity_type?: string;
+          id?: string;
+          message_id?: string | null;
+          relation?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'conversation_entity_links_conversation_id_user_id_fkey';
+            columns: ['conversation_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'conversations';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'conversation_entity_links_message_id_user_id_fkey';
+            columns: ['message_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'conversation_messages';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'conversation_entity_links_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'app_users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      conversation_handoff_events: {
+        Row: {
+          actor_manager_code: string | null;
+          contract_version: number;
+          correlation_id: string;
+          created_at: string;
+          handoff_id: string;
+          id: string;
+          status: Database['public']['Enums']['handoff_status'];
+          user_id: string;
+        };
+        Insert: {
+          actor_manager_code?: string | null;
+          contract_version?: number;
+          correlation_id: string;
+          created_at?: string;
+          handoff_id: string;
+          id?: string;
+          status: Database['public']['Enums']['handoff_status'];
+          user_id: string;
+        };
+        Update: {
+          actor_manager_code?: string | null;
+          contract_version?: number;
+          correlation_id?: string;
+          created_at?: string;
+          handoff_id?: string;
+          id?: string;
+          status?: Database['public']['Enums']['handoff_status'];
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'conversation_handoff_events_actor_manager_code_fkey';
+            columns: ['actor_manager_code'];
+            isOneToOne: false;
+            referencedRelation: 'managers';
+            referencedColumns: ['code'];
+          },
+          {
+            foreignKeyName: 'conversation_handoff_events_handoff_id_user_id_fkey';
+            columns: ['handoff_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'conversation_handoffs';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'conversation_handoff_events_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'app_users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      conversation_handoffs: {
+        Row: {
+          accepted_at: string | null;
+          contract_version: number;
+          conversation_id: string;
+          correlation_id: string;
+          from_manager_code: string;
+          id: string;
+          idempotency_key: string;
+          initiated_at: string;
+          reason: string;
+          source_message_id: string | null;
+          status: Database['public']['Enums']['handoff_status'];
+          to_manager_code: string;
+          user_id: string;
+        };
+        Insert: {
+          accepted_at?: string | null;
+          contract_version?: number;
+          conversation_id: string;
+          correlation_id?: string;
+          from_manager_code: string;
+          id?: string;
+          idempotency_key: string;
+          initiated_at?: string;
+          reason: string;
+          source_message_id?: string | null;
+          status?: Database['public']['Enums']['handoff_status'];
+          to_manager_code: string;
+          user_id: string;
+        };
+        Update: {
+          accepted_at?: string | null;
+          contract_version?: number;
+          conversation_id?: string;
+          correlation_id?: string;
+          from_manager_code?: string;
+          id?: string;
+          idempotency_key?: string;
+          initiated_at?: string;
+          reason?: string;
+          source_message_id?: string | null;
+          status?: Database['public']['Enums']['handoff_status'];
+          to_manager_code?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'conversation_handoffs_conversation_id_user_id_fkey';
+            columns: ['conversation_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'conversations';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'conversation_handoffs_from_manager_code_fkey';
+            columns: ['from_manager_code'];
+            isOneToOne: false;
+            referencedRelation: 'managers';
+            referencedColumns: ['code'];
+          },
+          {
+            foreignKeyName: 'conversation_handoffs_source_message_id_user_id_fkey';
+            columns: ['source_message_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'conversation_messages';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'conversation_handoffs_to_manager_code_fkey';
+            columns: ['to_manager_code'];
+            isOneToOne: false;
+            referencedRelation: 'managers';
+            referencedColumns: ['code'];
+          },
+          {
+            foreignKeyName: 'conversation_handoffs_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'app_users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      conversation_messages: {
+        Row: {
+          authority: Database['public']['Enums']['conversation_authority'];
+          body_reference: string | null;
+          body_sha256: string;
+          body_text: string | null;
+          channel: Database['public']['Enums']['conversation_channel'];
+          contract_version: number;
+          conversation_id: string;
+          correlation_id: string;
+          created_at: string;
+          deduplication_key: string;
+          direction: string;
+          gmail_message_id: string | null;
+          gmail_rfc_message_id: string | null;
+          gmail_thread_id: string | null;
+          id: string;
+          in_reply_to: string | null;
+          manager_code: string | null;
+          message_references: string[];
+          processing_status: Database['public']['Enums']['conversation_message_status'];
+          provider_received_at: string | null;
+          semantic_type: string;
+          sender_kind: Database['public']['Enums']['conversation_sender_kind'];
+          user_id: string;
+        };
+        Insert: {
+          authority: Database['public']['Enums']['conversation_authority'];
+          body_reference?: string | null;
+          body_sha256: string;
+          body_text?: string | null;
+          channel: Database['public']['Enums']['conversation_channel'];
+          contract_version?: number;
+          conversation_id: string;
+          correlation_id?: string;
+          created_at?: string;
+          deduplication_key: string;
+          direction: string;
+          gmail_message_id?: string | null;
+          gmail_rfc_message_id?: string | null;
+          gmail_thread_id?: string | null;
+          id?: string;
+          in_reply_to?: string | null;
+          manager_code?: string | null;
+          message_references?: string[];
+          processing_status?: Database['public']['Enums']['conversation_message_status'];
+          provider_received_at?: string | null;
+          semantic_type: string;
+          sender_kind: Database['public']['Enums']['conversation_sender_kind'];
+          user_id: string;
+        };
+        Update: {
+          authority?: Database['public']['Enums']['conversation_authority'];
+          body_reference?: string | null;
+          body_sha256?: string;
+          body_text?: string | null;
+          channel?: Database['public']['Enums']['conversation_channel'];
+          contract_version?: number;
+          conversation_id?: string;
+          correlation_id?: string;
+          created_at?: string;
+          deduplication_key?: string;
+          direction?: string;
+          gmail_message_id?: string | null;
+          gmail_rfc_message_id?: string | null;
+          gmail_thread_id?: string | null;
+          id?: string;
+          in_reply_to?: string | null;
+          manager_code?: string | null;
+          message_references?: string[];
+          processing_status?: Database['public']['Enums']['conversation_message_status'];
+          provider_received_at?: string | null;
+          semantic_type?: string;
+          sender_kind?: Database['public']['Enums']['conversation_sender_kind'];
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'conversation_messages_conversation_id_user_id_fkey';
+            columns: ['conversation_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'conversations';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'conversation_messages_manager_code_fkey';
+            columns: ['manager_code'];
+            isOneToOne: false;
+            referencedRelation: 'managers';
+            referencedColumns: ['code'];
+          },
+          {
+            foreignKeyName: 'conversation_messages_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'app_users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      conversation_participants: {
+        Row: {
+          contract_version: number;
+          conversation_id: string;
+          display_name: string | null;
+          id: string;
+          joined_at: string;
+          kind: string;
+          left_at: string | null;
+          manager_code: string | null;
+          provider_actor_id: string | null;
+          role: string;
+          user_id: string;
+        };
+        Insert: {
+          contract_version?: number;
+          conversation_id: string;
+          display_name?: string | null;
+          id?: string;
+          joined_at?: string;
+          kind: string;
+          left_at?: string | null;
+          manager_code?: string | null;
+          provider_actor_id?: string | null;
+          role: string;
+          user_id: string;
+        };
+        Update: {
+          contract_version?: number;
+          conversation_id?: string;
+          display_name?: string | null;
+          id?: string;
+          joined_at?: string;
+          kind?: string;
+          left_at?: string | null;
+          manager_code?: string | null;
+          provider_actor_id?: string | null;
+          role?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'conversation_participants_conversation_id_user_id_fkey';
+            columns: ['conversation_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'conversations';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'conversation_participants_manager_code_fkey';
+            columns: ['manager_code'];
+            isOneToOne: false;
+            referencedRelation: 'managers';
+            referencedColumns: ['code'];
+          },
+          {
+            foreignKeyName: 'conversation_participants_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'app_users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      conversations: {
+        Row: {
+          contract_version: number;
+          correlation_id: string;
+          created_at: string;
+          current_manager_code: string;
+          execution_state_summary: NonNullable<Json>;
+          gmail_thread_id: string | null;
+          id: string;
+          last_message_at: string | null;
+          metadata: NonNullable<Json>;
+          originating_channel: Database['public']['Enums']['conversation_origin_channel'];
+          originating_manager_code: string;
+          status: Database['public']['Enums']['conversation_status'];
+          subject: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          contract_version?: number;
+          correlation_id?: string;
+          created_at?: string;
+          current_manager_code: string;
+          execution_state_summary?: NonNullable<Json>;
+          gmail_thread_id?: string | null;
+          id?: string;
+          last_message_at?: string | null;
+          metadata?: NonNullable<Json>;
+          originating_channel: Database['public']['Enums']['conversation_origin_channel'];
+          originating_manager_code: string;
+          status?: Database['public']['Enums']['conversation_status'];
+          subject: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          contract_version?: number;
+          correlation_id?: string;
+          created_at?: string;
+          current_manager_code?: string;
+          execution_state_summary?: NonNullable<Json>;
+          gmail_thread_id?: string | null;
+          id?: string;
+          last_message_at?: string | null;
+          metadata?: NonNullable<Json>;
+          originating_channel?: Database['public']['Enums']['conversation_origin_channel'];
+          originating_manager_code?: string;
+          status?: Database['public']['Enums']['conversation_status'];
+          subject?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'conversations_current_manager_code_fkey';
+            columns: ['current_manager_code'];
+            isOneToOne: false;
+            referencedRelation: 'managers';
+            referencedColumns: ['code'];
+          },
+          {
+            foreignKeyName: 'conversations_originating_manager_code_fkey';
+            columns: ['originating_manager_code'];
+            isOneToOne: false;
+            referencedRelation: 'managers';
+            referencedColumns: ['code'];
+          },
+          {
+            foreignKeyName: 'conversations_user_id_fkey';
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'app_users';
@@ -934,7 +1594,7 @@ export type Database = {
           id: string;
           last_source_at: string | null;
           last_success_at: string | null;
-          last_verification_evidence: Json;
+          last_verification_evidence: NonNullable<Json>;
           last_verified_at: string | null;
           source: string;
           stale_reason: string | null;
@@ -946,7 +1606,7 @@ export type Database = {
           id?: string;
           last_source_at?: string | null;
           last_success_at?: string | null;
-          last_verification_evidence?: Json;
+          last_verification_evidence?: NonNullable<Json>;
           last_verified_at?: string | null;
           source: string;
           stale_reason?: string | null;
@@ -958,7 +1618,7 @@ export type Database = {
           id?: string;
           last_source_at?: string | null;
           last_success_at?: string | null;
-          last_verification_evidence?: Json;
+          last_verification_evidence?: NonNullable<Json>;
           last_verified_at?: string | null;
           source?: string;
           stale_reason?: string | null;
@@ -979,7 +1639,7 @@ export type Database = {
         Row: {
           category: string;
           created_at: string;
-          evidence: Json;
+          evidence: NonNullable<Json>;
           id: string;
           scan_id: string;
           severity: Database['public']['Enums']['risk_class'];
@@ -989,7 +1649,7 @@ export type Database = {
         Insert: {
           category: string;
           created_at?: string;
-          evidence?: Json;
+          evidence?: NonNullable<Json>;
           id?: string;
           scan_id: string;
           severity: Database['public']['Enums']['risk_class'];
@@ -999,7 +1659,7 @@ export type Database = {
         Update: {
           category?: string;
           created_at?: string;
-          evidence?: Json;
+          evidence?: NonNullable<Json>;
           id?: string;
           scan_id?: string;
           severity?: Database['public']['Enums']['risk_class'];
@@ -1098,7 +1758,7 @@ export type Database = {
           created_at: string;
           device_id: string;
           id: string;
-          payload: Json;
+          payload: NonNullable<Json>;
           payload_sha256: string;
           scan_id: string;
           status: string;
@@ -1109,7 +1769,7 @@ export type Database = {
           created_at?: string;
           device_id: string;
           id?: string;
-          payload: Json;
+          payload: NonNullable<Json>;
           payload_sha256: string;
           scan_id: string;
           status?: string;
@@ -1120,7 +1780,7 @@ export type Database = {
           created_at?: string;
           device_id?: string;
           id?: string;
-          payload?: Json;
+          payload?: NonNullable<Json>;
           payload_sha256?: string;
           scan_id?: string;
           status?: string;
@@ -1152,7 +1812,7 @@ export type Database = {
       };
       digital_scans: {
         Row: {
-          approved_roots: Json;
+          approved_roots: NonNullable<Json>;
           completed_at: string | null;
           created_at: string;
           device_id: string;
@@ -1167,7 +1827,7 @@ export type Database = {
           user_id: string;
         };
         Insert: {
-          approved_roots: Json;
+          approved_roots: NonNullable<Json>;
           completed_at?: string | null;
           created_at?: string;
           device_id: string;
@@ -1182,7 +1842,7 @@ export type Database = {
           user_id: string;
         };
         Update: {
-          approved_roots?: Json;
+          approved_roots?: NonNullable<Json>;
           completed_at?: string | null;
           created_at?: string;
           device_id?: string;
@@ -1246,6 +1906,396 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'app_users';
             referencedColumns: ['id'];
+          },
+        ];
+      };
+      evidence_links: {
+        Row: {
+          contract_version: number;
+          created_at: string;
+          entity_id: string;
+          entity_type: string;
+          evidence_reference_id: string;
+          id: string;
+          relation: string;
+          user_id: string;
+        };
+        Insert: {
+          contract_version?: number;
+          created_at?: string;
+          entity_id: string;
+          entity_type: string;
+          evidence_reference_id: string;
+          id?: string;
+          relation?: string;
+          user_id: string;
+        };
+        Update: {
+          contract_version?: number;
+          created_at?: string;
+          entity_id?: string;
+          entity_type?: string;
+          evidence_reference_id?: string;
+          id?: string;
+          relation?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'evidence_links_evidence_reference_id_fkey';
+            columns: ['evidence_reference_id'];
+            isOneToOne: false;
+            referencedRelation: 'evidence_references';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'evidence_links_evidence_reference_id_user_id_fkey';
+            columns: ['evidence_reference_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'evidence_references';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'evidence_links_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'app_users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      evidence_references: {
+        Row: {
+          ai_call_id: string | null;
+          captured_at: string | null;
+          confidence: string;
+          contract_version: number;
+          created_at: string;
+          expires_at: string | null;
+          id: string;
+          model_id: string | null;
+          prompt_version_id: string | null;
+          provenance: NonNullable<Json>;
+          research_source_id: string | null;
+          retrieved_at: string | null;
+          sha256: string | null;
+          source_key: string | null;
+          source_object_id: string | null;
+          source_record_id: string | null;
+          source_record_table: string | null;
+          source_type: string;
+          source_url: string | null;
+          title: string;
+          trace_event_id: string | null;
+          user_id: string;
+          verification_method: string;
+          workflow_run_id: string | null;
+        };
+        Insert: {
+          ai_call_id?: string | null;
+          captured_at?: string | null;
+          confidence: string;
+          contract_version?: number;
+          created_at?: string;
+          expires_at?: string | null;
+          id?: string;
+          model_id?: string | null;
+          prompt_version_id?: string | null;
+          provenance?: NonNullable<Json>;
+          research_source_id?: string | null;
+          retrieved_at?: string | null;
+          sha256?: string | null;
+          source_key?: string | null;
+          source_object_id?: string | null;
+          source_record_id?: string | null;
+          source_record_table?: string | null;
+          source_type: string;
+          source_url?: string | null;
+          title: string;
+          trace_event_id?: string | null;
+          user_id: string;
+          verification_method: string;
+          workflow_run_id?: string | null;
+        };
+        Update: {
+          ai_call_id?: string | null;
+          captured_at?: string | null;
+          confidence?: string;
+          contract_version?: number;
+          created_at?: string;
+          expires_at?: string | null;
+          id?: string;
+          model_id?: string | null;
+          prompt_version_id?: string | null;
+          provenance?: NonNullable<Json>;
+          research_source_id?: string | null;
+          retrieved_at?: string | null;
+          sha256?: string | null;
+          source_key?: string | null;
+          source_object_id?: string | null;
+          source_record_id?: string | null;
+          source_record_table?: string | null;
+          source_type?: string;
+          source_url?: string | null;
+          title?: string;
+          trace_event_id?: string | null;
+          user_id?: string;
+          verification_method?: string;
+          workflow_run_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'evidence_references_research_source_id_user_id_fkey';
+            columns: ['research_source_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'research_sources';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'evidence_references_source_object_id_user_id_fkey';
+            columns: ['source_object_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'source_objects';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'evidence_references_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'app_users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      execution_receipts: {
+        Row: {
+          action_id: string | null;
+          contract_version: number;
+          correlation_id: string;
+          created_at: string;
+          error_code: string | null;
+          execution_request_id: string;
+          id: string;
+          idempotency_key: string;
+          kind: string;
+          redacted_error: string | null;
+          result: NonNullable<Json>;
+          result_reference: string | null;
+          summary: string;
+          user_id: string;
+        };
+        Insert: {
+          action_id?: string | null;
+          contract_version?: number;
+          correlation_id: string;
+          created_at?: string;
+          error_code?: string | null;
+          execution_request_id: string;
+          id?: string;
+          idempotency_key: string;
+          kind: string;
+          redacted_error?: string | null;
+          result?: NonNullable<Json>;
+          result_reference?: string | null;
+          summary: string;
+          user_id: string;
+        };
+        Update: {
+          action_id?: string | null;
+          contract_version?: number;
+          correlation_id?: string;
+          created_at?: string;
+          error_code?: string | null;
+          execution_request_id?: string;
+          id?: string;
+          idempotency_key?: string;
+          kind?: string;
+          redacted_error?: string | null;
+          result?: NonNullable<Json>;
+          result_reference?: string | null;
+          summary?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'execution_receipts_action_id_user_id_fkey';
+            columns: ['action_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'actions';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'execution_receipts_execution_request_id_fkey';
+            columns: ['execution_request_id'];
+            isOneToOne: false;
+            referencedRelation: 'execution_requests';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'execution_receipts_execution_request_id_user_id_fkey';
+            columns: ['execution_request_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'execution_requests';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'execution_receipts_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'app_users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      execution_requests: {
+        Row: {
+          action_id: string | null;
+          approval_id: string | null;
+          attempt_count: number;
+          authority: string;
+          cancelled_at: string | null;
+          command_type: string;
+          command_version: number;
+          completed_at: string | null;
+          contract_version: number;
+          conversation_id: string;
+          correlation_id: string;
+          created_at: string;
+          dependency: string | null;
+          error_code: string | null;
+          id: string;
+          idempotency_key: string;
+          intent: string;
+          interpreting_manager_code: string;
+          mechanism: string;
+          redacted_error: string | null;
+          required_capability: string;
+          result_reference: string | null;
+          scope: string;
+          source_message_id: string;
+          started_at: string | null;
+          status: Database['public']['Enums']['execution_request_status'];
+          target_reference: string | null;
+          target_type: string;
+          typed_parameters: NonNullable<Json>;
+          user_id: string;
+          workflow_run_id: string | null;
+        };
+        Insert: {
+          action_id?: string | null;
+          approval_id?: string | null;
+          attempt_count?: number;
+          authority: string;
+          cancelled_at?: string | null;
+          command_type: string;
+          command_version?: number;
+          completed_at?: string | null;
+          contract_version?: number;
+          conversation_id: string;
+          correlation_id?: string;
+          created_at?: string;
+          dependency?: string | null;
+          error_code?: string | null;
+          id?: string;
+          idempotency_key: string;
+          intent: string;
+          interpreting_manager_code: string;
+          mechanism: string;
+          redacted_error?: string | null;
+          required_capability: string;
+          result_reference?: string | null;
+          scope: string;
+          source_message_id: string;
+          started_at?: string | null;
+          status?: Database['public']['Enums']['execution_request_status'];
+          target_reference?: string | null;
+          target_type: string;
+          typed_parameters?: NonNullable<Json>;
+          user_id: string;
+          workflow_run_id?: string | null;
+        };
+        Update: {
+          action_id?: string | null;
+          approval_id?: string | null;
+          attempt_count?: number;
+          authority?: string;
+          cancelled_at?: string | null;
+          command_type?: string;
+          command_version?: number;
+          completed_at?: string | null;
+          contract_version?: number;
+          conversation_id?: string;
+          correlation_id?: string;
+          created_at?: string;
+          dependency?: string | null;
+          error_code?: string | null;
+          id?: string;
+          idempotency_key?: string;
+          intent?: string;
+          interpreting_manager_code?: string;
+          mechanism?: string;
+          redacted_error?: string | null;
+          required_capability?: string;
+          result_reference?: string | null;
+          scope?: string;
+          source_message_id?: string;
+          started_at?: string | null;
+          status?: Database['public']['Enums']['execution_request_status'];
+          target_reference?: string | null;
+          target_type?: string;
+          typed_parameters?: NonNullable<Json>;
+          user_id?: string;
+          workflow_run_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'execution_requests_action_id_user_id_fkey';
+            columns: ['action_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'actions';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'execution_requests_approval_id_user_id_fkey';
+            columns: ['approval_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'approvals';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'execution_requests_conversation_id_user_id_fkey';
+            columns: ['conversation_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'conversations';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'execution_requests_interpreting_manager_code_fkey';
+            columns: ['interpreting_manager_code'];
+            isOneToOne: false;
+            referencedRelation: 'managers';
+            referencedColumns: ['code'];
+          },
+          {
+            foreignKeyName: 'execution_requests_source_message_id_user_id_fkey';
+            columns: ['source_message_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'conversation_messages';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'execution_requests_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'app_users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'execution_requests_workflow_run_id_user_id_fkey';
+            columns: ['workflow_run_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'workflow_runs';
+            referencedColumns: ['id', 'user_id'];
           },
         ];
       };
@@ -1409,7 +2459,7 @@ export type Database = {
       };
       finance_close_periods: {
         Row: {
-          blockers: Json;
+          blockers: NonNullable<Json>;
           close_kind: string;
           created_at: string;
           id: string;
@@ -1421,7 +2471,7 @@ export type Database = {
           user_id: string;
         };
         Insert: {
-          blockers?: Json;
+          blockers?: NonNullable<Json>;
           close_kind: string;
           created_at?: string;
           id?: string;
@@ -1433,7 +2483,7 @@ export type Database = {
           user_id: string;
         };
         Update: {
-          blockers?: Json;
+          blockers?: NonNullable<Json>;
           close_kind?: string;
           created_at?: string;
           id?: string;
@@ -1463,7 +2513,7 @@ export type Database = {
       };
       finance_sheet_adapters: {
         Row: {
-          configuration: Json;
+          configuration: NonNullable<Json>;
           created_at: string;
           id: string;
           read_only: boolean;
@@ -1471,7 +2521,7 @@ export type Database = {
           user_id: string;
         };
         Insert: {
-          configuration?: Json;
+          configuration?: NonNullable<Json>;
           created_at?: string;
           id?: string;
           read_only?: boolean;
@@ -1479,7 +2529,7 @@ export type Database = {
           user_id: string;
         };
         Update: {
-          configuration?: Json;
+          configuration?: NonNullable<Json>;
           created_at?: string;
           id?: string;
           read_only?: boolean;
@@ -1583,7 +2633,7 @@ export type Database = {
           external_id: string | null;
           id: string;
           posted_at: string | null;
-          provenance: Json;
+          provenance: NonNullable<Json>;
           statement_id: string | null;
           transaction_date: string;
           transaction_hash: string;
@@ -1602,7 +2652,7 @@ export type Database = {
           external_id?: string | null;
           id?: string;
           posted_at?: string | null;
-          provenance?: Json;
+          provenance?: NonNullable<Json>;
           statement_id?: string | null;
           transaction_date: string;
           transaction_hash: string;
@@ -1621,7 +2671,7 @@ export type Database = {
           external_id?: string | null;
           id?: string;
           posted_at?: string | null;
-          provenance?: Json;
+          provenance?: NonNullable<Json>;
           statement_id?: string | null;
           transaction_date?: string;
           transaction_hash?: string;
@@ -1881,7 +2931,7 @@ export type Database = {
           completeness: number;
           data_confidence: string;
           id: string;
-          metrics: Json;
+          metrics: NonNullable<Json>;
           summary_date: string;
           user_id: string;
         };
@@ -1890,7 +2940,7 @@ export type Database = {
           completeness: number;
           data_confidence: string;
           id?: string;
-          metrics?: Json;
+          metrics?: NonNullable<Json>;
           summary_date: string;
           user_id: string;
         };
@@ -1899,7 +2949,7 @@ export type Database = {
           completeness?: number;
           data_confidence?: string;
           id?: string;
-          metrics?: Json;
+          metrics?: NonNullable<Json>;
           summary_date?: string;
           user_id?: string;
         };
@@ -2013,7 +3063,7 @@ export type Database = {
       };
       health_plans: {
         Row: {
-          content: Json;
+          content: NonNullable<Json>;
           created_at: string;
           ends_on: string | null;
           id: string;
@@ -2023,7 +3073,7 @@ export type Database = {
           user_id: string;
         };
         Insert: {
-          content?: Json;
+          content?: NonNullable<Json>;
           created_at?: string;
           ends_on?: string | null;
           id?: string;
@@ -2033,7 +3083,7 @@ export type Database = {
           user_id: string;
         };
         Update: {
-          content?: Json;
+          content?: NonNullable<Json>;
           created_at?: string;
           ends_on?: string | null;
           id?: string;
@@ -2059,7 +3109,7 @@ export type Database = {
           import_id: string;
           reason: string;
           record_index: number;
-          redacted_record: Json;
+          redacted_record: NonNullable<Json>;
         };
         Insert: {
           created_at?: string;
@@ -2067,7 +3117,7 @@ export type Database = {
           import_id: string;
           reason: string;
           record_index: number;
-          redacted_record?: Json;
+          redacted_record?: NonNullable<Json>;
         };
         Update: {
           created_at?: string;
@@ -2075,7 +3125,7 @@ export type Database = {
           import_id?: string;
           reason?: string;
           record_index?: number;
-          redacted_record?: Json;
+          redacted_record?: NonNullable<Json>;
         };
         Relationships: [
           {
@@ -2099,7 +3149,7 @@ export type Database = {
           observed_at: string;
           original_unit: string | null;
           original_value: number | null;
-          provenance: Json;
+          provenance: NonNullable<Json>;
           revision: number;
           source: string;
           unit: string;
@@ -2117,7 +3167,7 @@ export type Database = {
           observed_at: string;
           original_unit?: string | null;
           original_value?: number | null;
-          provenance?: Json;
+          provenance?: NonNullable<Json>;
           revision?: number;
           source: string;
           unit: string;
@@ -2135,7 +3185,7 @@ export type Database = {
           observed_at?: string;
           original_unit?: string | null;
           original_value?: number | null;
-          provenance?: Json;
+          provenance?: NonNullable<Json>;
           revision?: number;
           source?: string;
           unit?: string;
@@ -2249,6 +3299,185 @@ export type Database = {
           },
         ];
       };
+      inter_agent_replies: {
+        Row: {
+          contract_version: number;
+          correlation_id: string;
+          created_at: string;
+          evidence_reference_ids: string[];
+          id: string;
+          kind: string;
+          manager_code: string;
+          output: NonNullable<Json>;
+          request_id: string;
+          result_reference: string | null;
+          user_id: string;
+        };
+        Insert: {
+          contract_version?: number;
+          correlation_id: string;
+          created_at?: string;
+          evidence_reference_ids?: string[];
+          id?: string;
+          kind: string;
+          manager_code: string;
+          output?: NonNullable<Json>;
+          request_id: string;
+          result_reference?: string | null;
+          user_id: string;
+        };
+        Update: {
+          contract_version?: number;
+          correlation_id?: string;
+          created_at?: string;
+          evidence_reference_ids?: string[];
+          id?: string;
+          kind?: string;
+          manager_code?: string;
+          output?: NonNullable<Json>;
+          request_id?: string;
+          result_reference?: string | null;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'inter_agent_replies_manager_code_fkey';
+            columns: ['manager_code'];
+            isOneToOne: false;
+            referencedRelation: 'managers';
+            referencedColumns: ['code'];
+          },
+          {
+            foreignKeyName: 'inter_agent_replies_request_id_user_id_fkey';
+            columns: ['request_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'inter_agent_requests';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'inter_agent_replies_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'app_users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      inter_agent_requests: {
+        Row: {
+          completed_at: string | null;
+          context_evidence_ids: string[];
+          contract_version: number;
+          conversation_id: string | null;
+          correlation_id: string;
+          created_at: string;
+          deadline_at: string | null;
+          destination_manager_code: string;
+          id: string;
+          idempotency_key: string;
+          objective: string;
+          priority: number;
+          required_output_contract: NonNullable<Json>;
+          result: Json | null;
+          result_reference: string | null;
+          source_manager_code: string;
+          source_message_id: string | null;
+          source_run_id: string | null;
+          status: Database['public']['Enums']['inter_agent_request_status'];
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          completed_at?: string | null;
+          context_evidence_ids?: string[];
+          contract_version?: number;
+          conversation_id?: string | null;
+          correlation_id?: string;
+          created_at?: string;
+          deadline_at?: string | null;
+          destination_manager_code: string;
+          id?: string;
+          idempotency_key: string;
+          objective: string;
+          priority?: number;
+          required_output_contract: NonNullable<Json>;
+          result?: Json | null;
+          result_reference?: string | null;
+          source_manager_code: string;
+          source_message_id?: string | null;
+          source_run_id?: string | null;
+          status?: Database['public']['Enums']['inter_agent_request_status'];
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          completed_at?: string | null;
+          context_evidence_ids?: string[];
+          contract_version?: number;
+          conversation_id?: string | null;
+          correlation_id?: string;
+          created_at?: string;
+          deadline_at?: string | null;
+          destination_manager_code?: string;
+          id?: string;
+          idempotency_key?: string;
+          objective?: string;
+          priority?: number;
+          required_output_contract?: NonNullable<Json>;
+          result?: Json | null;
+          result_reference?: string | null;
+          source_manager_code?: string;
+          source_message_id?: string | null;
+          source_run_id?: string | null;
+          status?: Database['public']['Enums']['inter_agent_request_status'];
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'inter_agent_requests_conversation_id_user_id_fkey';
+            columns: ['conversation_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'conversations';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'inter_agent_requests_destination_manager_code_fkey';
+            columns: ['destination_manager_code'];
+            isOneToOne: false;
+            referencedRelation: 'managers';
+            referencedColumns: ['code'];
+          },
+          {
+            foreignKeyName: 'inter_agent_requests_source_manager_code_fkey';
+            columns: ['source_manager_code'];
+            isOneToOne: false;
+            referencedRelation: 'managers';
+            referencedColumns: ['code'];
+          },
+          {
+            foreignKeyName: 'inter_agent_requests_source_message_id_user_id_fkey';
+            columns: ['source_message_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'conversation_messages';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'inter_agent_requests_source_run_id_user_id_fkey';
+            columns: ['source_run_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'workflow_runs';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'inter_agent_requests_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'app_users';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       job_queue: {
         Row: {
           attempt_count: number;
@@ -2261,7 +3490,7 @@ export type Database = {
           lease_expires_at: string | null;
           lease_owner: string | null;
           maximum_attempts: number;
-          payload: Json;
+          payload: NonNullable<Json>;
           priority: number;
           run_id: string;
           status: Database['public']['Enums']['job_status'];
@@ -2278,7 +3507,7 @@ export type Database = {
           lease_expires_at?: string | null;
           lease_owner?: string | null;
           maximum_attempts?: number;
-          payload?: Json;
+          payload?: NonNullable<Json>;
           priority?: number;
           run_id: string;
           status?: Database['public']['Enums']['job_status'];
@@ -2295,7 +3524,7 @@ export type Database = {
           lease_expires_at?: string | null;
           lease_owner?: string | null;
           maximum_attempts?: number;
-          payload?: Json;
+          payload?: NonNullable<Json>;
           priority?: number;
           run_id?: string;
           status?: Database['public']['Enums']['job_status'];
@@ -2433,10 +3662,49 @@ export type Database = {
           },
         ];
       };
+      manager_capabilities: {
+        Row: {
+          capability_code: string;
+          contract_version: number;
+          created_at: string;
+          enabled: boolean;
+          id: string;
+          manager_id: string;
+          permissions: string[];
+        };
+        Insert: {
+          capability_code: string;
+          contract_version: number;
+          created_at?: string;
+          enabled?: boolean;
+          id?: string;
+          manager_id: string;
+          permissions: string[];
+        };
+        Update: {
+          capability_code?: string;
+          contract_version?: number;
+          created_at?: string;
+          enabled?: boolean;
+          id?: string;
+          manager_id?: string;
+          permissions?: string[];
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'manager_capabilities_manager_id_fkey';
+            columns: ['manager_id'];
+            isOneToOne: false;
+            referencedRelation: 'managers';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       managers: {
         Row: {
           code: string;
-          configuration: Json;
+          configuration: NonNullable<Json>;
+          contract_version: number;
           created_at: string;
           description: string;
           enabled: boolean;
@@ -2447,7 +3715,8 @@ export type Database = {
         };
         Insert: {
           code: string;
-          configuration?: Json;
+          configuration?: NonNullable<Json>;
+          contract_version?: number;
           created_at?: string;
           description: string;
           enabled?: boolean;
@@ -2458,7 +3727,8 @@ export type Database = {
         };
         Update: {
           code?: string;
-          configuration?: Json;
+          configuration?: NonNullable<Json>;
+          contract_version?: number;
           created_at?: string;
           description?: string;
           enabled?: boolean;
@@ -2609,7 +3879,7 @@ export type Database = {
           reported_duration: string;
           reported_type: string;
           reported_unit: string;
-          reported_value: Json;
+          reported_value: NonNullable<Json>;
           sample_name: string;
           source_name: string;
           start_at: string;
@@ -2624,7 +3894,7 @@ export type Database = {
           reported_duration: string;
           reported_type: string;
           reported_unit: string;
-          reported_value: Json;
+          reported_value: NonNullable<Json>;
           sample_name: string;
           source_name: string;
           start_at: string;
@@ -2639,7 +3909,7 @@ export type Database = {
           reported_duration?: string;
           reported_type?: string;
           reported_unit?: string;
-          reported_value?: Json;
+          reported_value?: NonNullable<Json>;
           sample_name?: string;
           source_name?: string;
           start_at?: string;
@@ -2779,7 +4049,7 @@ export type Database = {
           ingest_status: string;
           kind: string | null;
           payload: Json | null;
-          raw_record: Json;
+          raw_record: NonNullable<Json>;
           received_at: string;
           record_id: string | null;
           reject_reason: string | null;
@@ -2796,7 +4066,7 @@ export type Database = {
           ingest_status: string;
           kind?: string | null;
           payload?: Json | null;
-          raw_record: Json;
+          raw_record: NonNullable<Json>;
           received_at?: string;
           record_id?: string | null;
           reject_reason?: string | null;
@@ -2813,7 +4083,7 @@ export type Database = {
           ingest_status?: string;
           kind?: string | null;
           payload?: Json | null;
-          raw_record?: Json;
+          raw_record?: NonNullable<Json>;
           received_at?: string;
           record_id?: string | null;
           reject_reason?: string | null;
@@ -3146,7 +4416,7 @@ export type Database = {
           rejected_count: number;
           request_hash: string;
           request_id: string;
-          response_payload: Json;
+          response_payload: NonNullable<Json>;
           schema_version: number;
           snapshot_id: string;
           status: string;
@@ -3166,7 +4436,7 @@ export type Database = {
           rejected_count: number;
           request_hash: string;
           request_id: string;
-          response_payload: Json;
+          response_payload: NonNullable<Json>;
           schema_version: number;
           snapshot_id: string;
           status: string;
@@ -3186,7 +4456,7 @@ export type Database = {
           rejected_count?: number;
           request_hash?: string;
           request_id?: string;
-          response_payload?: Json;
+          response_payload?: NonNullable<Json>;
           schema_version?: number;
           snapshot_id?: string;
           status?: string;
@@ -3547,7 +4817,7 @@ export type Database = {
           manager_code: string;
           model_ceiling: string;
           report_id: string | null;
-          request: Json;
+          request: NonNullable<Json>;
           reserved_minor: number;
           search_limit: number;
           searches_used: number;
@@ -3562,7 +4832,7 @@ export type Database = {
           manager_code: string;
           model_ceiling: string;
           report_id?: string | null;
-          request: Json;
+          request: NonNullable<Json>;
           reserved_minor?: number;
           search_limit: number;
           searches_used?: number;
@@ -3577,7 +4847,7 @@ export type Database = {
           manager_code?: string;
           model_ceiling?: string;
           report_id?: string | null;
-          request?: Json;
+          request?: NonNullable<Json>;
           reserved_minor?: number;
           search_limit?: number;
           searches_used?: number;
@@ -3607,7 +4877,7 @@ export type Database = {
           completed_at: string | null;
           created_at: string;
           id: string;
-          metadata: Json;
+          metadata: NonNullable<Json>;
           updated_at: string;
           user_id: string;
         };
@@ -3616,7 +4886,7 @@ export type Database = {
           completed_at?: string | null;
           created_at?: string;
           id?: string;
-          metadata?: Json;
+          metadata?: NonNullable<Json>;
           updated_at?: string;
           user_id: string;
         };
@@ -3625,7 +4895,7 @@ export type Database = {
           completed_at?: string | null;
           created_at?: string;
           id?: string;
-          metadata?: Json;
+          metadata?: NonNullable<Json>;
           updated_at?: string;
           user_id?: string;
         };
@@ -3731,9 +5001,9 @@ export type Database = {
           created_at: string;
           date_of_birth: string | null;
           home_location_id: string | null;
-          notification_preferences: Json;
-          planning_preferences: Json;
-          privacy_preferences: Json;
+          notification_preferences: NonNullable<Json>;
+          planning_preferences: NonNullable<Json>;
+          privacy_preferences: NonNullable<Json>;
           updated_at: string;
           user_id: string;
           work_location_id: string | null;
@@ -3743,9 +5013,9 @@ export type Database = {
           created_at?: string;
           date_of_birth?: string | null;
           home_location_id?: string | null;
-          notification_preferences?: Json;
-          planning_preferences?: Json;
-          privacy_preferences?: Json;
+          notification_preferences?: NonNullable<Json>;
+          planning_preferences?: NonNullable<Json>;
+          privacy_preferences?: NonNullable<Json>;
           updated_at?: string;
           user_id: string;
           work_location_id?: string | null;
@@ -3755,9 +5025,9 @@ export type Database = {
           created_at?: string;
           date_of_birth?: string | null;
           home_location_id?: string | null;
-          notification_preferences?: Json;
-          planning_preferences?: Json;
-          privacy_preferences?: Json;
+          notification_preferences?: NonNullable<Json>;
+          planning_preferences?: NonNullable<Json>;
+          privacy_preferences?: NonNullable<Json>;
           updated_at?: string;
           user_id?: string;
           work_location_id?: string | null;
@@ -3788,7 +5058,7 @@ export type Database = {
       };
       planning_exceptions: {
         Row: {
-          details: Json;
+          details: NonNullable<Json>;
           exception_type: string;
           id: string;
           material: boolean;
@@ -3796,7 +5066,7 @@ export type Database = {
           user_id: string;
         };
         Insert: {
-          details?: Json;
+          details?: NonNullable<Json>;
           exception_type: string;
           id?: string;
           material?: boolean;
@@ -3804,7 +5074,7 @@ export type Database = {
           user_id: string;
         };
         Update: {
-          details?: Json;
+          details?: NonNullable<Json>;
           exception_type?: string;
           id?: string;
           material?: boolean;
@@ -3884,7 +5154,7 @@ export type Database = {
       };
       procurement_recommendations: {
         Row: {
-          citations: Json;
+          citations: NonNullable<Json>;
           compliance_passed: boolean;
           created_at: string;
           currency: string | null;
@@ -3899,7 +5169,7 @@ export type Database = {
           warranty_summary: string | null;
         };
         Insert: {
-          citations: Json;
+          citations: NonNullable<Json>;
           compliance_passed: boolean;
           created_at?: string;
           currency?: string | null;
@@ -3914,7 +5184,7 @@ export type Database = {
           warranty_summary?: string | null;
         };
         Update: {
-          citations?: Json;
+          citations?: NonNullable<Json>;
           compliance_passed?: boolean;
           created_at?: string;
           currency?: string | null;
@@ -4021,7 +5291,7 @@ export type Database = {
           developer_text: string;
           evaluation_status: string;
           id: string;
-          json_schema: Json;
+          json_schema: NonNullable<Json>;
           system_text: string;
           template_id: string;
           version: number;
@@ -4030,7 +5300,7 @@ export type Database = {
           developer_text: string;
           evaluation_status?: string;
           id?: string;
-          json_schema: Json;
+          json_schema: NonNullable<Json>;
           system_text: string;
           template_id: string;
           version: number;
@@ -4039,7 +5309,7 @@ export type Database = {
           developer_text?: string;
           evaluation_status?: string;
           id?: string;
-          json_schema?: Json;
+          json_schema?: NonNullable<Json>;
           system_text?: string;
           template_id?: string;
           version?: number;
@@ -4079,7 +5349,7 @@ export type Database = {
           source_reference?: string | null;
           status: string;
           user_id: string;
-          variance_amount?: number | null;
+          variance_amount?: never;
         };
         Update: {
           calculated_cost?: number;
@@ -4092,7 +5362,7 @@ export type Database = {
           source_reference?: string | null;
           status?: string;
           user_id?: string;
-          variance_amount?: number | null;
+          variance_amount?: never;
         };
         Relationships: [
           {
@@ -4232,30 +5502,30 @@ export type Database = {
           code: string;
           content: string;
           display_order: number;
-          evidence_references: Json;
+          evidence_references: NonNullable<Json>;
           id: string;
           report_id: string;
-          structured_data: Json;
+          structured_data: NonNullable<Json>;
           title: string;
         };
         Insert: {
           code: string;
           content: string;
           display_order: number;
-          evidence_references?: Json;
+          evidence_references?: NonNullable<Json>;
           id?: string;
           report_id: string;
-          structured_data?: Json;
+          structured_data?: NonNullable<Json>;
           title: string;
         };
         Update: {
           code?: string;
           content?: string;
           display_order?: number;
-          evidence_references?: Json;
+          evidence_references?: NonNullable<Json>;
           id?: string;
           report_id?: string;
-          structured_data?: Json;
+          structured_data?: NonNullable<Json>;
           title?: string;
         };
         Relationships: [
@@ -4276,7 +5546,7 @@ export type Database = {
           report_type: string;
           run_id: string | null;
           status: string;
-          structured_metrics: Json;
+          structured_metrics: NonNullable<Json>;
           summary: string;
           title: string;
           user_id: string;
@@ -4288,7 +5558,7 @@ export type Database = {
           report_type: string;
           run_id?: string | null;
           status?: string;
-          structured_metrics?: Json;
+          structured_metrics?: NonNullable<Json>;
           summary: string;
           title: string;
           user_id: string;
@@ -4300,7 +5570,7 @@ export type Database = {
           report_type?: string;
           run_id?: string | null;
           status?: string;
-          structured_metrics?: Json;
+          structured_metrics?: NonNullable<Json>;
           summary?: string;
           title?: string;
           user_id?: string;
@@ -4378,7 +5648,7 @@ export type Database = {
           cadence: string;
           created_at: string;
           id: string;
-          preferred_window: Json;
+          preferred_window: NonNullable<Json>;
           title: string;
           user_id: string;
         };
@@ -4387,7 +5657,7 @@ export type Database = {
           cadence: string;
           created_at?: string;
           id?: string;
-          preferred_window?: Json;
+          preferred_window?: NonNullable<Json>;
           title: string;
           user_id: string;
         };
@@ -4396,7 +5666,7 @@ export type Database = {
           cadence?: string;
           created_at?: string;
           id?: string;
-          preferred_window?: Json;
+          preferred_window?: NonNullable<Json>;
           title?: string;
           user_id?: string;
         };
@@ -4415,7 +5685,7 @@ export type Database = {
           completed_at: string | null;
           id: string;
           redacted_error: string | null;
-          retry_metadata: Json;
+          retry_metadata: NonNullable<Json>;
           run_id: string;
           sequence: number;
           started_at: string | null;
@@ -4426,7 +5696,7 @@ export type Database = {
           completed_at?: string | null;
           id?: string;
           redacted_error?: string | null;
-          retry_metadata?: Json;
+          retry_metadata?: NonNullable<Json>;
           run_id: string;
           sequence: number;
           started_at?: string | null;
@@ -4437,7 +5707,7 @@ export type Database = {
           completed_at?: string | null;
           id?: string;
           redacted_error?: string | null;
-          retry_metadata?: Json;
+          retry_metadata?: NonNullable<Json>;
           run_id?: string;
           sequence?: number;
           started_at?: string | null;
@@ -4638,7 +5908,7 @@ export type Database = {
           flexible: boolean;
           id: string;
           plan_id: string;
-          source_references: Json;
+          source_references: NonNullable<Json>;
           starts_at: string;
           title: string;
         };
@@ -4648,7 +5918,7 @@ export type Database = {
           flexible?: boolean;
           id?: string;
           plan_id: string;
-          source_references?: Json;
+          source_references?: NonNullable<Json>;
           starts_at: string;
           title: string;
         };
@@ -4658,7 +5928,7 @@ export type Database = {
           flexible?: boolean;
           id?: string;
           plan_id?: string;
-          source_references?: Json;
+          source_references?: NonNullable<Json>;
           starts_at?: string;
           title?: string;
         };
@@ -4675,16 +5945,16 @@ export type Database = {
       time_preferences: {
         Row: {
           created_at: string;
-          guaranteed_busy_windows: Json;
+          guaranteed_busy_windows: NonNullable<Json>;
           id: string;
           maximum_focus_duration_minutes: number;
           minimum_evening_buffer_minutes: number;
           minimum_travel_buffer_minutes: number;
           minimum_unscheduled_buffer_minutes: number;
-          preferred_focus_windows: Json;
-          preferred_training_windows: Json;
-          quiet_hours: Json;
-          transport_preferences: Json;
+          preferred_focus_windows: NonNullable<Json>;
+          preferred_training_windows: NonNullable<Json>;
+          quiet_hours: NonNullable<Json>;
+          transport_preferences: NonNullable<Json>;
           travel_buffer_percent: number;
           updated_at: string;
           user_id: string;
@@ -4692,16 +5962,16 @@ export type Database = {
         };
         Insert: {
           created_at?: string;
-          guaranteed_busy_windows?: Json;
+          guaranteed_busy_windows?: NonNullable<Json>;
           id?: string;
           maximum_focus_duration_minutes?: number;
           minimum_evening_buffer_minutes?: number;
           minimum_travel_buffer_minutes?: number;
           minimum_unscheduled_buffer_minutes?: number;
-          preferred_focus_windows?: Json;
-          preferred_training_windows?: Json;
-          quiet_hours?: Json;
-          transport_preferences?: Json;
+          preferred_focus_windows?: NonNullable<Json>;
+          preferred_training_windows?: NonNullable<Json>;
+          quiet_hours?: NonNullable<Json>;
+          transport_preferences?: NonNullable<Json>;
           travel_buffer_percent?: number;
           updated_at?: string;
           user_id: string;
@@ -4709,16 +5979,16 @@ export type Database = {
         };
         Update: {
           created_at?: string;
-          guaranteed_busy_windows?: Json;
+          guaranteed_busy_windows?: NonNullable<Json>;
           id?: string;
           maximum_focus_duration_minutes?: number;
           minimum_evening_buffer_minutes?: number;
           minimum_travel_buffer_minutes?: number;
           minimum_unscheduled_buffer_minutes?: number;
-          preferred_focus_windows?: Json;
-          preferred_training_windows?: Json;
-          quiet_hours?: Json;
-          transport_preferences?: Json;
+          preferred_focus_windows?: NonNullable<Json>;
+          preferred_training_windows?: NonNullable<Json>;
+          quiet_hours?: NonNullable<Json>;
+          transport_preferences?: NonNullable<Json>;
           travel_buffer_percent?: number;
           updated_at?: string;
           user_id?: string;
@@ -4740,7 +6010,7 @@ export type Database = {
           created_at: string;
           event_type: string;
           id: string;
-          redacted_payload: Json;
+          redacted_payload: NonNullable<Json>;
           severity: string;
           user_id: string;
         };
@@ -4749,7 +6019,7 @@ export type Database = {
           created_at?: string;
           event_type: string;
           id?: string;
-          redacted_payload?: Json;
+          redacted_payload?: NonNullable<Json>;
           severity?: string;
           user_id: string;
         };
@@ -4758,7 +6028,7 @@ export type Database = {
           created_at?: string;
           event_type?: string;
           id?: string;
-          redacted_payload?: Json;
+          redacted_payload?: NonNullable<Json>;
           severity?: string;
           user_id?: string;
         };
@@ -4781,7 +6051,7 @@ export type Database = {
           id: string;
           last_trigger_fingerprint: string | null;
           research_run_id: string;
-          trigger_threshold: Json;
+          trigger_threshold: NonNullable<Json>;
           user_id: string;
           watch_kind: string;
         };
@@ -4793,7 +6063,7 @@ export type Database = {
           id?: string;
           last_trigger_fingerprint?: string | null;
           research_run_id: string;
-          trigger_threshold?: Json;
+          trigger_threshold?: NonNullable<Json>;
           user_id: string;
           watch_kind: string;
         };
@@ -4805,7 +6075,7 @@ export type Database = {
           id?: string;
           last_trigger_fingerprint?: string | null;
           research_run_id?: string;
-          trigger_threshold?: Json;
+          trigger_threshold?: NonNullable<Json>;
           user_id?: string;
           watch_kind?: string;
         };
@@ -4902,7 +6172,7 @@ export type Database = {
           execution_result: Json | null;
           expires_at: string;
           id: string;
-          payload: Json;
+          payload: NonNullable<Json>;
           payload_sha256: string;
           plan_id: string;
           signature_b64: string;
@@ -4914,7 +6184,7 @@ export type Database = {
           execution_result?: Json | null;
           expires_at: string;
           id?: string;
-          payload: Json;
+          payload: NonNullable<Json>;
           payload_sha256: string;
           plan_id: string;
           signature_b64: string;
@@ -4926,7 +6196,7 @@ export type Database = {
           execution_result?: Json | null;
           expires_at?: string;
           id?: string;
-          payload?: Json;
+          payload?: NonNullable<Json>;
           payload_sha256?: string;
           plan_id?: string;
           signature_b64?: string;
@@ -5006,21 +6276,21 @@ export type Database = {
           device_id: string;
           id: string;
           received_at: string;
-          status: Json;
+          status: NonNullable<Json>;
           worker_version: string | null;
         };
         Insert: {
           device_id: string;
           id?: string;
           received_at?: string;
-          status?: Json;
+          status?: NonNullable<Json>;
           worker_version?: string | null;
         };
         Update: {
           device_id?: string;
           id?: string;
           received_at?: string;
-          status?: Json;
+          status?: NonNullable<Json>;
           worker_version?: string | null;
         };
         Relationships: [
@@ -5039,9 +6309,9 @@ export type Database = {
           code: string;
           created_at: string;
           id: string;
-          input_schema: Json;
+          input_schema: NonNullable<Json>;
           manager_id: string;
-          output_schema: Json;
+          output_schema: NonNullable<Json>;
           trigger_type: string;
           version: number;
         };
@@ -5050,9 +6320,9 @@ export type Database = {
           code: string;
           created_at?: string;
           id?: string;
-          input_schema?: Json;
+          input_schema?: NonNullable<Json>;
           manager_id: string;
-          output_schema?: Json;
+          output_schema?: NonNullable<Json>;
           trigger_type: string;
           version: number;
         };
@@ -5061,9 +6331,9 @@ export type Database = {
           code?: string;
           created_at?: string;
           id?: string;
-          input_schema?: Json;
+          input_schema?: NonNullable<Json>;
           manager_id?: string;
-          output_schema?: Json;
+          output_schema?: NonNullable<Json>;
           trigger_type?: string;
           version?: number;
         };
@@ -5276,10 +6546,7 @@ export type Database = {
           isSetofReturn: false;
         };
       };
-      cancel_queued_run: {
-        Args: { p_run_id: string; p_user_id: string };
-        Returns: boolean;
-      };
+      cancel_queued_run: { Args: { p_run_id: string; p_user_id: string }; Returns: boolean };
       claim_job_queue: {
         Args: { p_limit?: number; p_worker_id: string };
         Returns: {
@@ -5293,7 +6560,7 @@ export type Database = {
           lease_expires_at: string | null;
           lease_owner: string | null;
           maximum_attempts: number;
-          payload: Json;
+          payload: NonNullable<Json>;
           priority: number;
           run_id: string;
           status: Database['public']['Enums']['job_status'];
@@ -5334,10 +6601,7 @@ export type Database = {
           isSetofReturn: true;
         };
       };
-      complete_deterministic_workflow_run: {
-        Args: { p_run_id: string };
-        Returns: string;
-      };
+      complete_deterministic_workflow_run: { Args: { p_run_id: string }; Returns: string };
       complete_job_queue: {
         Args: {
           p_job_id: string;
@@ -5356,7 +6620,7 @@ export type Database = {
           lease_expires_at: string | null;
           lease_owner: string | null;
           maximum_attempts: number;
-          payload: Json;
+          payload: NonNullable<Json>;
           priority: number;
           run_id: string;
           status: Database['public']['Enums']['job_status'];
@@ -5425,10 +6689,7 @@ export type Database = {
           label: string;
         }[];
       };
-      create_mfa_action_gate: {
-        Args: { p_action_key: string };
-        Returns: string;
-      };
+      create_mfa_action_gate: { Args: { p_action_key: string }; Returns: string };
       create_on_demand_run: {
         Args: {
           p_hard_cap: number;
@@ -5499,18 +6760,9 @@ export type Database = {
           user_id: string;
         }[];
       };
-      execute_career_travel_procurement_workflow: {
-        Args: { p_run_id: string };
-        Returns: string;
-      };
-      execute_digital_estate_workflow: {
-        Args: { p_run_id: string };
-        Returns: string;
-      };
-      execute_health_finance_workflow: {
-        Args: { p_run_id: string };
-        Returns: string;
-      };
+      execute_career_travel_procurement_workflow: { Args: { p_run_id: string }; Returns: string };
+      execute_digital_estate_workflow: { Args: { p_run_id: string }; Returns: string };
+      execute_health_finance_workflow: { Args: { p_run_id: string }; Returns: string };
       execute_personal_workflow: { Args: { p_run_id: string }; Returns: string };
       execute_systems_workflow: { Args: { p_run_id: string }; Returns: string };
       ingest_apple_bridge_snapshot: {
@@ -5538,7 +6790,7 @@ export type Database = {
         };
         Returns: Json;
       };
-      is_allowed_aal2: { Args: never; Returns: boolean };
+      is_allowed_aal2: { Args: Record<PropertyKey, never>; Returns: boolean };
       mark_instrumented_ai_call_submitted: {
         Args: { p_call_id: string; p_response_id: string };
         Returns: undefined;
@@ -5547,30 +6799,17 @@ export type Database = {
         Args: { p_adapter: string; p_payload: Json; p_reason: string };
         Returns: Json;
       };
-      mobile_is_valid_optional_offset_timestamp: {
-        Args: { p_value: string };
-        Returns: boolean;
-      };
+      mobile_is_valid_optional_offset_timestamp: { Args: { p_value: string }; Returns: boolean };
       mobile_parse_offset_timestamp: {
         Args: { p_allow_empty?: boolean; p_value: string };
         Returns: string;
       };
-      mobile_shortcut_numeric: {
-        Args: { p_field: string; p_payload: Json };
-        Returns: number;
-      };
+      mobile_shortcut_numeric: { Args: { p_field: string; p_payload: Json }; Returns: number };
       mobile_typed_deduplication_key: {
-        Args: {
-          p_canonical_hash: string;
-          p_external_id: string;
-          p_source_modified_at: string;
-        };
+        Args: { p_canonical_hash: string; p_external_id: string; p_source_modified_at: string };
         Returns: string;
       };
-      production_onboarding_complete: {
-        Args: { p_user_id: string };
-        Returns: boolean;
-      };
+      production_onboarding_complete: { Args: { p_user_id: string }; Returns: boolean };
       promote_mobile_health_snapshot: {
         Args: { p_snapshot_id: string; p_token_hash: string };
         Returns: Json;
@@ -5580,11 +6819,7 @@ export type Database = {
         Returns: Json;
       };
       record_instrumented_ai_reconciliation_failure: {
-        Args: {
-          p_call_id: string;
-          p_error_code: string;
-          p_redacted_trace?: Json;
-        };
+        Args: { p_call_id: string; p_error_code: string; p_redacted_trace?: Json };
         Returns: undefined;
       };
       record_provider_usage_reconciliation: {
@@ -5631,7 +6866,7 @@ export type Database = {
           id: string;
           last_source_at: string | null;
           last_success_at: string | null;
-          last_verification_evidence: Json;
+          last_verification_evidence: NonNullable<Json>;
           last_verified_at: string | null;
           source: string;
           stale_reason: string | null;
@@ -5693,9 +6928,9 @@ export type Database = {
           id: string;
           model_id: string | null;
           prompt_version_id: string | null;
-          provider_usage: Json;
+          provider_usage: NonNullable<Json>;
           reasoning_tokens: number;
-          redacted_trace: Json;
+          redacted_trace: NonNullable<Json>;
           request_id: string | null;
           response_id: string | null;
           run_id: string | null;
@@ -5722,20 +6957,65 @@ export type Database = {
         Returns: Json;
       };
       update_onboarding_checklist_item: {
-        Args: {
-          p_code: string;
-          p_completed_at: string;
-          p_metadata?: Json;
-          p_user_id: string;
-        };
+        Args: { p_code: string; p_completed_at: string; p_metadata?: Json; p_user_id: string };
         Returns: undefined;
       };
     };
     Enums: {
       approval_decision: 'pending' | 'approved' | 'rejected' | 'expired';
+      attention_status:
+        | 'new'
+        | 'queued_for_planner'
+        | 'incorporated'
+        | 'sent_immediately'
+        | 'dismissed'
+        | 'expired'
+        | 'resolved';
+      conversation_authority:
+        | 'verified_user'
+        | 'agent_generated'
+        | 'system_generated'
+        | 'external_untrusted';
+      conversation_channel: 'gmail' | 'web_chat' | 'internal';
+      conversation_message_status:
+        | 'received'
+        | 'queued'
+        | 'routing'
+        | 'processing'
+        | 'processed'
+        | 'failed'
+        | 'ignored';
+      conversation_origin_channel: 'gmail' | 'web_chat';
+      conversation_sender_kind: 'user' | 'manager' | 'system' | 'external';
+      conversation_status: 'open' | 'closed' | 'archived';
+      execution_request_status:
+        | 'received'
+        | 'routed'
+        | 'queued'
+        | 'running'
+        | 'waiting_for_dependency'
+        | 'succeeded'
+        | 'failed'
+        | 'cancelled';
+      handoff_status: 'requested' | 'accepted' | 'rejected' | 'cancelled';
+      inter_agent_request_status:
+        | 'requested'
+        | 'accepted'
+        | 'running'
+        | 'waiting_for_dependency'
+        | 'completed'
+        | 'rejected'
+        | 'failed'
+        | 'cancelled';
       job_status: 'queued' | 'leased' | 'succeeded' | 'dead_letter' | 'cancelled';
       risk_class: 'low' | 'medium' | 'high' | 'critical';
-      run_status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+      run_status:
+        | 'queued'
+        | 'running'
+        | 'waiting_for_dependency'
+        | 'succeeded'
+        | 'failed'
+        | 'cancelled';
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -5757,9 +7037,7 @@ export type Tables<
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Views'])
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals;
-}
+> = DefaultSchemaTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
   ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'] &
       DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Views'])[TableName] extends {
       Row: infer R;
@@ -5783,9 +7061,7 @@ export type TablesInsert<
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables']
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals;
-}
+> = DefaultSchemaTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
   ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'][TableName] extends {
       Insert: infer I;
     }
@@ -5808,9 +7084,7 @@ export type TablesUpdate<
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables']
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals;
-}
+> = DefaultSchemaTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
   ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions['schema']]['Tables'][TableName] extends {
       Update: infer U;
     }
@@ -5833,9 +7107,7 @@ export type Enums<
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions['schema']]['Enums']
     : never = never,
-> = DefaultSchemaEnumNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals;
-}
+> = DefaultSchemaEnumNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
   ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions['schema']]['Enums'][EnumName]
   : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema['Enums']
     ? DefaultSchema['Enums'][DefaultSchemaEnumNameOrOptions]
@@ -5850,9 +7122,7 @@ export type CompositeTypes<
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions['schema']]['CompositeTypes']
     : never = never,
-> = PublicCompositeTypeNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals;
-}
+> = PublicCompositeTypeNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
   ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions['schema']]['CompositeTypes'][CompositeTypeName]
   : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema['CompositeTypes']
     ? DefaultSchema['CompositeTypes'][PublicCompositeTypeNameOrOptions]
@@ -5862,9 +7132,65 @@ export const Constants = {
   public: {
     Enums: {
       approval_decision: ['pending', 'approved', 'rejected', 'expired'],
+      attention_status: [
+        'new',
+        'queued_for_planner',
+        'incorporated',
+        'sent_immediately',
+        'dismissed',
+        'expired',
+        'resolved',
+      ],
+      conversation_authority: [
+        'verified_user',
+        'agent_generated',
+        'system_generated',
+        'external_untrusted',
+      ],
+      conversation_channel: ['gmail', 'web_chat', 'internal'],
+      conversation_message_status: [
+        'received',
+        'queued',
+        'routing',
+        'processing',
+        'processed',
+        'failed',
+        'ignored',
+      ],
+      conversation_origin_channel: ['gmail', 'web_chat'],
+      conversation_sender_kind: ['user', 'manager', 'system', 'external'],
+      conversation_status: ['open', 'closed', 'archived'],
+      execution_request_status: [
+        'received',
+        'routed',
+        'queued',
+        'running',
+        'waiting_for_dependency',
+        'succeeded',
+        'failed',
+        'cancelled',
+      ],
+      handoff_status: ['requested', 'accepted', 'rejected', 'cancelled'],
+      inter_agent_request_status: [
+        'requested',
+        'accepted',
+        'running',
+        'waiting_for_dependency',
+        'completed',
+        'rejected',
+        'failed',
+        'cancelled',
+      ],
       job_status: ['queued', 'leased', 'succeeded', 'dead_letter', 'cancelled'],
       risk_class: ['low', 'medium', 'high', 'critical'],
-      run_status: ['queued', 'running', 'succeeded', 'failed', 'cancelled'],
+      run_status: [
+        'queued',
+        'running',
+        'waiting_for_dependency',
+        'succeeded',
+        'failed',
+        'cancelled',
+      ],
     },
   },
 } as const;
