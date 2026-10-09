@@ -54,8 +54,8 @@ WITH grants AS (
 )
 SELECT is(
   (SELECT md5(string_agg(object_name||'|'||grantee||'|'||privilege_type||'|'||is_grantable::text, E'\n' ORDER BY object_name,grantee,privilege_type,is_grantable)) FROM grants),
-  'bbc1faa736384e35903c872be1f0fe81',
-  'local routine ACL tuples match staging plus AI15 and AI18 execution RPCs'
+  '4acc94f98c2d7302e0a6794353955789',
+  'local routine ACL tuples match staging plus AI15 execution RPCs'
 );
 
 SELECT is(
