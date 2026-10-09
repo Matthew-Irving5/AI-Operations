@@ -4,6 +4,7 @@ import {
   buildImpactPlan,
   playwrightInstallArgs,
   prettierFiles,
+  runChecks,
   shellSafeArguments,
 } from './verify-changed';
 
@@ -56,4 +57,72 @@ test('clean Linux runners install Chromium system dependencies only when selecte
     'install',
     'chromium',
   ]);
+});
+
+test('independent changed-surface checks continue and summarize failures without leaking secrets', () => {
+  const invoked: string[] = [];
+  const output: string[] = [];
+  let clock = 0;
+  const results = runChecks(
+    [
+      { name: 'lint', command: 'pnpm lint', execute: () => undefined },
+      { name: 'database', command: 'pnpm test:db', execute: () => undefined },
+      { name: 'edge tests', command: 'deno test', execute: () => undefined },
+    ],
+    {
+      execute: (check) => {
+        invoked.push(check.name);
+        if (check.name === 'lint') throw new Error('api_key=very-secret-value');
+      },
+      now: () => (clock += 5),
+      write: (text) => output.push(text),
+    },
+  );
+
+  assert.deepEqual(invoked, ['lint', 'database', 'edge tests']);
+  assert.deepEqual(
+    results.map(({ name, status }) => [name, status]),
+    [
+      ['lint', 'failed'],
+      ['database', 'passed'],
+      ['edge tests', 'passed'],
+    ],
+  );
+  assert.match(output.join(''), /Check summary: 2 passed, 1 failed, 0 skipped\./);
+  assert.match(output.join(''), /pnpm lint/);
+  assert.doesNotMatch(output.join(''), /very-secret-value/);
+});
+
+test('checks with failed prerequisites are explicitly skipped while unrelated checks still run', () => {
+  const invoked: string[] = [];
+  const results = runChecks(
+    [
+      { name: 'Supabase readiness', command: 'supabase start', execute: () => undefined },
+      {
+        name: 'database tests',
+        command: 'pnpm test:db',
+        dependencies: ['Supabase readiness'],
+        execute: () => undefined,
+      },
+      { name: 'Edge tests', command: 'deno test', execute: () => undefined },
+    ],
+    {
+      execute: (check) => {
+        invoked.push(check.name);
+        if (check.name === 'Supabase readiness') throw new Error('Docker engine unavailable');
+      },
+      write: () => undefined,
+    },
+  );
+
+  assert.deepEqual(invoked, ['Supabase readiness', 'Edge tests']);
+  assert.deepEqual(
+    results.map(({ name, status }) => [name, status]),
+    [
+      ['Supabase readiness', 'failed'],
+      ['database tests', 'skipped'],
+      ['Edge tests', 'passed'],
+    ],
+  );
+  assert.match(results[1]?.detail ?? '', /prerequisite "Supabase readiness" failed/);
 });
