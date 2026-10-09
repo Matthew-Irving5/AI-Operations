@@ -7115,7 +7115,13 @@ export type Database = {
         | 'rejected'
         | 'failed'
         | 'cancelled';
-      job_status: 'queued' | 'leased' | 'awaiting_provider' | 'succeeded' | 'dead_letter' | 'cancelled';
+      job_status:
+        | 'queued'
+        | 'leased'
+        | 'awaiting_provider'
+        | 'succeeded'
+        | 'dead_letter'
+        | 'cancelled';
       risk_class: 'low' | 'medium' | 'high' | 'critical';
       run_status:
         | 'queued'
@@ -7289,7 +7295,14 @@ export const Constants = {
         'failed',
         'cancelled',
       ],
-      job_status: ['queued', 'leased', 'awaiting_provider', 'succeeded', 'dead_letter', 'cancelled'],
+      job_status: [
+        'queued',
+        'leased',
+        'awaiting_provider',
+        'succeeded',
+        'dead_letter',
+        'cancelled',
+      ],
       risk_class: ['low', 'medium', 'high', 'critical'],
       run_status: [
         'queued',

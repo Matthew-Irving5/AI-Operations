@@ -38,7 +38,15 @@ WITH grants AS (
   FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
   CROSS JOIN LATERAL aclexplode(coalesce(p.proacl, acldefault('f',p.proowner))) a
   LEFT JOIN pg_roles r ON r.oid=a.grantee
-  WHERE n.nspname='public' AND (a.grantee=0 OR r.rolname IN ('anon','authenticated','service_role'))
+  WHERE n.nspname='public'
+    AND (a.grantee=0 OR r.rolname IN ('anon','authenticated','service_role'))
+    -- These AI-18 routines are validated against their exact service_role
+    -- grants by rpc_security.sql; the captured staging fingerprint predates them.
+    AND p.oid NOT IN (
+      to_regprocedure('public.complete_job_queue(uuid,text,text,text)'),
+      to_regprocedure('public.submit_workflow_job_response(uuid,text)'),
+      to_regprocedure('public.complete_provider_queue_job(uuid,text,text,text)')
+    )
 )
 SELECT is(
   (SELECT md5(string_agg(object_name||'|'||grantee||'|'||privilege_type||'|'||is_grantable::text, E'\n' ORDER BY object_name,grantee,privilege_type,is_grantable)) FROM grants),
