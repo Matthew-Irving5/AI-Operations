@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
+import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { z } from "npm:zod@4.1.5";
 import { buildAgentRuntimeFixture } from "../../../packages/test-fixtures/src/agent-runtime.ts";
 import {
