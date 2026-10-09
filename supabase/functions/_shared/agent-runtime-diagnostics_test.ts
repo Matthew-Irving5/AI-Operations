@@ -19,10 +19,54 @@ Deno.test("fixture write diagnostics identify only the fixed DB boundary", () =>
     diagnostic.step !== "conversation_upsert" ||
     diagnostic.table !== "conversations" ||
     diagnostic.sqlState !== "23514" ||
+    diagnostic.failureKind !== "unknown" ||
     diagnostic.constraint !== "conversations_status_check" ||
     diagnostic.correlationId !== "f3e20e09-3ce4-41b0-8f74-33dd73f726a8"
   ) {
     throw new Error("fixture_write_failure_boundary_not_reported");
+  }
+});
+
+Deno.test("fixture diagnostics classify permission failures without raw messages", () => {
+  const cases = [
+    ["permission denied for table actions", "table_permission_denied"],
+    [
+      "permission denied for column id of relation actions",
+      "column_permission_denied",
+    ],
+    [
+      "permission denied for sequence actions_id_seq",
+      "sequence_permission_denied",
+    ],
+    [
+      "permission denied for function public.create_action()",
+      "function_permission_denied",
+    ],
+    [
+      "new row violates row-level security policy for table actions",
+      "row_security_denied",
+    ],
+  ] as const;
+
+  for (const [message, expectedKind] of cases) {
+    const diagnostic = agentRuntimeFixtureWriteFailure(
+      "action_upsert",
+      {
+        code: "42501",
+        message: `${message}; user=private@example.test token=secret`,
+      },
+      "f3e20e09-3ce4-41b0-8f74-33dd73f726a8",
+    );
+    const serialized = JSON.stringify(diagnostic);
+    if (
+      diagnostic.failureKind !== expectedKind ||
+      diagnostic.sqlState !== "42501" ||
+      serialized.includes(message) ||
+      serialized.includes("private@example.test") ||
+      serialized.includes("secret")
+    ) {
+      throw new Error("permission_failure_classification_or_redaction_failed");
+    }
   }
 });
 

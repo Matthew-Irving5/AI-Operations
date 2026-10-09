@@ -31,10 +31,41 @@ type DatabaseErrorEvidence = Readonly<{
   message?: unknown;
 }>;
 
+type DatabaseFailureKind =
+  | "table_permission_denied"
+  | "column_permission_denied"
+  | "sequence_permission_denied"
+  | "function_permission_denied"
+  | "row_security_denied"
+  | "unknown";
+
 const sqlStatePattern = /^[0-9A-Z]{5}$/;
 const constraintNamePattern = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/;
 const correlationIdPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function databaseFailureKind(
+  error: DatabaseErrorEvidence,
+): DatabaseFailureKind {
+  if (typeof error.message !== "string") return "unknown";
+  const message = error.message;
+  if (/permission denied for table\b/i.test(message)) {
+    return "table_permission_denied";
+  }
+  if (/permission denied for column\b/i.test(message)) {
+    return "column_permission_denied";
+  }
+  if (/permission denied for sequence\b/i.test(message)) {
+    return "sequence_permission_denied";
+  }
+  if (/permission denied for function\b/i.test(message)) {
+    return "function_permission_denied";
+  }
+  if (/violates row-level security policy/i.test(message)) {
+    return "row_security_denied";
+  }
+  return "unknown";
+}
 
 function safeConstraintName(error: DatabaseErrorEvidence): string | undefined {
   const directConstraint = typeof error.constraint === "string"
@@ -59,12 +90,14 @@ export function agentRuntimeFixtureWriteFailure(
     ? error.code
     : "unknown";
   const constraint = safeConstraintName(error);
+  const failureKind = databaseFailureKind(error);
 
   return {
     event: "agent_runtime_fixture_write_failed",
     step,
     table: agentRuntimeFixtureWriteTargets[step],
     sqlState,
+    failureKind,
     ...(constraint ? { constraint } : {}),
     correlationId: correlationIdPattern.test(correlationId)
       ? correlationId
