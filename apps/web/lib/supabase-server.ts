@@ -11,6 +11,12 @@ export async function createSupabaseServerClient() {
       NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     });
   return createServerClient(url, key, {
+    cookieOptions: {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+    },
     cookies: {
       getAll: () => cookieStore.getAll(),
       setAll: (entries) =>
