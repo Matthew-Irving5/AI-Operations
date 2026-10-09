@@ -132,9 +132,8 @@ test('maps every local Edge Function to configured or default JWT verification',
   const sortedDirectories = [...directories].sort();
   const authKeys = [...auth.keys()].sort();
   if (auth.size !== directories.length) {
-    console.error(
-      'AUTH_MANIFEST_DIAGNOSTIC',
-      JSON.stringify({ directories: sortedDirectories, authKeys }),
+    throw new Error(
+      `AUTH_MANIFEST_DIAGNOSTIC ${JSON.stringify({ directories: sortedDirectories, authKeys })}`,
     );
   }
   assert.equal(
