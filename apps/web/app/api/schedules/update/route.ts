@@ -3,7 +3,11 @@ import { z } from 'zod';
 import { requireSameOrigin } from '../../../../lib/request-security';
 import { getAuthenticatedServerAccessToken } from '../../../../lib/supabase-server';
 
-const schema = z.object({ scheduleId: z.string().uuid(), enabled: z.boolean() });
+const schema = z.object({
+  scheduleId: z.string().uuid(),
+  enabled: z.boolean(),
+  mfaGateId: z.string().uuid().optional(),
+});
 
 export async function POST(request: Request) {
   const rejected = requireSameOrigin(request);
