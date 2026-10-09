@@ -21,6 +21,7 @@ import {
   validateStagingSnapshot,
   inventoryFromWrangler,
   generatedTypesMatch,
+  parseColumnTypeMetadata,
   type FunctionInventory,
   type WorkerInventory,
 } from './environment-drift.js';
@@ -29,12 +30,177 @@ function hashValue(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-test('generated database types compare across newline conventions but retain content drift', () => {
-  const generated = 'export type Database = {\n  public: {};\n};\n';
-  const checkedIn = generated.replaceAll('\n', '\r\n');
+test('generated database types normalize only catalog-proven generator differences', () => {
+  const generated = `export type Database = {
+    __InternalSupabase: { PostgrestVersion: '14.5' };
+    public: {
+      Tables: {
+        records: {
+          Row: { required_json: Json; optional_json: Json | null; amount: number | null };
+          Insert: { required_json?: Json; optional_json?: Json | null; amount?: number | null };
+          Update: { required_json?: Json; optional_json?: Json | null; amount?: number | null };
+        };
+      };
+      Views: {};
+      Functions: {
+        is_allowed_aal2: { Args: never; Returns: boolean };
+        list_records: {
+          Args: Record<PropertyKey, never>;
+          Returns: { required_json: Json }[];
+          SetofOptions: { to: 'records' };
+        };
+      };
+      Enums: { state: 'ready' | 'done' };
+      CompositeTypes: {};
+    };
+  };
+`;
+  const checkedIn = `export type Database = {
+    public: {
+      Tables: {
+        records: {
+          Row: { required_json: NonNullable<Json>; optional_json: Json | null; amount: number | null };
+          Insert: { required_json?: NonNullable<Json>; optional_json?: Json | null; amount?: never };
+          Update: { required_json?: NonNullable<Json>; optional_json?: Json | null; amount?: never };
+        };
+      };
+      Views: {};
+      Functions: {
+        is_allowed_aal2: { Args: Record<PropertyKey, never>; Returns: boolean };
+        list_records: {
+          Args: Record<PropertyKey, never>;
+          Returns: { required_json: NonNullable<Json> }[];
+          SetofOptions: { to: 'records' };
+        };
+      };
+      Enums: { state: 'ready' | 'done' };
+      CompositeTypes: {};
+    };
+  };
+`.replaceAll('\n', '\r\n');
+  const metadata = [
+    {
+      table_name: 'records',
+      column_name: 'required_json',
+      data_type: 'jsonb',
+      is_nullable: 'NO',
+      is_generated: 'NEVER',
+    },
+    {
+      table_name: 'records',
+      column_name: 'optional_json',
+      data_type: 'jsonb',
+      is_nullable: 'YES',
+      is_generated: 'NEVER',
+    },
+    {
+      table_name: 'records',
+      column_name: 'amount',
+      data_type: 'numeric',
+      is_nullable: 'YES',
+      is_generated: 'ALWAYS',
+    },
+  ];
 
-  assert.equal(generatedTypesMatch(generated, checkedIn), true);
-  assert.equal(generatedTypesMatch(generated, `${checkedIn}// changed type\r\n`), false);
+  assert.equal(generatedTypesMatch(generated, checkedIn, metadata), true);
+  assert.equal(generatedTypesMatch(generated, checkedIn, []), false);
+});
+
+test('generated database type parity retains real nullable-column, enum, and RPC drift', () => {
+  const generated = `export type Database = { public: {
+    Tables: { records: { Row: { optional_json: Json | null; amount: number | null }; Insert: { optional_json?: Json | null; amount?: number | null }; Update: { optional_json?: Json | null; amount?: number | null } } };
+    Views: {};
+    Functions: { run_record: { Args: { id: string }; Returns: boolean }; is_allowed_aal2: { Args: never; Returns: boolean } };
+    Enums: { state: 'ready' | 'done' };
+    CompositeTypes: {};
+  } };`;
+  const metadata = [
+    {
+      table_name: 'records',
+      column_name: 'optional_json',
+      data_type: 'jsonb',
+      is_nullable: 'YES',
+      is_generated: 'NEVER',
+    },
+    {
+      table_name: 'records',
+      column_name: 'amount',
+      data_type: 'numeric',
+      is_nullable: 'YES',
+      is_generated: 'NEVER',
+    },
+  ];
+  const base = (columnType: string, enumValues: string, returnType: string) =>
+    `export type Database = { public: {
+      Tables: { records: { Row: { optional_json: Json | null; amount: ${columnType} }; Insert: { optional_json?: Json | null; amount?: ${columnType} }; Update: { optional_json?: Json | null; amount?: ${columnType} } } };
+      Views: {};
+      Functions: { run_record: { Args: { id: string }; Returns: ${returnType} }; is_allowed_aal2: { Args: Record<PropertyKey, never>; Returns: boolean } };
+      Enums: { state: ${enumValues} };
+      CompositeTypes: {};
+    } };`;
+
+  assert.equal(
+    generatedTypesMatch(generated, base('number | null', "'ready' | 'done'", 'boolean'), metadata),
+    true,
+  );
+  assert.equal(
+    generatedTypesMatch(
+      generated,
+      base('number | null', "'ready' | 'done'", 'boolean')
+        .replaceAll('optional_json: Json | null', 'optional_json: Json')
+        .replaceAll('optional_json?: Json | null', 'optional_json?: Json'),
+      metadata,
+    ),
+    false,
+  );
+  assert.equal(
+    generatedTypesMatch(generated, base('string | null', "'ready' | 'done'", 'boolean'), metadata),
+    false,
+  );
+  assert.equal(
+    generatedTypesMatch(
+      generated,
+      base('number | null', "'ready' | 'done' | 'failed'", 'boolean'),
+      metadata,
+    ),
+    false,
+  );
+  assert.equal(
+    generatedTypesMatch(generated, base('number | null', "'ready' | 'done'", 'string'), metadata),
+    false,
+  );
+  assert.equal(
+    generatedTypesMatch(
+      generated,
+      base('number | null', "'ready' | 'done'", 'boolean').replace('id: string', 'id: number'),
+      metadata,
+    ),
+    false,
+  );
+});
+
+test('column metadata contract rejects incomplete catalog responses without echoing values', () => {
+  assert.deepEqual(
+    parseColumnTypeMetadata([
+      {
+        table_name: 'records',
+        column_name: 'payload',
+        data_type: 'jsonb',
+        is_nullable: 'NO',
+        is_generated: 'NEVER',
+      },
+    ]),
+    [
+      {
+        table_name: 'records',
+        column_name: 'payload',
+        data_type: 'jsonb',
+        is_nullable: 'NO',
+        is_generated: 'NEVER',
+      },
+    ],
+  );
+  assert.throws(() => parseColumnTypeMetadata([{ table_name: 'records', column_name: 'payload' }]));
 });
 
 const functions: FunctionInventory = [
