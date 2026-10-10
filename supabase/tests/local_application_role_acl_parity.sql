@@ -47,6 +47,8 @@ WITH grants AS (
     -- These AI-18 routines are validated against their exact service_role
     -- grants by rpc_security.sql; the captured staging fingerprint predates them.
     AND p.oid NOT IN (
+      to_regprocedure('public.claim_job_queue_internal(text,integer,uuid)'),
+      to_regprocedure('public.claim_job_queue_for_run(text,uuid)'),
       to_regprocedure('public.complete_job_queue(uuid,text,text,text)'),
       to_regprocedure('public.submit_workflow_job_response(uuid,text)'),
       to_regprocedure('public.complete_provider_queue_job(uuid,text,text,text)')

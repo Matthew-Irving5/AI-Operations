@@ -2,11 +2,17 @@ import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { consumeRateLimit } from "../_shared/rate-limit.ts";
 import { getAal2Identity } from "../_shared/auth-assurance.ts";
 import { isWorkflowLaunchRequest } from "./request-contract.ts";
+import { createWorkflowRunDispatcher } from "./worker-dispatch.ts";
 
 const url = Deno.env.get("SUPABASE_URL") ?? "";
 const service = createClient(
   url,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+);
+const dispatchRun = createWorkflowRunDispatcher(
+  Deno.env.get("WORKER_SECRET"),
+  ({ body, headers }) =>
+    service.functions.invoke("job-worker", { body, headers }),
 );
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -71,6 +77,9 @@ Deno.serve(async (request) => {
     },
   );
   if (error) return json({ code: "launch_rejected" }, 422);
+  if (typeof runId !== "string") {
+    return json({ code: "launch_rejected" }, 422);
+  }
   await service.from("audit_events").insert({
     user_id: user.user.id,
     actor_type: "user",
@@ -87,5 +96,8 @@ Deno.serve(async (request) => {
       request_keys: Object.keys(body.request),
     },
   });
+  if (!await dispatchRun(runId)) {
+    return json({ code: "dispatch_unavailable", runId }, 503);
+  }
   return json({ runId }, 201);
 });

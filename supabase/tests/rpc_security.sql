@@ -11,6 +11,8 @@ create temporary table rpc_security_expected (
 insert into rpc_security_expected values
   ('public.is_allowed_aal2()', false, true, false),
   ('public.claim_job_queue(text,integer)', false, false, true),
+  ('public.claim_job_queue_internal(text,integer,uuid)', false, false, false),
+  ('public.claim_job_queue_for_run(text,uuid)', false, false, true),
   ('public.reserve_recurring_budget(uuid,uuid,numeric)', false, false, false),
   ('public.dispatch_due_schedules(timestamptz)', false, false, true),
   ('public.complete_job_queue(uuid,text,boolean,text)', false, false, true),
