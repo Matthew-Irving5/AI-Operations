@@ -69,6 +69,18 @@ GRANT SELECT (code, id)
   ON TABLE public.managers TO service_role
   $sql$;
   EXECUTE $sql$
+GRANT SELECT (categories, created_at, id, positive, user_id)
+  ON TABLE public.feedback TO service_role
+  $sql$;
+  EXECUTE $sql$
+GRANT SELECT (expires_at, hard_cap, id, model_ceiling, reserved_amount, run_id, search_ceiling, status)
+  ON TABLE public.on_demand_budgets TO service_role
+  $sql$;
+  EXECUTE $sql$
+GRANT SELECT (id, run_id, structured_metrics)
+  ON TABLE public.reports TO service_role
+  $sql$;
+  EXECUTE $sql$
 REVOKE EXECUTE ON FUNCTION public.mobile_adapter_validation_issues(text, text, jsonb) FROM service_role
   $sql$;
   EXECUTE $sql$

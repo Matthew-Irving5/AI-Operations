@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(6);
+SELECT plan(7);
 
 SELECT ok(
   NOT has_table_privilege('service_role','public.run_steps','SELECT')
@@ -50,6 +50,36 @@ SELECT ok(
   AND NOT has_table_privilege('service_role','public.model_pricing','REFERENCES')
   AND NOT has_table_privilege('service_role','public.model_pricing','TRIGGER'),
   'executor has SELECT-only access to model pricing'
+);
+SELECT ok(
+  has_column_privilege('service_role','public.on_demand_budgets','id','SELECT')
+  AND has_column_privilege('service_role','public.on_demand_budgets','run_id','SELECT')
+  AND has_column_privilege('service_role','public.on_demand_budgets','hard_cap','SELECT')
+  AND has_column_privilege('service_role','public.on_demand_budgets','reserved_amount','SELECT')
+  AND has_column_privilege('service_role','public.on_demand_budgets','model_ceiling','SELECT')
+  AND has_column_privilege('service_role','public.on_demand_budgets','status','SELECT')
+  AND has_column_privilege('service_role','public.on_demand_budgets','expires_at','SELECT')
+  AND has_column_privilege('service_role','public.on_demand_budgets','search_ceiling','SELECT')
+  AND NOT has_column_privilege('service_role','public.on_demand_budgets','user_id','SELECT')
+  AND NOT has_column_privilege('service_role','public.on_demand_budgets','manager_code','SELECT')
+  AND NOT has_column_privilege('service_role','public.on_demand_budgets','actual_amount','SELECT')
+  AND NOT has_table_privilege('service_role','public.on_demand_budgets','SELECT')
+  AND NOT has_table_privilege('service_role','public.on_demand_budgets','INSERT')
+  AND NOT has_table_privilege('service_role','public.on_demand_budgets','UPDATE')
+  AND NOT has_table_privilege('service_role','public.on_demand_budgets','DELETE')
+  AND has_column_privilege('service_role','public.reports','id','SELECT')
+  AND has_column_privilege('service_role','public.reports','run_id','SELECT')
+  AND has_column_privilege('service_role','public.reports','structured_metrics','SELECT')
+  AND NOT has_column_privilege('service_role','public.reports','markdown','SELECT')
+  AND NOT has_table_privilege('service_role','public.reports','SELECT')
+  AND has_column_privilege('service_role','public.feedback','id','SELECT')
+  AND has_column_privilege('service_role','public.feedback','user_id','SELECT')
+  AND has_column_privilege('service_role','public.feedback','positive','SELECT')
+  AND has_column_privilege('service_role','public.feedback','categories','SELECT')
+  AND has_column_privilege('service_role','public.feedback','created_at','SELECT')
+  AND NOT has_column_privilege('service_role','public.feedback','comment','SELECT')
+  AND NOT has_table_privilege('service_role','public.feedback','SELECT'),
+  'executor reads only active budget, report recovery and feedback context columns'
 );
 SELECT ok(
   (SELECT count(*) = 6 AND bool_and(

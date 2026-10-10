@@ -31,7 +31,7 @@ SELECT is(
 
 SELECT is(
   (SELECT md5(coalesce(string_agg(c.relname||'.'||a.attname||'|'||CASE WHEN x.grantee=0 THEN 'PUBLIC' ELSE r.rolname END||'|'||x.privilege_type||'|'||x.is_grantable::text, E'\n' ORDER BY c.relname,a.attname,CASE WHEN x.grantee=0 THEN 'PUBLIC' ELSE r.rolname END,x.privilege_type,x.is_grantable),'')) FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(a.attacl) x LEFT JOIN pg_roles r ON r.oid=x.grantee WHERE n.nspname='public' AND a.attnum>0 AND NOT a.attisdropped AND a.attacl IS NOT NULL AND (x.grantee=0 OR r.rolname IN ('anon','authenticated','service_role'))),
-  '419b6eed6e14c00eefef452d1b2a57ab',
+  'd0972decc5ec254990b5fb25c1ba6ab8',
   'local column ACL tuples match the captured staging baseline'
 );
 
