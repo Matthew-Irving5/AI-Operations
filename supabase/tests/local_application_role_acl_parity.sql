@@ -25,8 +25,8 @@ WITH grants AS (
 )
 SELECT is(
   (SELECT md5(string_agg(object_name||'|'||grantee||'|'||privilege_type||'|'||is_grantable::text, E'\n' ORDER BY object_name,grantee,privilege_type,is_grantable)) FROM grants WHERE kind='table'),
-  'f60ad8a9fdeb14ff01c7e03c7adfd25c',
-  'local table ACL tuples match staging plus the reviewed run-step read grant'
+  '5defa04e0edff85fb074e040ab3259fc',
+  'local table ACL tuples match staging plus the reviewed run-step read grant and model-pricing SELECT-only contract'
 );
 
 SELECT is(

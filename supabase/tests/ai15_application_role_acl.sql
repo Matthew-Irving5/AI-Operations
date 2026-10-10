@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(5);
+SELECT plan(6);
 
 SELECT ok(
   NOT has_table_privilege('service_role','public.run_steps','SELECT')
@@ -40,6 +40,16 @@ SELECT ok(
   AND has_table_privilege('service_role','public.notifications','TRIGGER')
   AND has_table_privilege('service_role','public.notifications','TRUNCATE'),
   'notification test retains select/insert/update without delete access'
+);
+SELECT ok(
+  has_table_privilege('service_role','public.model_pricing','SELECT')
+  AND NOT has_table_privilege('service_role','public.model_pricing','INSERT')
+  AND NOT has_table_privilege('service_role','public.model_pricing','UPDATE')
+  AND NOT has_table_privilege('service_role','public.model_pricing','DELETE')
+  AND NOT has_table_privilege('service_role','public.model_pricing','TRUNCATE')
+  AND NOT has_table_privilege('service_role','public.model_pricing','REFERENCES')
+  AND NOT has_table_privilege('service_role','public.model_pricing','TRIGGER'),
+  'executor has SELECT-only access to model pricing'
 );
 SELECT ok(
   (SELECT count(*) = 6 AND bool_and(
