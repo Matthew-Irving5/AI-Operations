@@ -5721,10 +5721,60 @@ export type Database = {
           },
         ];
       };
+      run_step_attempts: {
+        Row: {
+          attempt_number: number;
+          completed_at: string | null;
+          duration_ms: number | null;
+          id: string;
+          redacted_error: string | null;
+          run_id: string;
+          started_at: string;
+          status: Database['public']['Enums']['run_status'];
+          step_code: string;
+          trace_id: string | null;
+        };
+        Insert: {
+          attempt_number: number;
+          completed_at?: string | null;
+          duration_ms?: number | null;
+          id?: string;
+          redacted_error?: string | null;
+          run_id: string;
+          started_at?: string;
+          status: Database['public']['Enums']['run_status'];
+          step_code: string;
+          trace_id?: string | null;
+        };
+        Update: {
+          attempt_number?: number;
+          completed_at?: string | null;
+          duration_ms?: number | null;
+          id?: string;
+          redacted_error?: string | null;
+          run_id?: string;
+          started_at?: string;
+          status?: Database['public']['Enums']['run_status'];
+          step_code?: string;
+          trace_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'run_step_attempts_run_id_fkey';
+            columns: ['run_id'];
+            isOneToOne: false;
+            referencedRelation: 'workflow_runs';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       run_steps: {
         Row: {
+          attempt_count: number;
           completed_at: string | null;
           id: string;
+          input_reference: string | null;
+          output_reference: string | null;
           redacted_error: string | null;
           retry_metadata: NonNullable<Json>;
           run_id: string;
@@ -5732,10 +5782,14 @@ export type Database = {
           started_at: string | null;
           status: Database['public']['Enums']['run_status'];
           step_code: string;
+          trace_id: string | null;
         };
         Insert: {
+          attempt_count?: number;
           completed_at?: string | null;
           id?: string;
+          input_reference?: string | null;
+          output_reference?: string | null;
           redacted_error?: string | null;
           retry_metadata?: NonNullable<Json>;
           run_id: string;
@@ -5743,10 +5797,14 @@ export type Database = {
           started_at?: string | null;
           status?: Database['public']['Enums']['run_status'];
           step_code: string;
+          trace_id?: string | null;
         };
         Update: {
+          attempt_count?: number;
           completed_at?: string | null;
           id?: string;
+          input_reference?: string | null;
+          output_reference?: string | null;
           redacted_error?: string | null;
           retry_metadata?: NonNullable<Json>;
           run_id?: string;
@@ -5754,6 +5812,7 @@ export type Database = {
           started_at?: string | null;
           status?: Database['public']['Enums']['run_status'];
           step_code?: string;
+          trace_id?: string | null;
         };
         Relationships: [
           {
@@ -6347,34 +6406,52 @@ export type Database = {
       workflow_definitions: {
         Row: {
           active: boolean;
+          approval_policy: string;
+          budget_category: string;
           code: string;
           created_at: string;
+          default_model_route: string;
+          default_reasoning: string;
           id: string;
           input_schema: NonNullable<Json>;
           manager_id: string;
+          notification_policy: string;
           output_schema: NonNullable<Json>;
+          required_sources: string[];
           trigger_type: string;
           version: number;
         };
         Insert: {
           active?: boolean;
+          approval_policy: string;
+          budget_category: string;
           code: string;
           created_at?: string;
+          default_model_route: string;
+          default_reasoning: string;
           id?: string;
           input_schema?: NonNullable<Json>;
           manager_id: string;
+          notification_policy: string;
           output_schema?: NonNullable<Json>;
+          required_sources?: string[];
           trigger_type: string;
           version: number;
         };
         Update: {
           active?: boolean;
+          approval_policy?: string;
+          budget_category?: string;
           code?: string;
           created_at?: string;
+          default_model_route?: string;
+          default_reasoning?: string;
           id?: string;
           input_schema?: NonNullable<Json>;
           manager_id?: string;
+          notification_policy?: string;
           output_schema?: NonNullable<Json>;
+          required_sources?: string[];
           trigger_type?: string;
           version?: number;
         };
@@ -6590,6 +6667,58 @@ export type Database = {
       cancel_queued_run: { Args: { p_run_id: string; p_user_id: string }; Returns: boolean };
       claim_job_queue: {
         Args: { p_limit?: number; p_worker_id: string };
+        Returns: {
+          attempt_count: number;
+          available_at: string;
+          completed_at: string | null;
+          created_at: string;
+          deduplication_key: string;
+          id: string;
+          job_type: string;
+          lease_expires_at: string | null;
+          lease_owner: string | null;
+          maximum_attempts: number;
+          payload: NonNullable<Json>;
+          priority: number;
+          run_id: string;
+          status: Database['public']['Enums']['job_status'];
+          user_id: string;
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'job_queue';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      claim_job_queue_for_run: {
+        Args: { p_run_id: string; p_worker_id: string };
+        Returns: {
+          attempt_count: number;
+          available_at: string;
+          completed_at: string | null;
+          created_at: string;
+          deduplication_key: string;
+          id: string;
+          job_type: string;
+          lease_expires_at: string | null;
+          lease_owner: string | null;
+          maximum_attempts: number;
+          payload: NonNullable<Json>;
+          priority: number;
+          run_id: string;
+          status: Database['public']['Enums']['job_status'];
+          user_id: string;
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'job_queue';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      claim_job_queue_internal: {
+        Args: { p_limit: number; p_run_id: string; p_worker_id: string };
         Returns: {
           attempt_count: number;
           available_at: string;
@@ -7083,6 +7212,78 @@ export type Database = {
       };
       update_onboarding_checklist_item: {
         Args: { p_code: string; p_completed_at: string; p_metadata?: Json; p_user_id: string };
+        Returns: undefined;
+      };
+      commit_instrumented_ai_report: {
+        Args: {
+          p_actions: Json;
+          p_actual_cost: number;
+          p_cached_input_tokens: number;
+          p_call_id: string;
+          p_input_tokens: number;
+          p_markdown: string;
+          p_notification_policy: string;
+          p_output_tokens: number;
+          p_provider_usage: Json;
+          p_reasoning_tokens: number;
+          p_redacted_trace: Json;
+          p_report_type: string;
+          p_sections: Json;
+          p_structured_metrics: Json;
+          p_summary: string;
+          p_title: string;
+        };
+        Returns: string;
+      };
+      commit_instrumented_ai_report_with_queue: {
+        Args: {
+          p_actions: Json;
+          p_actual_cost: number;
+          p_cached_input_tokens: number;
+          p_call_id: string;
+          p_input_tokens: number;
+          p_job_id: string;
+          p_markdown: string;
+          p_notification_policy: string;
+          p_output_tokens: number;
+          p_provider_usage: Json;
+          p_reasoning_tokens: number;
+          p_redacted_trace: Json;
+          p_report_type: string;
+          p_response_id: string;
+          p_sections: Json;
+          p_structured_metrics: Json;
+          p_summary: string;
+          p_title: string;
+        };
+        Returns: string;
+      };
+      fail_instrumented_ai_provider_response: {
+        Args: {
+          p_actual_cost: number;
+          p_cached_input_tokens: number;
+          p_call_id: string;
+          p_error_code: string;
+          p_input_tokens: number;
+          p_job_id: string;
+          p_output_tokens: number;
+          p_provider_usage: Json;
+          p_reasoning_tokens: number;
+          p_redacted_trace: Json;
+          p_response_id: string;
+        };
+        Returns: boolean;
+      };
+      record_workflow_stage: {
+        Args: {
+          p_input_reference?: string;
+          p_output_reference?: string;
+          p_redacted_error?: string;
+          p_run_id: string;
+          p_sequence: number;
+          p_status: string;
+          p_step_code: string;
+        };
         Returns: undefined;
       };
     };

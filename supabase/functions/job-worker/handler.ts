@@ -1,6 +1,7 @@
 import { z } from "npm:zod@4.1.5";
 
 const uuidSchema = z.string().uuid();
+const runTargetSchema = z.object({ runId: uuidSchema.optional() }).strict();
 const jobSchema = z.object({
   id: uuidSchema,
   run_id: uuidSchema,
@@ -39,6 +40,10 @@ export type JobWorkerDependencies = Readonly<{
     data: unknown;
     error: boolean;
   }>;
+  claimForRun: (workerId: string, runId: string) => Promise<{
+    data: unknown;
+    error: boolean;
+  }>;
   execute: (runId: string) => Promise<{
     data: unknown;
     error: boolean;
@@ -68,6 +73,23 @@ export function createJobWorkerHandler(
       return json({ code: "unauthorised" }, 401);
     }
 
+    let runId: string | undefined;
+    const rawBody = await request.text();
+    if (rawBody.length > 1024) {
+      return json({ code: "invalid_request" }, 413);
+    }
+    if (rawBody.trim()) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(rawBody);
+      } catch {
+        return json({ code: "invalid_request" }, 400);
+      }
+      const target = runTargetSchema.safeParse(parsed);
+      if (!target.success) return json({ code: "invalid_request" }, 400);
+      runId = target.data.runId;
+    }
+
     const workerId = request.headers.get("x-worker-id")?.trim();
     if (!workerId || workerId.length > 100) {
       return json({ code: "worker_id_required" }, 400);
@@ -75,7 +97,9 @@ export function createJobWorkerHandler(
 
     let claim: Awaited<ReturnType<JobWorkerDependencies["claim"]>>;
     try {
-      claim = await dependencies.claim(workerId);
+      claim = runId
+        ? await dependencies.claimForRun(workerId, runId)
+        : await dependencies.claim(workerId);
     } catch {
       return json({ code: "queue_claim_failed" }, 500);
     }

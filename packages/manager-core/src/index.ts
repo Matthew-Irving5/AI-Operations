@@ -1,4 +1,6 @@
 import type { ActionProposal, ManagerCode } from '@ai-operations/contracts';
+export * from './orchestrator';
+export * from './registry';
 
 export type { ActionProposal, ManagerCode } from '@ai-operations/contracts';
 
@@ -6,8 +8,12 @@ export type WorkflowDefinition = Readonly<{
   code: string;
   version: number;
   model: 'gpt-5.6-luna' | 'gpt-5.6-terra' | 'gpt-5.6-sol';
+  reasoning: 'low' | 'medium' | 'high';
+  budgetCategory: 'recurring' | 'on_demand';
+  requiredSources: readonly string[];
   priority: 0 | 1 | 2 | 3 | 4;
   notificationPolicy: 'silent' | 'report' | 'exception';
+  approvalPolicy: 'none' | 'require_for_actions';
   allowedActionTypes: readonly string[];
 }>;
 export type RunContext = Readonly<{ runId: string; correlationId: string; timezone: string }>;
@@ -39,24 +45,36 @@ export const systemsWorkflows: readonly WorkflowDefinition[] = [
     code: 'systems-daily-cost-capacity',
     version: 1,
     model: 'gpt-5.6-luna',
+    reasoning: 'low',
+    budgetCategory: 'recurring',
+    requiredSources: [],
     priority: 1,
     notificationPolicy: 'exception',
+    approvalPolicy: 'require_for_actions',
     allowedActionTypes: [],
   },
   {
     code: 'systems-weekly-quality-platform',
     version: 1,
     model: 'gpt-5.6-terra',
+    reasoning: 'medium',
+    budgetCategory: 'recurring',
+    requiredSources: [],
     priority: 2,
     notificationPolicy: 'report',
+    approvalPolicy: 'require_for_actions',
     allowedActionTypes: ['review_prompt_promotion'],
   },
   {
     code: 'systems-monthly-cost-report',
     version: 1,
     model: 'gpt-5.6-terra',
+    reasoning: 'medium',
+    budgetCategory: 'recurring',
+    requiredSources: [],
     priority: 1,
     notificationPolicy: 'report',
+    approvalPolicy: 'require_for_actions',
     allowedActionTypes: ['review_budget_recommendation'],
   },
 ];
@@ -126,32 +144,48 @@ export const personalWorkflows: readonly WorkflowDefinition[] = [
     code: 'personal-morning-plan',
     version: 1,
     model: 'gpt-5.6-luna',
+    reasoning: 'low',
+    budgetCategory: 'recurring',
+    requiredSources: [],
     priority: 1,
     notificationPolicy: 'report',
+    approvalPolicy: 'require_for_actions',
     allowedActionTypes: [],
   },
   {
     code: 'personal-midday-exception',
     version: 1,
     model: 'gpt-5.6-luna',
+    reasoning: 'low',
+    budgetCategory: 'recurring',
+    requiredSources: [],
     priority: 1,
     notificationPolicy: 'exception',
+    approvalPolicy: 'require_for_actions',
     allowedActionTypes: [],
   },
   {
     code: 'personal-evening-close',
     version: 1,
     model: 'gpt-5.6-luna',
+    reasoning: 'low',
+    budgetCategory: 'recurring',
+    requiredSources: [],
     priority: 2,
     notificationPolicy: 'report',
+    approvalPolicy: 'require_for_actions',
     allowedActionTypes: [],
   },
   {
     code: 'personal-weekly-plan',
     version: 1,
     model: 'gpt-5.6-terra',
+    reasoning: 'medium',
+    budgetCategory: 'recurring',
+    requiredSources: [],
     priority: 2,
     notificationPolicy: 'report',
+    approvalPolicy: 'require_for_actions',
     allowedActionTypes: [],
   },
 ];

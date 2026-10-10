@@ -55,7 +55,7 @@
     "ownerIssue": "AI-15",
     "stagingOnly": ["WORKER_SECRET"],
     "productionOnly": [],
-    "removalCondition": "Remove this exception when AI-15 implements the production worker caller and configures its paired WORKER_SECRET through that caller's secure handoff. Never copy the staging value."
+    "removalCondition": "Remove this exception after a distinct production WORKER_SECRET is configured through the secure deployment handoff and production run-targeted dispatch smoke passes. Never copy the staging value."
   },
   "requiredEdgeSecrets": [
     "PUBLIC_APP_ORIGIN",

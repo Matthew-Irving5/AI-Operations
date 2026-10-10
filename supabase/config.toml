@@ -12,6 +12,7 @@ verify_jwt = false
 
 [functions.ai-execute]
 verify_jwt = false
+import_map = "./functions/deno.json"
 
 [functions.notification-dispatch]
 verify_jwt = false
