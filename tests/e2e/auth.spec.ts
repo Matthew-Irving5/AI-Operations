@@ -6,6 +6,14 @@ test('login is the only unauthenticated entry point', async ({ page }) => {
   const policy = response?.headers()['content-security-policy'] ?? '';
   expect(policy).toContain("script-src 'self' 'nonce-");
   expect(policy).not.toContain("script-src 'self';");
+  expect(policy).toContain("frame-ancestors 'none'");
+  expect(response?.headers()['x-content-type-options']).toBe('nosniff');
+  expect(response?.headers()['referrer-policy']).toBe('no-referrer');
+  expect(response?.headers()['x-frame-options']).toBe('DENY');
+  expect(response?.headers()['permissions-policy']).toBe(
+    'camera=(), microphone=(), geolocation=()',
+  );
+  expect(response?.headers()['strict-transport-security']).toContain('max-age=63072000');
   await expect(page.getByRole('heading', { name: 'AI Operations' })).toBeVisible();
   await expect(page.getByLabel('Email')).toBeVisible();
   await expect(page.getByText('Multi-factor authentication is required.')).toBeVisible();

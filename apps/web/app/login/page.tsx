@@ -1,14 +1,25 @@
+import Link from 'next/link';
+
 export default async function Login({
   searchParams,
 }: {
-  searchParams?: Promise<{ error?: string }>;
+  searchParams?: Promise<{ error?: string; password?: string }>;
 }) {
-  const error = (await searchParams)?.error;
+  const params = await searchParams;
+  const error = params?.error;
   return (
     <main style={{ maxWidth: 480, paddingTop: '12vh' }}>
       <h1>AI Operations</h1>
       <p className="label">Secure sign-in is required.</p>
+      {params?.password === 'updated' && (
+        <p role="status">Your password was updated and your other sessions were signed out.</p>
+      )}
       {error === 'invalid' && <p role="alert">The email or password was not accepted.</p>}
+      {error === 'recovery' && (
+        <p role="alert">
+          This recovery link is invalid or expired. Request a new password reset link.
+        </p>
+      )}
       {error === 'security' && (
         <p role="alert">
           This sign-in request was rejected by the security policy. Reload this page and try again.
@@ -37,6 +48,9 @@ export default async function Login({
           Only the allowlisted account can continue. Multi-factor authentication is required.
         </small>
       </form>
+      <p>
+        <Link href="/forgot-password">Forgot your password?</Link>
+      </p>
     </main>
   );
 }

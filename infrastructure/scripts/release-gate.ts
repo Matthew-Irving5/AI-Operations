@@ -62,6 +62,14 @@ const TargetedCapabilityResultsSchema = z
   .min(1)
   .max(20);
 
+const FreshMfaActionEvidenceSchema = z
+  .object({
+    staleDenied: z.literal('passed'),
+    staleAttemptUsedMfaGate: z.literal(false),
+    freshReauthAccepted: z.literal('passed'),
+  })
+  .strict();
+
 const AcceptanceEvidenceSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -74,6 +82,7 @@ const AcceptanceEvidenceSchema = z
     acceptanceProfile: AcceptanceProfileSchema,
     humanMfa: z.enum(['user-completed', 'not-required']),
     checks: z.union([CapabilityResultsSchema, TargetedCapabilityResultsSchema]),
+    freshMfaAction: FreshMfaActionEvidenceSchema.optional(),
     correlationIds: z.array(SafeIdSchema).max(20),
     acceptedAt: z.string().datetime({ offset: true }),
     accepted: z.literal(true),
@@ -85,10 +94,14 @@ const AcceptanceEvidenceSchema = z
       ? value.humanMfa === 'not-required'
       : value.humanMfa === 'user-completed';
     const validChecks = targeted ? Array.isArray(value.checks) : !Array.isArray(value.checks);
-    if (!validMfa || !validChecks) {
+    const validFreshMfaAction = targeted
+      ? value.freshMfaAction === undefined
+      : value.freshMfaAction !== undefined;
+    if (!validMfa || !validChecks || !validFreshMfaAction) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'acceptance profile, MFA evidence and check shape must agree',
+        message:
+          'acceptance profile, MFA evidence, fresh-MFA action proof and check shape must agree',
       });
     }
   });
@@ -147,6 +160,7 @@ const StagingAcceptanceInputSchema = z
     acceptanceProfile: z.literal('auth-browser'),
     humanMfa: z.literal('user-completed'),
     checks: CapabilityResultsSchema,
+    freshMfaAction: FreshMfaActionEvidenceSchema,
     correlationIds: z.array(SafeIdSchema).max(20),
     acceptedAt: z.string().datetime({ offset: true }),
   })
@@ -189,6 +203,7 @@ const AuthBrowserStagingSuiteEvidenceSchema = z
         releaseVersion: z.literal('passed'),
       })
       .strict(),
+    freshMfaAction: FreshMfaActionEvidenceSchema,
     correlationIds: z.array(SafeIdSchema).min(1).max(20),
     acceptedAt: z.string().datetime({ offset: true }),
   })
@@ -557,6 +572,9 @@ export function createStagingAcceptanceStatus(input: unknown): StagingAcceptance
     acceptanceProfile: parsed.hostedSuite.acceptanceProfile,
     humanMfa: parsed.hostedSuite.humanMfa,
     checks,
+    ...(parsed.hostedSuite.acceptanceProfile === 'auth-browser'
+      ? { freshMfaAction: parsed.hostedSuite.freshMfaAction }
+      : {}),
     correlationIds: parsed.hostedSuite.correlationIds,
     acceptedAt: parsed.hostedSuite.acceptedAt,
     accepted: true,

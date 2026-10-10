@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { isAllowedEmail } from '../../../../lib/auth';
 import {
   assertLocalTestAuthEnvironment,
+  localAuthFailureDiagnostic,
   localTestUserId,
   validateStagingAuthCredentials,
 } from '../../../../lib/local-test-auth';
@@ -129,8 +130,14 @@ export async function POST(request: Request): Promise<NextResponse> {
     signal: AbortSignal.timeout(5_000),
   }).catch(() => null);
   if (!authResponse?.ok) {
-    await authResponse?.body?.cancel();
-    return NextResponse.json({ code: 'local_auth_rejected' }, { status: 401 });
+    const authBody = await authResponse?.json().catch(() => null);
+    return NextResponse.json(
+      {
+        code: 'local_auth_rejected',
+        ...localAuthFailureDiagnostic(authResponse?.status ?? 0, authBody),
+      },
+      { status: 401 },
+    );
   }
   const sessionSchema = z
     .object({
@@ -160,7 +167,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   const cookieStore = await cookies();
   cookieStore.set(cookieName, encodedSession, {
     expires: new Date(expiresAt * 1000),
-    httpOnly: false,
+    httpOnly: true,
     maxAge: 900,
     path: '/',
     sameSite: 'lax',

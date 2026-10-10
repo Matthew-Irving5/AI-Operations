@@ -27,6 +27,13 @@ const EvidenceWriteInputSchema = z
         releaseVersion: z.literal('passed'),
       })
       .strict(),
+    freshMfaAction: z
+      .object({
+        staleDenied: z.literal('passed'),
+        staleAttemptUsedMfaGate: z.literal(false),
+        freshReauthAccepted: z.literal('passed'),
+      })
+      .strict(),
     correlationIds: z
       .array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9:-]{0,127}$/))
       .min(1)
@@ -51,6 +58,7 @@ export async function writeLiveStagingAcceptanceEvidence(
     stagingOrigin: input.stagingOrigin,
     humanMfa: 'user-completed',
     checks: input.checks,
+    freshMfaAction: input.freshMfaAction,
     correlationIds: input.correlationIds,
     acceptedAt: input.acceptedAt,
   });

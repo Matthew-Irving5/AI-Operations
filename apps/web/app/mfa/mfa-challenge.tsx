@@ -53,7 +53,8 @@ export function MfaChallenge({
     | 'digital_scan_create'
     | 'finance_configure'
     | 'finance_import'
-    | 'github_sync';
+    | 'github_sync'
+    | 'schedule_update';
   onVerified?: (mfaGateId: string) => void;
 }) {
   const [message, setMessage] = useState('');
