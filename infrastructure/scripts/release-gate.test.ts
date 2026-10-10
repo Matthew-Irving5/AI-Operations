@@ -84,7 +84,11 @@ function hostedSuiteEvidence(overrides: Record<string, unknown> = {}) {
       edgeFunctions: 'passed',
       releaseVersion: 'passed',
     },
-    freshMfaAction: { staleDenied: 'passed', freshReauthAccepted: 'passed' },
+    freshMfaAction: {
+      staleDenied: 'passed',
+      staleAttemptUsedMfaGate: false,
+      freshReauthAccepted: 'passed',
+    },
     correlationIds: ['run-uuid-1', 'trace-uuid-1'],
     acceptedAt: '2026-09-29T10:00:00.000Z',
     ...overrides,
@@ -136,7 +140,11 @@ function stagingAcceptanceInput(
       releaseVersion: 'passed',
       releaseVersion: 'passed',
     },
-    freshMfaAction: { staleDenied: 'passed', freshReauthAccepted: 'passed' },
+    freshMfaAction: {
+      staleDenied: 'passed',
+      staleAttemptUsedMfaGate: false,
+      freshReauthAccepted: 'passed',
+    },
     correlationIds: ['run-1', 'trace-1'],
     acceptedAt: '2026-09-29T10:00:00.000Z',
     ...overrides,
@@ -469,6 +477,7 @@ test('staging acceptance status is pending until complete current-head hosted ev
   assert.equal(success.acceptance?.acceptanceProfile, 'auth-browser');
   assert.deepEqual(success.acceptance?.freshMfaAction, {
     staleDenied: 'passed',
+    staleAttemptUsedMfaGate: false,
     freshReauthAccepted: 'passed',
   });
   assert.ok(success.acceptance && !Array.isArray(success.acceptance.checks));
@@ -565,7 +574,11 @@ test('headed acceptance evidence is written only for the complete MFA and dual-b
       edgeFunctions: 'passed',
       releaseVersion: 'passed',
     },
-    freshMfaAction: { staleDenied: 'passed', freshReauthAccepted: 'passed' },
+    freshMfaAction: {
+      staleDenied: 'passed',
+      staleAttemptUsedMfaGate: false,
+      freshReauthAccepted: 'passed',
+    },
     correlationIds: ['run-uuid-1', 'trace-uuid-1'],
     acceptedAt: '2026-09-29T10:00:00.000Z',
   };
@@ -589,6 +602,7 @@ test('headed acceptance evidence is written only for the complete MFA and dual-b
     });
     assert.deepEqual(evidence.freshMfaAction, {
       staleDenied: 'passed',
+      staleAttemptUsedMfaGate: false,
       freshReauthAccepted: 'passed',
     });
     assert.equal('releaseSha' in evidence, false);
@@ -601,6 +615,10 @@ test('headed acceptance evidence is written only for the complete MFA and dual-b
       { ...validInput, checks: { ...validInput.checks, safeWrite: 'failed' } },
       { ...validInput, checks: { ...validInput.checks, releaseVersion: 'failed' } },
       { ...validInput, freshMfaAction: { ...validInput.freshMfaAction, staleDenied: 'failed' } },
+      {
+        ...validInput,
+        freshMfaAction: { ...validInput.freshMfaAction, staleAttemptUsedMfaGate: true },
+      },
       {
         ...validInput,
         freshMfaAction: { ...validInput.freshMfaAction, freshReauthAccepted: 'failed' },
@@ -701,7 +719,11 @@ test('a PR head advance after hosted acceptance invalidates that acceptance', ()
             releaseVersion: 'passed',
             releaseVersion: 'passed',
           },
-          freshMfaAction: { staleDenied: 'passed', freshReauthAccepted: 'passed' },
+          freshMfaAction: {
+            staleDenied: 'passed',
+            staleAttemptUsedMfaGate: false,
+            freshReauthAccepted: 'passed',
+          },
           correlationIds: [],
           acceptedAt: '2026-09-29T10:00:00.000Z',
         },

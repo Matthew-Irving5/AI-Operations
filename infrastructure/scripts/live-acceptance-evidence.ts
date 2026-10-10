@@ -30,6 +30,7 @@ const EvidenceWriteInputSchema = z
     freshMfaAction: z
       .object({
         staleDenied: z.literal('passed'),
+        staleAttemptUsedMfaGate: z.literal(false),
         freshReauthAccepted: z.literal('passed'),
       })
       .strict(),
