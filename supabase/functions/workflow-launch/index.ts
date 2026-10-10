@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { consumeRateLimit } from "../_shared/rate-limit.ts";
 import { getAal2Identity } from "../_shared/auth-assurance.ts";
+import { isWorkflowLaunchRequest } from "./request-contract.ts";
 
 const url = Deno.env.get("SUPABASE_URL") ?? "";
 const service = createClient(
@@ -47,8 +48,7 @@ Deno.serve(async (request) => {
     !body.workflowCode || !body.managerCode || !body.idempotencyKey ||
     !Number.isFinite(body.hardCapUsd) ||
     !Number.isInteger(body.searchCeiling) ||
-    !body.request || Array.isArray(body.request) ||
-    Object.keys(body.request).length === 0
+    !isWorkflowLaunchRequest(body.request)
   ) return json({ code: "invalid_request" }, 400);
   const definition = await service.from("workflow_definitions").select("id").eq(
     "code",
