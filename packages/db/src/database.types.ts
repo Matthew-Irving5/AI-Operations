@@ -6691,6 +6691,58 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      claim_job_queue_for_run: {
+        Args: { p_run_id: string; p_worker_id: string };
+        Returns: {
+          attempt_count: number;
+          available_at: string;
+          completed_at: string | null;
+          created_at: string;
+          deduplication_key: string;
+          id: string;
+          job_type: string;
+          lease_expires_at: string | null;
+          lease_owner: string | null;
+          maximum_attempts: number;
+          payload: NonNullable<Json>;
+          priority: number;
+          run_id: string;
+          status: Database['public']['Enums']['job_status'];
+          user_id: string;
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'job_queue';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      claim_job_queue_internal: {
+        Args: { p_limit: number; p_run_id: string; p_worker_id: string };
+        Returns: {
+          attempt_count: number;
+          available_at: string;
+          completed_at: string | null;
+          created_at: string;
+          deduplication_key: string;
+          id: string;
+          job_type: string;
+          lease_expires_at: string | null;
+          lease_owner: string | null;
+          maximum_attempts: number;
+          payload: NonNullable<Json>;
+          priority: number;
+          run_id: string;
+          status: Database['public']['Enums']['job_status'];
+          user_id: string;
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'job_queue';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
       claim_notification_delivery: {
         Args: { p_limit?: number; p_worker_id: string };
         Returns: {
