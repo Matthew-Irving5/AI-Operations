@@ -210,7 +210,11 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
         edgeFunctions: 'passed',
         releaseVersion: 'passed',
       },
-      freshMfaAction: { staleDenied: 'passed', freshReauthAccepted: 'passed' },
+      freshMfaAction: {
+        staleDenied: 'passed',
+        staleAttemptUsedMfaGate: false,
+        freshReauthAccepted: 'passed',
+      },
       correlationIds: [probe.body.probeId!, webkitProbe.body.probeId!],
       acceptedAt: new Date().toISOString(),
     });

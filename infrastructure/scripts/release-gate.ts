@@ -124,6 +124,7 @@ const TargetedCapabilityResultsSchema = z
 const FreshMfaActionEvidenceSchema = z
   .object({
     staleDenied: z.literal('passed'),
+    staleAttemptUsedMfaGate: z.literal(false),
     freshReauthAccepted: z.literal('passed'),
   })
   .strict();
