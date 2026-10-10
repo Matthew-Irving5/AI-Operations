@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { reportOutputSchema } from "../_shared/openai-contract.ts";
 import { createWorkflowExecutionHandler } from "./handler.ts";
+import { AI15_WORKFLOW_RUN_SELECT } from "./read-contract.ts";
 import { submitProviderResponse as submitProviderResponseWithRetry } from "./provider-submission.ts";
 import {
   allowedActionTypesForWorkflow,
@@ -71,9 +72,7 @@ function executionSource(): WorkflowExecutionSource {
     async loadRun(runId) {
       const result = await service
         .from("workflow_runs")
-        .select(
-          "id,user_id,workflow_definition_id,status,trigger,correlation_id,idempotency_key,priority,requested_at,started_at,completed_at,cancelled_at,error_code,redacted_error,report_id,budget_reservation_id,workflow_definitions!inner(id,code,version,manager_id,managers!inner(code),trigger_type,input_schema,output_schema,active)",
-        )
+        .select(AI15_WORKFLOW_RUN_SELECT)
         .eq("id", runId)
         .maybeSingle();
       if (result.error || !result.data) return null;
