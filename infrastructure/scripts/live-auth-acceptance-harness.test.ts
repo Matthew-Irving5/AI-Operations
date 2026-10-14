@@ -34,6 +34,16 @@ describe('live auth acceptance harness', () => {
     assert.throws(() => liveAuthScheduleAction('Unknown'), /status is missing or invalid/);
   });
 
+  it('does not mistake the authenticated Playwright request context for a cookie-free client', async () => {
+    const journey = await readFile(journeyPath, 'utf8');
+
+    assert.match(
+      journey,
+      /page\.request shares this authenticated browser context's cookies; it is not a cookie-free auth probe/,
+    );
+    assert.doesNotMatch(journey, /page\.request\.post\(/);
+  });
+
   it('proves stale denial without an MFA gate before the real fresh-MFA action', async () => {
     const journey = await readFile(journeyPath, 'utf8');
 

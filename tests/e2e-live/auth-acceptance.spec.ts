@@ -93,12 +93,7 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
   await expect(card.getByRole('button', { name: scheduleAction.buttonName })).toBeVisible();
   await expect(card.locator('div.label')).toHaveText(initialStatusPattern);
 
-  const unauthenticated = await page.request.post(
-    new URL('/api/schedules/update', env.LIVE_E2E_BASE_URL).href,
-    { data: { scheduleId: targetSchedule, enabled: false } },
-  );
-  expect(unauthenticated.status()).toBe(401);
-
+  // Playwright page.request shares this authenticated browser context's cookies; it is not a cookie-free auth probe.
   const eventQuery = new URLSearchParams({
     select: 'verified_at',
     user_id: `eq.${targetUser}`,
