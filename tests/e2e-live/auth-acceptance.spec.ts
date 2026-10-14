@@ -4,6 +4,7 @@ import {
   resolveGitTreeSha,
   writeLiveStagingAcceptanceEvidence,
 } from '../../infrastructure/scripts/live-acceptance-evidence.js';
+import { liveAuthScheduleAction } from '../../infrastructure/scripts/live-auth-schedule-action.js';
 
 const env = parseLiveE2eEnvironment(process.env, 'auth-acceptance');
 const userId = process.env.LIVE_E2E_USER_ID;
@@ -75,20 +76,22 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
   expect(manualMfaChallengeObserved).toBe(true);
 
   await page.goto('/automations');
-  const enabledCards = page.locator('article[data-schedule-id]').filter({ hasText: /^Enabled ·/ });
+  const scheduleCards = page.locator('article[data-schedule-id]');
   await expect(
-    enabledCards.first(),
-    'an enabled schedule must be visible to the signed-in owner',
+    scheduleCards.first(),
+    'a schedule must be visible to its signed-in owner',
   ).toBeVisible();
-  const card = enabledCards.first();
+  const card = scheduleCards.first();
   const targetSchedule = requiredUuid(
     await card.getAttribute('data-schedule-id'),
     'owned schedule id',
   );
-  await expect(
-    card.getByRole('button', { name: 'Disable schedule (fresh MFA required)' }),
-  ).toBeVisible();
-  await expect(card.getByText(/^Enabled ·/)).toBeVisible();
+  const initialStatusLabel = await card.locator('div.label').textContent();
+  if (!initialStatusLabel) throw new Error('Owned schedule status is missing.');
+  const scheduleAction = liveAuthScheduleAction(initialStatusLabel);
+  const initialStatusPattern = new RegExp(`^${scheduleAction.initialLabel} ·`);
+  await expect(card.getByRole('button', { name: scheduleAction.buttonName })).toBeVisible();
+  await expect(card.locator('div.label')).toHaveText(initialStatusPattern);
 
   const unauthenticated = await page.request.post(
     new URL('/api/schedules/update', env.LIVE_E2E_BASE_URL).href,
@@ -117,7 +120,7 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
   expect(events).toHaveLength(1);
   expect(Date.now() - Date.parse(events[0]!.verified_at)).toBeGreaterThan(5 * 60_000);
 
-  const staleRequest = { scheduleId: targetSchedule, enabled: false };
+  const staleRequest = { scheduleId: targetSchedule, enabled: scheduleAction.nextEnabled };
   const staleAttempt = await page.evaluate(async (body) => {
     const response = await fetch('/api/schedules/update', {
       method: 'POST',
@@ -132,7 +135,7 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
   }, staleRequest);
   expect(staleAttempt).toMatchObject({ status: 403, body: { code: 'fresh_mfa_required' } });
   expect(staleAttempt.usedMfaGate).toBe(false);
-  await expect(card.getByText(/^Enabled ·/)).toBeVisible();
+  await expect(card.locator('div.label')).toHaveText(initialStatusPattern);
   await expect(card.getByLabel('Six-digit code')).toHaveCount(0);
   await expect(card.getByText('Fresh MFA is required before changing this schedule.')).toHaveCount(
     0,
@@ -149,7 +152,7 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
   expect(probe.status).toBe(200);
   expect(probe.body.probeId).toMatch(/^[a-zA-Z0-9][a-zA-Z0-9:-]{0,127}$/);
 
-  await card.getByRole('button', { name: 'Disable schedule (fresh MFA required)' }).click();
+  await card.getByRole('button', { name: scheduleAction.buttonName }).click();
   await expect(card.getByLabel('Six-digit code')).toBeVisible();
   process.stdout.write(
     '\nComplete Microsoft Authenticator in the visible browser to reauthenticate the schedule action.\n',
@@ -160,7 +163,9 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
     { timeout: 5 * 60_000 },
   );
   await expect(
-    card.getByText('Verify with Microsoft Authenticator to disable this schedule.'),
+    card.getByText(
+      `Verify with Microsoft Authenticator to ${scheduleAction.nextEnabled ? 'enable' : 'disable'} this schedule.`,
+    ),
   ).toBeVisible();
   await expect
     .poll(async () => card.getByLabel('Six-digit code').isVisible(), { timeout: 60_000 })
@@ -170,11 +175,16 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
     .catch(() => undefined);
   const updateResponse = await updateResponsePromise;
   expect(updateResponse.status()).toBe(200);
-  expect(await updateResponse.json()).toMatchObject({ schedule: { enabled: false } });
-  await expect(card.getByText('Schedule disabled.')).toBeVisible();
+  expect(await updateResponse.json()).toMatchObject({
+    schedule: { enabled: scheduleAction.nextEnabled },
+  });
+  await expect(card.getByText(scheduleAction.confirmationMessage)).toBeVisible();
   await page.reload();
   await expect(
-    page.locator(`[data-schedule-id="${targetSchedule}"]`).getByText(/^Disabled ·/),
+    page
+      .locator(`[data-schedule-id="${targetSchedule}"]`)
+      .locator('div.label')
+      .getByText(new RegExp(`^${scheduleAction.nextEnabled ? 'Enabled' : 'Disabled'} ·`)),
   ).toBeVisible();
 
   const webkitBrowser = await webkit.launch({ headless: false });
