@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { requireSameOrigin } from '../../../../lib/request-security';
 import { getAuthenticatedServerAccessToken } from '../../../../lib/supabase-server';
 
-const schema = z.object({
+const onDemandSchema = z.object({
   workflowCode: z.enum(['travel-on-demand-plan', 'procurement-on-demand-research']),
   managerCode: z.enum(['travel', 'procurement']),
   hardCapUsd: z.number().positive().max(1000),
@@ -15,6 +15,33 @@ const schema = z.object({
     constraints: z.string().trim().max(4000),
   }),
 });
+
+const systemsAcceptanceSchema = z.discriminatedUnion('workflowCode', [
+  z
+    .object({
+      workflowCode: z.literal('systems-daily-cost-capacity'),
+      managerCode: z.literal('systems'),
+      hardCapUsd: z.literal(0.01),
+      modelCeiling: z.literal('gpt-5.6-luna'),
+      searchCeiling: z.literal(0),
+      idempotencyKey: z.string().uuid(),
+      request: z.object({}).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      workflowCode: z.literal('systems-weekly-quality-platform'),
+      managerCode: z.literal('systems'),
+      hardCapUsd: z.literal(0.05),
+      modelCeiling: z.literal('gpt-5.6-luna'),
+      searchCeiling: z.literal(0),
+      idempotencyKey: z.string().uuid(),
+      request: z.object({}).strict(),
+    })
+    .strict(),
+]);
+
+const schema = z.union([onDemandSchema, systemsAcceptanceSchema]);
 
 export async function POST(request: Request) {
   const rejected = requireSameOrigin(request);

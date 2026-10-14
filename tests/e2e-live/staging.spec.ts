@@ -175,6 +175,266 @@ async function postAgentRuntime(
   }, body);
 }
 
+type SystemsWorkflowProof = {
+  workflowCode: 'systems-daily-cost-capacity' | 'systems-weekly-quality-platform';
+  executionMode: 'deterministic' | 'ai';
+  runId: string;
+  correlationId: string;
+  reportId: string;
+  status: 'succeeded';
+  model: 'none' | 'gpt-5.6-luna';
+  aiCallCount: number;
+  actualCostUsd: number;
+  hardCapUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+  searchCalls: number;
+  notificationDelivery: 'not_sent';
+};
+
+async function launchSystemsWorkflow(
+  page: import('@playwright/test').Page,
+  workflowCode: SystemsWorkflowProof['workflowCode'],
+  hardCapUsd: number,
+): Promise<{ runId: string; idempotencyKey: string }> {
+  const idempotencyKey = randomUUID();
+  const result = await page.evaluate(
+    async ({ workflowCode: code, hardCap, idempotency }) => {
+      const response = await fetch('/api/workflows/launch', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          workflowCode: code,
+          managerCode: 'systems',
+          hardCapUsd: hardCap,
+          modelCeiling: 'gpt-5.6-luna',
+          searchCeiling: 0,
+          idempotencyKey: idempotency,
+          request: {},
+        }),
+      });
+      return {
+        status: response.status,
+        body: (await response.json()) as { runId?: string; code?: string },
+      };
+    },
+    { workflowCode, hardCap: hardCapUsd, idempotency: idempotencyKey },
+  );
+  expect(result.status, `Systems launch failed: ${result.body.code ?? 'unknown'}`).toBe(201);
+  expect(result.body.runId).toMatch(/^[0-9a-f-]{36}$/i);
+  return { runId: result.body.runId!, idempotencyKey };
+}
+
+async function waitForSuccessfulRun(runId: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const rows = await serviceRows<{ status: string; error_code: string | null }>(
+      'workflow_runs',
+      `select=status,error_code&id=eq.${runId}`,
+    );
+    const status = rows[0]?.status;
+    if (status === 'succeeded') return;
+    if (status === 'failed' || status === 'dead_letter' || status === 'cancelled') {
+      throw new Error(
+        `Systems workflow ${runId} reached ${status} (${rows[0]?.error_code ?? 'no_code'}).`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+  throw new Error(
+    `Systems workflow ${runId} did not reach success before the bounded wait expired.`,
+  );
+}
+
+async function assertResponsesBudgetPreflight(): Promise<void> {
+  const models = await serviceRows<{ id: string; model_id: string; enabled: boolean }>(
+    'ai_model_catalog',
+    'select=id,model_id,enabled&model_id=eq.gpt-5.6-luna',
+  );
+  expect(models).toHaveLength(1);
+  expect(models[0]).toMatchObject({ model_id: 'gpt-5.6-luna', enabled: true });
+  const pricing = await serviceRows<{
+    input_per_million: number | string;
+    output_per_million: number | string;
+    web_search_per_call: number | string;
+  }>(
+    'model_pricing',
+    `select=input_per_million,output_per_million,web_search_per_call&model_id=eq.${models[0]!.id}&effective_from=lte.${encodeURIComponent(new Date().toISOString())}&order=effective_from.desc&limit=1`,
+  );
+  expect(pricing).toHaveLength(1);
+  const estimatedCost =
+    Math.ceil(
+      ((8_000 * Number(pricing[0]!.input_per_million) +
+        2_000 * Number(pricing[0]!.output_per_million)) /
+        1_000_000) *
+        1_000_000,
+    ) / 1_000_000;
+  expect(Number(pricing[0]!.web_search_per_call)).toBeGreaterThanOrEqual(0);
+  expect(estimatedCost).toBeGreaterThan(0);
+  expect(estimatedCost).toBeLessThanOrEqual(0.05);
+  expect(estimatedCost).toBeLessThan(2);
+}
+
+async function proveSystemsWorkflow(
+  page: import('@playwright/test').Page,
+  workflowCode: SystemsWorkflowProof['workflowCode'],
+  executionMode: SystemsWorkflowProof['executionMode'],
+  hardCapUsd: number,
+): Promise<SystemsWorkflowProof> {
+  const { runId, idempotencyKey } = await launchSystemsWorkflow(page, workflowCode, hardCapUsd);
+  await waitForSuccessfulRun(runId, executionMode === 'ai' ? 8 * 60_000 : 2 * 60_000);
+  const runIdentity = await serviceRows<{ correlation_id: string }>(
+    'workflow_runs',
+    `select=correlation_id&id=eq.${runId}`,
+  );
+  expect(runIdentity).toHaveLength(1);
+  const correlationId = runIdentity[0]!.correlation_id;
+
+  const [runs, jobs, reports, traces, calls, notifications, steps, budgets, actions] =
+    await Promise.all([
+      serviceRows<{
+        id: string;
+        status: string;
+        trigger: string;
+        correlation_id: string;
+        idempotency_key: string;
+      }>('workflow_runs', `select=id,status,trigger,correlation_id,idempotency_key&id=eq.${runId}`),
+      serviceRows<{ status: string }>('job_queue', `select=status&run_id=eq.${runId}`),
+      serviceRows<{
+        id: string;
+        status: string;
+        structured_metrics: Record<string, unknown>;
+      }>('reports', `select=id,status,structured_metrics&run_id=eq.${runId}`),
+      serviceRows<{ event_type: string; correlation_id: string }>(
+        'trace_events',
+        `select=event_type,correlation_id&correlation_id=eq.${correlationId}`,
+      ),
+      serviceRows<{
+        id: string;
+        status: string;
+        model_id: string;
+        actual_cost: number | string;
+        actual_input_tokens: number;
+        actual_output_tokens: number;
+        search_calls: number;
+        run_id: string;
+      }>(
+        'ai_calls',
+        `select=id,status,model_id,actual_cost,actual_input_tokens,actual_output_tokens,search_calls,run_id&run_id=eq.${runId}`,
+      ),
+      serviceRows<{ status: string; type: string }>(
+        'notifications',
+        `select=status,type&dedupe_key=eq.workflow-report:${runId}`,
+      ),
+      serviceRows<{ step_code: string; status: string }>(
+        'run_step_attempts',
+        `select=step_code,status&run_id=eq.${runId}&order=attempt_number.asc`,
+      ),
+      serviceRows<{
+        hard_cap: number | string;
+        reserved_amount: number | string;
+        actual_amount: number | string;
+        model_ceiling: string;
+        search_ceiling: number;
+        status: string;
+      }>(
+        'on_demand_budgets',
+        `select=hard_cap,reserved_amount,actual_amount,model_ceiling,search_ceiling,status&run_id=eq.${runId}`,
+      ),
+      serviceRows<{ status: string }>('actions', `select=status&run_id=eq.${runId}`),
+    ]);
+
+  expect(runs).toHaveLength(1);
+  expect(runs[0]).toMatchObject({
+    id: runId,
+    status: 'succeeded',
+    trigger: 'on_demand',
+    idempotency_key: idempotencyKey,
+  });
+  expect(jobs).toEqual([{ status: 'succeeded' }]);
+  expect(reports).toHaveLength(1);
+  expect(reports[0]?.status).toBe('validated');
+  const sections = await serviceRows<{
+    code: string;
+    evidence_references: unknown[];
+  }>(
+    'report_sections',
+    `select=code,evidence_references&report_id=eq.${reports[0]!.id}&order=display_order.asc`,
+  );
+  expect(sections.length).toBeGreaterThan(0);
+  expect(sections.every((section) => section.evidence_references.length > 0)).toBe(true);
+  expect(traces.every((event) => event.correlation_id === correlationId)).toBe(true);
+  expect(
+    traces.some((event) =>
+      executionMode === 'deterministic'
+        ? event.event_type === 'workflow_completed'
+        : event.event_type === 'ai_report_validated',
+    ),
+  ).toBe(true);
+  expect(traces.some((event) => event.event_type === 'workflow_notification_decision')).toBe(true);
+  expect(steps.length).toBeGreaterThan(0);
+  expect(steps.every((step) => step.status === 'succeeded')).toBe(true);
+
+  if (executionMode === 'deterministic') {
+    expect(budgets).toHaveLength(1);
+    expect(budgets[0]).toMatchObject({
+      hard_cap: hardCapUsd,
+      model_ceiling: 'gpt-5.6-luna',
+      reserved_amount: 0,
+      actual_amount: 0,
+      search_ceiling: 0,
+      status: 'active',
+    });
+    expect(calls).toHaveLength(0);
+    expect(reports[0]?.structured_metrics).toMatchObject({
+      execution_mode: 'deterministic',
+      ai_called: false,
+      validation: 'passed',
+    });
+  } else {
+    expect(budgets).toHaveLength(1);
+    expect(budgets[0]).toMatchObject({
+      hard_cap: hardCapUsd,
+      model_ceiling: 'gpt-5.6-luna',
+      search_ceiling: 0,
+      status: 'active',
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ status: 'succeeded', search_calls: 0 });
+    expect(Number(calls[0]?.actual_cost)).toBeGreaterThan(0);
+    expect(Number(calls[0]?.actual_cost)).toBeLessThanOrEqual(hardCapUsd);
+    expect(Number(budgets[0]?.actual_amount)).toBeCloseTo(Number(calls[0]?.actual_cost), 6);
+    expect(calls[0]?.actual_input_tokens).toBeGreaterThan(0);
+    expect(calls[0]?.actual_output_tokens).toBeGreaterThan(0);
+    const modelRows = await serviceRows<{ model_id: string }>(
+      'ai_model_catalog',
+      `select=model_id&id=eq.${calls[0]!.model_id}`,
+    );
+    expect(modelRows).toEqual([{ model_id: 'gpt-5.6-luna' }]);
+    expect(reports[0]?.structured_metrics).toHaveProperty('ai_call_id', calls[0]?.id);
+  }
+  expect(notifications).toHaveLength(1);
+  expect(notifications[0]?.status).toBe('pending');
+  expect(actions.every(({ status }) => status !== 'executed')).toBe(true);
+
+  return {
+    workflowCode,
+    executionMode,
+    runId,
+    correlationId,
+    reportId: reports[0]!.id,
+    status: 'succeeded',
+    model: executionMode === 'ai' ? 'gpt-5.6-luna' : 'none',
+    aiCallCount: calls.length,
+    actualCostUsd: executionMode === 'ai' ? Number(calls[0]?.actual_cost) : 0,
+    hardCapUsd,
+    inputTokens: executionMode === 'ai' ? calls[0]!.actual_input_tokens : 0,
+    outputTokens: executionMode === 'ai' ? calls[0]!.actual_output_tokens : 0,
+    searchCalls: executionMode === 'ai' ? calls[0]!.search_calls : 0,
+    notificationDelivery: 'not_sent',
+  };
+}
+
 if (process.env.LIVE_E2E_FIXTURE_MISMATCH_EXPECTED_COUNT !== undefined) {
   test('deliberate staging fixture mismatch emits redacted failure diagnostics', async ({
     page,
@@ -193,10 +453,10 @@ if (process.env.LIVE_E2E_FIXTURE_MISMATCH_EXPECTED_COUNT !== undefined) {
   });
 }
 
-test('staging live journey proves unauthorised rejection, manual MFA, AAL2, Travel persistence and both engines', async ({
+test('staging live journey proves unauthorised rejection, manual MFA, AAL2 and both AI-15 workflows', async ({
   page,
 }, testInfo) => {
-  testInfo.setTimeout(10 * 60_000);
+  testInfo.setTimeout(18 * 60_000);
   await page.goto('/login');
   const candidateSha = process.env.LIVE_E2E_CANDIDATE_SHA;
   expect(candidateSha).toMatch(/^[a-f0-9]{40}$/i);
@@ -411,6 +671,7 @@ test('staging live journey proves unauthorised rejection, manual MFA, AAL2, Trav
   expect(aal2Probe.httpStatus).toBe(200);
   expect(aal2Probe.body).toMatchObject({ status: 400, code: 'invalid_plan' });
   expect(aal2Probe.body.probeId).toMatch(/^[0-9a-f-]{36}$/i);
+  await assertResponsesBudgetPreflight();
 
   const fixtureIds = (process.env.LIVE_E2E_FIXTURE_IDS ?? '')
     .split(',')
@@ -434,99 +695,35 @@ test('staging live journey proves unauthorised rejection, manual MFA, AAL2, Trav
     expect(rows[0]?.cancelled_at).toBeTruthy();
   }
 
-  await page.goto('/travel');
-  await expect(page.getByRole('heading', { name: 'Travel Planning' })).toBeVisible();
-  await page.getByLabel('Purpose').fill('AI7-LIVE-E2E-FIXTURE-v1');
-  await page
-    .getByLabel('Constraints')
-    .fill('Zero web searches, no external calls, cancel immediately after queue verification.');
-  await page.getByLabel(/Hard cap/).fill('0.01');
-  await page.getByLabel(/Search ceiling/).fill('0');
-
-  await page.route('**/api/workflows/launch', async (route) => {
-    const body = route.request().postDataJSON() as Record<string, unknown>;
-    if (typeof body.idempotencyKey !== 'string' || !body.idempotencyKey.startsWith('a17e')) {
-      body.idempotencyKey = `a17e${crypto.randomUUID().slice(4)}`;
-    }
-    body.modelCeiling = 'gpt-5.6-luna';
-    await route.continue({ postData: JSON.stringify(body) });
-  });
-
-  const launchResponsePromise = page.waitForResponse(
-    (response) =>
-      response.url().endsWith('/api/workflows/launch') && response.request().method() === 'POST',
+  const deterministicProof = await proveSystemsWorkflow(
+    page,
+    'systems-daily-cost-capacity',
+    'deterministic',
+    0.01,
   );
-  await page.getByRole('button', { name: 'Queue research' }).click();
-  const launchResponse = await launchResponsePromise;
-  expect(launchResponse.status()).toBe(201);
-  const launchBody = launchResponse.request().postDataJSON() as Record<string, unknown>;
-  expect(launchBody.idempotencyKey).toMatch(/^a17e[0-9a-f-]{32}$/i);
-  const launchResult = (await launchResponse.json()) as { runId: string };
-  expect(launchBody).toMatchObject({
-    workflowCode: 'travel-on-demand-plan',
-    managerCode: 'travel',
-    hardCapUsd: 0.01,
-    modelCeiling: 'gpt-5.6-luna',
-    searchCeiling: 0,
-  });
-  expect(launchResult.runId).toMatch(/^[0-9a-f-]{36}$/i);
-  await expect(
-    page.getByText('Request queued. Its approved cap and brief are retained with the run.'),
-  ).toBeVisible();
+  const responsesProof = await proveSystemsWorkflow(
+    page,
+    'systems-weekly-quality-platform',
+    'ai',
+    0.05,
+  );
+  expect(deterministicProof.aiCallCount).toBe(0);
+  expect(responsesProof.aiCallCount).toBe(1);
+  expect(responsesProof.model).toBe('gpt-5.6-luna');
+  expect(deterministicProof.searchCalls + responsesProof.searchCalls).toBe(0);
+  expect(deterministicProof.actualCostUsd + responsesProof.actualCostUsd).toBeLessThan(2);
 
-  const replayResponse = await page.evaluate(async (body) => {
-    const response = await fetch('/api/workflows/launch', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    return { status: response.status, body: (await response.json()) as { runId?: string } };
-  }, launchBody);
-  expect(replayResponse.status).toBe(201);
-  expect(replayResponse.body.runId).toBe(launchResult.runId);
-
-  await page.goto('/operations');
-  await expect(page.getByRole('heading', { name: 'Operations Centre' })).toBeVisible();
-  const queuedRun = page.locator('article').filter({ hasText: 'travel-on-demand-plan' });
-  await expect(queuedRun.getByRole('button', { name: 'Cancel run' })).toBeVisible();
-  await queuedRun.getByRole('button', { name: 'Cancel run' }).click();
-  await expect(queuedRun.getByText('Cancelled. Refresh to update the queue.')).toBeVisible();
-  const [cancelledRun, cancelledJob, runs] = await Promise.all([
-    serviceRows<{ status: string; cancelled_at: string | null }>(
-      'workflow_runs',
-      `select=status,cancelled_at&id=eq.${launchResult.runId}`,
-    ),
-    serviceRows<{ status: string }>('job_queue', `select=status&run_id=eq.${launchResult.runId}`),
-    serviceRows<{
-      id: string;
-      status: string;
-      trigger: string;
-      correlation_id: string;
-      idempotency_key: string;
-    }>(
-      'workflow_runs',
-      `select=id,status,trigger,correlation_id,idempotency_key&id=eq.${launchResult.runId}`,
-    ),
-  ]);
-  expect(cancelledRun[0]).toMatchObject({ status: 'cancelled' });
-  expect(cancelledRun[0]?.cancelled_at).toBeTruthy();
-  expect(cancelledJob[0]?.status).toBe('cancelled');
-  expect(runs).toHaveLength(1);
-  expect(runs[0]).toMatchObject({
-    id: launchResult.runId,
-    status: 'cancelled',
-    trigger: 'on_demand',
-    idempotency_key: launchBody.idempotencyKey,
-  });
   await page.goto('/ai-traces-audit');
   await expect(page.getByRole('heading', { name: 'AI Traces & Audit' })).toBeVisible();
-  const correlatedTrace = page
-    .getByRole('region', { name: 'Workflow traces' })
-    .locator('article')
-    .filter({ hasText: runs[0]!.correlation_id });
-  await expect(
-    correlatedTrace.getByRole('heading', { name: 'on_demand_run_queued' }),
-  ).toBeVisible();
+  for (const proof of [deterministicProof, responsesProof]) {
+    const correlatedTrace = page
+      .getByRole('region', { name: 'Workflow traces' })
+      .locator('article')
+      .filter({ hasText: proof.correlationId });
+    await expect(
+      correlatedTrace.getByRole('heading', { name: 'on_demand_run_queued' }),
+    ).toBeVisible();
+  }
 
   let webkitProbeId: string | null = null;
   const webkitBrowser = await webkit.launch({ headless: true });
@@ -588,11 +785,16 @@ test('staging live journey proves unauthorised rejection, manual MFA, AAL2, Trav
         releaseVersion: 'passed',
       },
       correlationIds: [
-        launchResult.runId,
-        runs[0]!.correlation_id,
+        deterministicProof.runId,
+        deterministicProof.correlationId,
+        deterministicProof.reportId,
+        responsesProof.runId,
+        responsesProof.correlationId,
+        responsesProof.reportId,
         aal2Probe.body.probeId!,
         webkitProbeId,
       ],
+      workflowRuns: [deterministicProof, responsesProof],
       acceptedAt: new Date().toISOString(),
     });
   }

@@ -31,6 +31,40 @@ const candidateTreeSha = 'c'.repeat(40);
 const mergeCommitSha = 'd'.repeat(40);
 const repositoryFullName = 'Matthew-Irving5/AI-Operations';
 const origin = 'https://ai-operations-staging.ai-operations.workers.dev';
+const ai15WorkflowRuns = [
+  {
+    workflowCode: 'systems-daily-cost-capacity',
+    executionMode: 'deterministic',
+    runId: 'run-deterministic-1',
+    correlationId: 'trace-deterministic-1',
+    reportId: 'report-deterministic-1',
+    status: 'succeeded',
+    model: 'none',
+    aiCallCount: 0,
+    actualCostUsd: 0,
+    hardCapUsd: 0.01,
+    inputTokens: 0,
+    outputTokens: 0,
+    searchCalls: 0,
+    notificationDelivery: 'not_sent',
+  },
+  {
+    workflowCode: 'systems-weekly-quality-platform',
+    executionMode: 'ai',
+    runId: 'run-ai-1',
+    correlationId: 'trace-ai-1',
+    reportId: 'report-ai-1',
+    status: 'succeeded',
+    model: 'gpt-5.6-luna',
+    aiCallCount: 1,
+    actualCostUsd: 0.02,
+    hardCapUsd: 0.05,
+    inputTokens: 1000,
+    outputTokens: 500,
+    searchCalls: 0,
+    notificationDelivery: 'not_sent',
+  },
+] as const;
 
 function deployment(overrides: Partial<StagingDeploymentEvidence> = {}): StagingDeploymentEvidence {
   return {
@@ -85,6 +119,7 @@ function hostedSuiteEvidence(overrides: Record<string, unknown> = {}) {
       releaseVersion: 'passed',
     },
     correlationIds: ['run-uuid-1', 'trace-uuid-1'],
+    workflowRuns: ai15WorkflowRuns,
     acceptedAt: '2026-09-29T10:00:00.000Z',
     ...overrides,
   };
@@ -112,6 +147,7 @@ type RawStagingAcceptance = {
   humanMfa: 'user-completed';
   checks: StagingAcceptanceEvidence['checks'];
   correlationIds: string[];
+  workflowRuns: NonNullable<StagingAcceptanceEvidence['workflowRuns']>;
   acceptedAt: string;
 };
 
@@ -135,6 +171,7 @@ function stagingAcceptanceInput(
       releaseVersion: 'passed',
     },
     correlationIds: ['run-1', 'trace-1'],
+    workflowRuns: ai15WorkflowRuns,
     acceptedAt: '2026-09-29T10:00:00.000Z',
     ...overrides,
   };
@@ -464,6 +501,17 @@ test('staging acceptance status is pending until complete current-head hosted ev
   assert.equal(success.acceptance?.candidateTreeSha, candidateTreeSha);
   assert.equal(success.acceptance?.pullRequestNumber, 152);
   assert.equal(success.acceptance?.acceptanceProfile, 'auth-browser');
+  const existingAuthBrowserSuite = createStagingAcceptanceStatus({
+    candidateSha,
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    state: 'success',
+    deployment: candidateDeploymentEvidence(),
+    hostedSuite: hostedSuiteEvidence({ workflowRuns: undefined }),
+  });
+  assert.equal(existingAuthBrowserSuite.status.state, 'success');
+  assert.equal(existingAuthBrowserSuite.acceptance?.workflowRuns, undefined);
   assert.ok(success.acceptance && !Array.isArray(success.acceptance.checks));
   if (success.acceptance && !Array.isArray(success.acceptance.checks)) {
     assert.equal(success.acceptance.checks.migrations, 'passed');
@@ -559,6 +607,7 @@ test('headed acceptance evidence is written only for the complete MFA and dual-b
       releaseVersion: 'passed',
     },
     correlationIds: ['run-uuid-1', 'trace-uuid-1'],
+    workflowRuns: ai15WorkflowRuns,
     acceptedAt: '2026-09-29T10:00:00.000Z',
   };
   try {
@@ -592,6 +641,7 @@ test('headed acceptance evidence is written only for the complete MFA and dual-b
       { ...validInput, candidateTreeSha: 'invalid-tree' },
       { ...validInput, pullRequestNumber: 0 },
       { ...validInput, deploymentRunId: '' },
+      { ...validInput, workflowRuns: undefined },
     ];
     for (const [index, invalidInput] of invalidInputs.entries()) {
       const rejectedPath = join(directory, `rejected-${index}.json`);
@@ -1113,8 +1163,17 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(
     hostedSuite,
-    /deployed Worker release matches the exact hosted acceptance candidate[\s\S]*page\.request\.get\(new URL\('\/api\/release',[\s\S]*releaseSha: candidateSha\?\.toLowerCase\(\)/,
+    /staging live journey proves unauthorised rejection, manual MFA, AAL2 and both AI-15 workflows/,
   );
+  assert.match(
+    hostedSuite,
+    /proveSystemsWorkflow\([\s\S]*'systems-daily-cost-capacity',[\s\S]*'deterministic',[\s\S]*0\.01[\s\S]*proveSystemsWorkflow\([\s\S]*'systems-weekly-quality-platform',[\s\S]*'ai',[\s\S]*0\.05/,
+  );
+  assert.match(
+    hostedSuite,
+    /modelCeiling: 'gpt-5\.6-luna'[\s\S]*searchCeiling: 0[\s\S]*request: \{\}/,
+  );
+  assert.match(hostedSuite, /workflowRuns: \[deterministicProof, responsesProof\]/);
   assert.match(hostedSuite, /let webkitProbeId: string \| null = null/);
   assert.match(hostedSuite, /webkitProbeId = webkitProbe\.body\.probeId/);
   assert.match(hostedSuite, /Hosted acceptance evidence requires the passing WebKit probe result/);
@@ -1251,6 +1310,10 @@ test('hosted acceptance profile requires real MFA only for auth-browser changes'
   assert.equal(
     selectHostedAcceptanceProfile(['supabase/functions/feedback-submit/index.ts']),
     'targeted',
+  );
+  assert.equal(
+    selectHostedAcceptanceProfile(['apps/web/app/api/workflows/launch/route.ts']),
+    'auth-browser',
   );
   assert.equal(selectHostedAcceptanceProfile(['docs/testing/local-autonomous-qa.md']), 'targeted');
 });

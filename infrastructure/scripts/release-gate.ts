@@ -9,6 +9,65 @@ const RunIdSchema = z.string().regex(/^[1-9][0-9]{0,19}$/);
 const SafeIdSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9:-]{0,127}$/);
 const DiagnosticCodeSchema = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/);
 const StageOrigin = z.literal('https://ai-operations-staging.ai-operations.workers.dev');
+export const Ai15WorkflowProofsSchema = z
+  .tuple([
+    z
+      .object({
+        workflowCode: z.literal('systems-daily-cost-capacity'),
+        executionMode: z.literal('deterministic'),
+        runId: SafeIdSchema,
+        correlationId: SafeIdSchema,
+        reportId: SafeIdSchema,
+        status: z.literal('succeeded'),
+        model: z.literal('none'),
+        aiCallCount: z.literal(0),
+        actualCostUsd: z.literal(0),
+        hardCapUsd: z.literal(0.01),
+        inputTokens: z.literal(0),
+        outputTokens: z.literal(0),
+        searchCalls: z.literal(0),
+        notificationDelivery: z.literal('not_sent'),
+      })
+      .strict(),
+    z
+      .object({
+        workflowCode: z.literal('systems-weekly-quality-platform'),
+        executionMode: z.literal('ai'),
+        runId: SafeIdSchema,
+        correlationId: SafeIdSchema,
+        reportId: SafeIdSchema,
+        status: z.literal('succeeded'),
+        model: z.literal('gpt-5.6-luna'),
+        aiCallCount: z.literal(1),
+        actualCostUsd: z.number().positive().max(0.05),
+        hardCapUsd: z.literal(0.05),
+        inputTokens: z.number().int().positive(),
+        outputTokens: z.number().int().positive(),
+        searchCalls: z.literal(0),
+        notificationDelivery: z.literal('not_sent'),
+      })
+      .strict(),
+  ])
+  .superRefine(([deterministic, ai], context) => {
+    if (deterministic.runId === ai.runId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'workflow run IDs must be distinct',
+      });
+    }
+    if (deterministic.correlationId === ai.correlationId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'workflow correlation IDs must be distinct',
+      });
+    }
+    if (ai.actualCostUsd >= 2) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'aggregate live cost exceeds policy',
+      });
+    }
+  });
 
 const StagingDeploymentSchema = z
   .object({
@@ -75,6 +134,7 @@ const AcceptanceEvidenceSchema = z
     humanMfa: z.enum(['user-completed', 'not-required']),
     checks: z.union([CapabilityResultsSchema, TargetedCapabilityResultsSchema]),
     correlationIds: z.array(SafeIdSchema).max(20),
+    workflowRuns: Ai15WorkflowProofsSchema.optional(),
     acceptedAt: z.string().datetime({ offset: true }),
     accepted: z.literal(true),
   })
@@ -148,6 +208,7 @@ const StagingAcceptanceInputSchema = z
     humanMfa: z.literal('user-completed'),
     checks: CapabilityResultsSchema,
     correlationIds: z.array(SafeIdSchema).max(20),
+    workflowRuns: Ai15WorkflowProofsSchema.optional(),
     acceptedAt: z.string().datetime({ offset: true }),
   })
   .strict();
@@ -190,6 +251,7 @@ const AuthBrowserStagingSuiteEvidenceSchema = z
       })
       .strict(),
     correlationIds: z.array(SafeIdSchema).min(1).max(20),
+    workflowRuns: Ai15WorkflowProofsSchema.optional(),
     acceptedAt: z.string().datetime({ offset: true }),
   })
   .strict();
@@ -381,6 +443,7 @@ export function selectHostedAcceptanceProfile(files: string[]): HostedAcceptance
     const file = raw.replaceAll('\\', '/');
     return (
       file.startsWith('apps/web/app/api/auth/') ||
+      file === 'apps/web/app/api/workflows/launch/route.ts' ||
       file.startsWith('apps/web/app/login/') ||
       file.startsWith('apps/web/app/mfa/') ||
       file.startsWith('apps/web/lib/auth') ||
@@ -419,6 +482,9 @@ export type StagingReadyEvidence = z.infer<typeof ReadyEvidenceSchema>;
 export type StagingAcceptanceEvidence = z.infer<typeof AcceptanceEvidenceSchema>;
 export type ProductionPromotionEvidence = z.infer<typeof ProductionPromotionEvidenceSchema>;
 export type ProductionSmokeEvidence = z.infer<typeof ProductionSmokeSchema>;
+export interface LatestRequiredWorkflowRunsEvidence {
+  workflowRuns: z.infer<typeof WorkflowRunSchema>[];
+}
 export type ReleaseGateCommand =
   | 'candidate-readiness'
   | 'staging-status'
@@ -431,6 +497,8 @@ export interface ReleaseGateCommandResult {
   exitCode: 0 | 1;
   evidence:
     | CandidateReadinessEvidence
+    | LatestRequiredWorkflowRunsEvidence
+    | ReturnType<typeof inspectStagingAcceptanceLease>
     | StagingAcceptanceStatusEvidence
     | StagingReadyEvidence
     | StagingAcceptanceEvidence
@@ -558,6 +626,9 @@ export function createStagingAcceptanceStatus(input: unknown): StagingAcceptance
     humanMfa: parsed.hostedSuite.humanMfa,
     checks,
     correlationIds: parsed.hostedSuite.correlationIds,
+    ...(parsed.hostedSuite.acceptanceProfile === 'auth-browser'
+      ? { workflowRuns: parsed.hostedSuite.workflowRuns }
+      : {}),
     acceptedAt: parsed.hostedSuite.acceptedAt,
     accepted: true,
   });
