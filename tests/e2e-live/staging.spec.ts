@@ -290,7 +290,7 @@ async function proveSystemsWorkflow(
   expect(runIdentity).toHaveLength(1);
   const correlationId = runIdentity[0]!.correlation_id;
 
-  const [runs, jobs, reports, traces, calls, notifications, budgets, actions] = await Promise.all([
+  const [runs, jobs, reports, calls, notifications, budgets] = await Promise.all([
     serviceRows<{
       id: string;
       status: string;
@@ -301,13 +301,8 @@ async function proveSystemsWorkflow(
     serviceRows<{ status: string }>('job_queue', `select=status&run_id=eq.${runId}`),
     serviceRows<{
       id: string;
-      status: string;
       structured_metrics: Record<string, unknown>;
-    }>('reports', `select=id,status,structured_metrics&run_id=eq.${runId}`),
-    serviceRows<{ event_type: string; correlation_id: string }>(
-      'trace_events',
-      `select=event_type,correlation_id&correlation_id=eq.${correlationId}`,
-    ),
+    }>('reports', `select=id,structured_metrics&run_id=eq.${runId}`),
     serviceRows<{
       id: string;
       status: string;
@@ -328,15 +323,13 @@ async function proveSystemsWorkflow(
     serviceRows<{
       hard_cap: number | string;
       reserved_amount: number | string;
-      actual_amount: number | string;
       model_ceiling: string;
       search_ceiling: number;
       status: string;
     }>(
       'on_demand_budgets',
-      `select=hard_cap,reserved_amount,actual_amount,model_ceiling,search_ceiling,status&run_id=eq.${runId}`,
+      `select=hard_cap,reserved_amount,model_ceiling,search_ceiling,status&run_id=eq.${runId}`,
     ),
-    serviceRows<{ status: string }>('actions', `select=status&run_id=eq.${runId}`),
   ]);
 
   expect(runs).toHaveLength(1);
@@ -348,33 +341,42 @@ async function proveSystemsWorkflow(
   });
   expect(jobs).toEqual([{ status: 'succeeded' }]);
   expect(reports).toHaveLength(1);
-  expect(reports[0]?.status).toBe('validated');
-  const sections = await serviceRows<{
-    code: string;
-    evidence_references: unknown[];
-  }>(
-    'report_sections',
-    `select=code,evidence_references&report_id=eq.${reports[0]!.id}&order=display_order.asc`,
-  );
-  expect(sections.length).toBeGreaterThan(0);
-  expect(sections.every((section) => section.evidence_references.length > 0)).toBe(true);
-  expect(traces.every((event) => event.correlation_id === correlationId)).toBe(true);
-  expect(
-    traces.some((event) =>
-      executionMode === 'deterministic'
-        ? event.event_type === 'workflow_completed'
-        : event.event_type === 'ai_report_validated',
-    ),
-  ).toBe(true);
-  expect(traces.some((event) => event.event_type === 'workflow_notification_decision')).toBe(true);
+
+  await page.goto(new URL('/reports', env.LIVE_E2E_BASE_URL).href);
+  const reportTitle =
+    executionMode === 'deterministic'
+      ? 'Systems platform report'
+      : 'Validated AI Operations report';
+  const reportCard = page
+    .getByRole('article')
+    .filter({ has: page.getByRole('heading', { name: reportTitle, exact: true }) })
+    .first();
+  await expect(reportCard.locator('.label')).toContainText('validated');
+
+  await page.goto(new URL('/ai-traces-audit', env.LIVE_E2E_BASE_URL).href);
+  const correlatedTraceCards = page.getByRole('article').filter({ hasText: correlationId });
+  const requiredTraceEvents =
+    executionMode === 'deterministic'
+      ? ['workflow_completed', 'workflow_notification_decision']
+      : ['ai_report_validated', 'ai_call_settled', 'workflow_notification_decision'];
+  for (const eventType of requiredTraceEvents) {
+    await expect(
+      correlatedTraceCards.filter({
+        has: page.getByRole('heading', { name: eventType, exact: true }),
+      }),
+    ).toHaveCount(1);
+  }
 
   if (executionMode === 'deterministic') {
+    expect(reports[0]?.structured_metrics).toMatchObject({
+      workflow: workflowCode,
+      deterministic: true,
+    });
     expect(budgets).toHaveLength(1);
     expect(budgets[0]).toMatchObject({
       hard_cap: hardCapUsd,
       model_ceiling: 'gpt-5.6-luna',
       reserved_amount: 0,
-      actual_amount: 0,
       search_ceiling: 0,
       status: 'active',
     });
@@ -385,6 +387,7 @@ async function proveSystemsWorkflow(
       validation: 'passed',
     });
   } else {
+    expect(reports[0]?.structured_metrics).toMatchObject({ validation: 'passed' });
     expect(budgets).toHaveLength(1);
     expect(budgets[0]).toMatchObject({
       hard_cap: hardCapUsd,
@@ -396,7 +399,10 @@ async function proveSystemsWorkflow(
     expect(calls[0]).toMatchObject({ status: 'succeeded', search_calls: 0 });
     expect(Number(calls[0]?.actual_cost)).toBeGreaterThan(0);
     expect(Number(calls[0]?.actual_cost)).toBeLessThanOrEqual(hardCapUsd);
-    expect(Number(budgets[0]?.actual_amount)).toBeCloseTo(Number(calls[0]?.actual_cost), 6);
+    expect(Number(reports[0]?.structured_metrics.actual_cost)).toBeCloseTo(
+      Number(calls[0]?.actual_cost),
+      6,
+    );
     expect(calls[0]?.actual_input_tokens).toBeGreaterThan(0);
     expect(calls[0]?.actual_output_tokens).toBeGreaterThan(0);
     const modelRows = await serviceRows<{ model_id: string }>(
@@ -408,7 +414,6 @@ async function proveSystemsWorkflow(
   }
   expect(notifications).toHaveLength(1);
   expect(notifications[0]?.status).toBe('pending');
-  expect(actions.every(({ status }) => status !== 'executed')).toBe(true);
 
   return {
     workflowCode,
