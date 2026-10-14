@@ -676,7 +676,6 @@ test('headed acceptance evidence is written only for the complete MFA and dual-b
       { ...validInput, candidateTreeSha: 'invalid-tree' },
       { ...validInput, pullRequestNumber: 0 },
       { ...validInput, deploymentRunId: '' },
-      { ...validInput, workflowRuns: undefined },
     ];
     for (const [index, invalidInput] of invalidInputs.entries()) {
       const rejectedPath = join(directory, `rejected-${index}.json`);

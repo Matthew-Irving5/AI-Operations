@@ -38,7 +38,7 @@ const EvidenceWriteInputSchema = z
       .array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9:-]{0,127}$/))
       .min(1)
       .max(20),
-    workflowRuns: Ai15WorkflowProofsSchema,
+    workflowRuns: Ai15WorkflowProofsSchema.optional(),
     acceptedAt: z.string().datetime({ offset: true }),
   })
   .strict();

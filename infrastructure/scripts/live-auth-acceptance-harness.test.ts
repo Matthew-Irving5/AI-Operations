@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { describe, it } from 'node:test';
 import { liveAuthScheduleAction } from './live-auth-schedule-action.js';
+import { writeLiveStagingAcceptanceEvidence } from './live-acceptance-evidence.js';
 
 const runnerPath = resolve('infrastructure/scripts/run-live-e2e.ts');
 const journeyPath = resolve('tests/e2e-live/auth-acceptance.spec.ts');
@@ -136,6 +138,49 @@ describe('live auth acceptance harness', () => {
     assert.match(journey, /liveAuthScheduleAction\(initialStatusLabel\)/);
     assert.match(journey, /staleAttemptUsedMfaGate: false/);
     assert.match(journey, /browserChecks: \{ chromium: 'passed', webkit: 'passed' \}/);
+  });
+
+  it('writes auth-browser evidence without unrelated AI-15 workflow proofs', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'ai13-auth-evidence-'));
+    const evidencePath = join(directory, 'acceptance.json');
+    try {
+      await writeLiveStagingAcceptanceEvidence(evidencePath, {
+        candidateSha: '1'.repeat(40),
+        candidateTreeSha: '2'.repeat(40),
+        pullRequestNumber: 167,
+        deploymentRunId: '38595680998',
+        stagingOrigin: 'https://ai-operations-staging.ai-operations.workers.dev',
+        completeSuite: 'passed',
+        manualMfaChallengeObserved: true,
+        browserChecks: { chromium: 'passed', webkit: 'passed' },
+        checks: {
+          authAal2: 'passed',
+          safeRead: 'passed',
+          safeWrite: 'passed',
+          ui: 'passed',
+          edgeFunctions: 'passed',
+          releaseVersion: 'passed',
+        },
+        freshMfaAction: {
+          staleDenied: 'passed',
+          staleAttemptUsedMfaGate: false,
+          freshReauthAccepted: 'passed',
+        },
+        correlationIds: ['probe-auth-evidence'],
+        acceptedAt: new Date().toISOString(),
+      });
+
+      const evidence = JSON.parse(await readFile(evidencePath, 'utf8')) as Record<string, unknown>;
+      assert.equal(evidence.acceptanceProfile, 'auth-browser');
+      assert.equal(Object.hasOwn(evidence, 'workflowRuns'), false);
+      assert.deepEqual(evidence.freshMfaAction, {
+        staleDenied: 'passed',
+        staleAttemptUsedMfaGate: false,
+        freshReauthAccepted: 'passed',
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it('proves stale denial without a gate before a real TOTP gate authorizes a same-state action', async () => {
