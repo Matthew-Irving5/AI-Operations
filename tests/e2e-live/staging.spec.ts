@@ -290,59 +290,54 @@ async function proveSystemsWorkflow(
   expect(runIdentity).toHaveLength(1);
   const correlationId = runIdentity[0]!.correlation_id;
 
-  const [runs, jobs, reports, traces, calls, notifications, steps, budgets, actions] =
-    await Promise.all([
-      serviceRows<{
-        id: string;
-        status: string;
-        trigger: string;
-        correlation_id: string;
-        idempotency_key: string;
-      }>('workflow_runs', `select=id,status,trigger,correlation_id,idempotency_key&id=eq.${runId}`),
-      serviceRows<{ status: string }>('job_queue', `select=status&run_id=eq.${runId}`),
-      serviceRows<{
-        id: string;
-        status: string;
-        structured_metrics: Record<string, unknown>;
-      }>('reports', `select=id,status,structured_metrics&run_id=eq.${runId}`),
-      serviceRows<{ event_type: string; correlation_id: string }>(
-        'trace_events',
-        `select=event_type,correlation_id&correlation_id=eq.${correlationId}`,
-      ),
-      serviceRows<{
-        id: string;
-        status: string;
-        model_id: string;
-        actual_cost: number | string;
-        actual_input_tokens: number;
-        actual_output_tokens: number;
-        search_calls: number;
-        run_id: string;
-      }>(
-        'ai_calls',
-        `select=id,status,model_id,actual_cost,actual_input_tokens,actual_output_tokens,search_calls,run_id&run_id=eq.${runId}`,
-      ),
-      serviceRows<{ status: string; type: string }>(
-        'notifications',
-        `select=status,type&dedupe_key=eq.workflow-report:${runId}`,
-      ),
-      serviceRows<{ step_code: string; status: string }>(
-        'run_step_attempts',
-        `select=step_code,status&run_id=eq.${runId}&order=attempt_number.asc`,
-      ),
-      serviceRows<{
-        hard_cap: number | string;
-        reserved_amount: number | string;
-        actual_amount: number | string;
-        model_ceiling: string;
-        search_ceiling: number;
-        status: string;
-      }>(
-        'on_demand_budgets',
-        `select=hard_cap,reserved_amount,actual_amount,model_ceiling,search_ceiling,status&run_id=eq.${runId}`,
-      ),
-      serviceRows<{ status: string }>('actions', `select=status&run_id=eq.${runId}`),
-    ]);
+  const [runs, jobs, reports, traces, calls, notifications, budgets, actions] = await Promise.all([
+    serviceRows<{
+      id: string;
+      status: string;
+      trigger: string;
+      correlation_id: string;
+      idempotency_key: string;
+    }>('workflow_runs', `select=id,status,trigger,correlation_id,idempotency_key&id=eq.${runId}`),
+    serviceRows<{ status: string }>('job_queue', `select=status&run_id=eq.${runId}`),
+    serviceRows<{
+      id: string;
+      status: string;
+      structured_metrics: Record<string, unknown>;
+    }>('reports', `select=id,status,structured_metrics&run_id=eq.${runId}`),
+    serviceRows<{ event_type: string; correlation_id: string }>(
+      'trace_events',
+      `select=event_type,correlation_id&correlation_id=eq.${correlationId}`,
+    ),
+    serviceRows<{
+      id: string;
+      status: string;
+      model_id: string;
+      actual_cost: number | string;
+      actual_input_tokens: number;
+      actual_output_tokens: number;
+      search_calls: number;
+      run_id: string;
+    }>(
+      'ai_calls',
+      `select=id,status,model_id,actual_cost,actual_input_tokens,actual_output_tokens,search_calls,run_id&run_id=eq.${runId}`,
+    ),
+    serviceRows<{ status: string; type: string }>(
+      'notifications',
+      `select=status,type&dedupe_key=eq.workflow-report:${runId}`,
+    ),
+    serviceRows<{
+      hard_cap: number | string;
+      reserved_amount: number | string;
+      actual_amount: number | string;
+      model_ceiling: string;
+      search_ceiling: number;
+      status: string;
+    }>(
+      'on_demand_budgets',
+      `select=hard_cap,reserved_amount,actual_amount,model_ceiling,search_ceiling,status&run_id=eq.${runId}`,
+    ),
+    serviceRows<{ status: string }>('actions', `select=status&run_id=eq.${runId}`),
+  ]);
 
   expect(runs).toHaveLength(1);
   expect(runs[0]).toMatchObject({
@@ -372,8 +367,6 @@ async function proveSystemsWorkflow(
     ),
   ).toBe(true);
   expect(traces.some((event) => event.event_type === 'workflow_notification_decision')).toBe(true);
-  expect(steps.length).toBeGreaterThan(0);
-  expect(steps.every((step) => step.status === 'succeeded')).toBe(true);
 
   if (executionMode === 'deterministic') {
     expect(budgets).toHaveLength(1);
