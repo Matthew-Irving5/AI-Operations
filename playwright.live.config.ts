@@ -13,7 +13,12 @@ export default defineConfig({
     trace: 'off',
     screenshot: 'off',
     video: 'off',
-    launchOptions: { headless: process.env.LIVE_E2E_MANUAL_MFA !== 'true' },
+    launchOptions: {
+      headless: process.env.LIVE_E2E_MANUAL_MFA !== 'true',
+      ...(process.env.LIVE_E2E_MANUAL_MFA === 'true'
+        ? { args: ['--window-position=40,40', '--window-size=1280,900'] }
+        : {}),
+    },
   },
   projects: [{ name: 'staging-chromium', use: { ...devices['Desktop Chrome'] } }],
 });

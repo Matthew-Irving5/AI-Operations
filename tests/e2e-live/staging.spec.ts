@@ -72,17 +72,6 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('deployed Worker release matches the exact hosted acceptance candidate', async ({ page }) => {
-  const candidateSha = process.env.LIVE_E2E_CANDIDATE_SHA;
-  expect(candidateSha).toMatch(/^[a-f0-9]{40}$/i);
-  const response = await page.request.get(new URL('/api/release', env.LIVE_E2E_BASE_URL).href);
-  expect(response.status()).toBe(200);
-  expect(await response.json()).toEqual({
-    schemaVersion: 1,
-    releaseSha: candidateSha?.toLowerCase(),
-  });
-});
-
 test.afterEach(async ({ page }, testInfo) => {
   if (testInfo.status === testInfo.expectedStatus) return;
   const screenshot = testInfo.outputPath('failure-redacted.png');
@@ -146,7 +135,7 @@ async function signInWithFreshMfa(page: import('@playwright/test').Page): Promis
     );
   } else {
     process.stdout.write(
-      '\nManual sign-in checkpoint: sign into the staging account and complete its real MFA challenge in this open browser. The same browser journey resumes automatically after Overview loads.\n',
+      '\nManual sign-in checkpoint: use this separate Chrome for Testing window, not the in-chat browser. Sign into the staging account here and complete Microsoft Authenticator when the MFA page appears. This same browser journey resumes automatically after Overview loads.\n',
     );
   }
   await expect(page).toHaveURL(/\/overview(?:\?|$)/, { timeout: 5 * 60_000 });
@@ -209,6 +198,17 @@ test('staging live journey proves unauthorised rejection, manual MFA, AAL2, Trav
 }, testInfo) => {
   testInfo.setTimeout(10 * 60_000);
   await page.goto('/login');
+  const candidateSha = process.env.LIVE_E2E_CANDIDATE_SHA;
+  expect(candidateSha).toMatch(/^[a-f0-9]{40}$/i);
+  const releaseResponse = await page.request.get(
+    new URL('/api/release', env.LIVE_E2E_BASE_URL).href,
+  );
+  expect(releaseResponse.status()).toBe(200);
+  expect(await releaseResponse.json()).toEqual({
+    schemaVersion: 1,
+    releaseSha: candidateSha?.toLowerCase(),
+  });
+
   const unauthenticated = await page.evaluate(async () => {
     const result = await fetch('/api/workflows/launch', {
       method: 'POST',
