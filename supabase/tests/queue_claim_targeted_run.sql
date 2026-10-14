@@ -1,5 +1,5 @@
 begin;
-select plan(12);
+select plan(13);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -36,6 +36,11 @@ values
   ('00000000-0000-4000-8000-000000001892', '00000000-0000-0000-0000-000000000101', '00000000-0000-4000-8000-000000001881', 'workflow_execute', 4, 'targeted-queue-request', now()),
   ('00000000-0000-4000-8000-000000001893', '00000000-0000-0000-0000-000000000101', '00000000-0000-4000-8000-000000001881', 'notification_delivery', 0, 'targeted-notification', now());
 
+select is(
+  (select status::text from public.job_queue where id = '00000000-0000-4000-8000-000000001892'),
+  'queued',
+  'durable targeted work remains queued and recoverable when immediate dispatch does not claim it'
+);
 select is(
   (select id from public.claim_job_queue_for_run('worker-targeted', '00000000-0000-4000-8000-000000001881')),
   '00000000-0000-4000-8000-000000001892'::uuid,
