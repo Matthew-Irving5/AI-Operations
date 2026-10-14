@@ -6,7 +6,7 @@ const jobSchema = z.object({
   id: uuidSchema,
   run_id: uuidSchema,
   job_type: z.string().min(1).max(100),
-}).strict();
+});
 
 const executionResponseSchema = z.discriminatedUnion("outcome", [
   z.object({

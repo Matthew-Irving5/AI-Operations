@@ -145,6 +145,37 @@ Deno.test("job worker passes only the claimed run ID to ai-execute", async () =>
   });
 });
 
+Deno.test("job worker accepts the full job_queue row returned by the claim RPC", async () => {
+  const deps = dependencies({
+    claim: () =>
+      Promise.resolve({
+        data: [{
+          id: jobId,
+          user_id: "00000000-0000-4000-8000-000000001804",
+          run_id: runId,
+          job_type: "workflow_execute",
+          payload: { runId },
+          priority: 2,
+          available_at: "2026-10-14T11:00:00Z",
+          lease_owner: "worker-a",
+          lease_expires_at: "2026-10-14T11:05:00Z",
+          attempt_count: 1,
+          maximum_attempts: 3,
+          status: "leased",
+          deduplication_key: `workflow-run:${runId}`,
+          created_at: "2026-10-14T10:59:00Z",
+          completed_at: null,
+        }],
+        error: false,
+      }),
+  });
+
+  const response = await deps.handler(request({ workerId: "worker-a" }));
+
+  assertEquals(response.status, 200);
+  assertEquals(deps.executions, [runId]);
+});
+
 Deno.test("job worker uses an exclusive run-targeted claim when requested", async () => {
   const deps = dependencies();
   const response = await deps.handler(request({
