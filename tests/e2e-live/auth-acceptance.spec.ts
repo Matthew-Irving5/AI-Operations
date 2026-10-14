@@ -7,7 +7,6 @@ import {
 
 const env = parseLiveE2eEnvironment(process.env, 'auth-acceptance');
 const userId = process.env.LIVE_E2E_USER_ID;
-const scheduleId = process.env.LIVE_E2E_SCHEDULE_ID;
 const candidateSha = process.env.LIVE_E2E_CANDIDATE_SHA;
 const candidateTreeSha = process.env.LIVE_E2E_CANDIDATE_TREE_SHA;
 const pullRequestNumber = Number(process.env.LIVE_E2E_PULL_REQUEST_NUMBER);
@@ -35,7 +34,6 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
 }, testInfo) => {
   testInfo.setTimeout(15 * 60_000);
   const targetUser = requiredUuid(userId, 'LIVE_E2E_USER_ID');
-  const targetSchedule = requiredUuid(scheduleId, 'LIVE_E2E_SCHEDULE_ID');
   expect(candidateSha).toMatch(/^[a-f0-9]{40}$/i);
   expect(candidateTreeSha).toMatch(/^[a-f0-9]{40}$/i);
   expect(pullRequestNumber).toBeGreaterThan(0);
@@ -60,13 +58,6 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
   });
   await page.goto('/login');
   await expect(page.getByRole('heading', { name: 'AI Operations' })).toBeVisible();
-  const unauthenticated = await page.request.post(
-    new URL('/api/schedules/update', env.LIVE_E2E_BASE_URL).href,
-    {
-      data: { scheduleId: targetSchedule, enabled: false },
-    },
-  );
-  expect(unauthenticated.status()).toBe(401);
   if (env.LIVE_E2E_EMAIL && env.LIVE_E2E_PASSWORD) {
     await page.getByLabel('Email').fill(env.LIVE_E2E_EMAIL);
     await page.getByLabel('Password').fill(env.LIVE_E2E_PASSWORD);
@@ -83,16 +74,27 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
   await expect(page).toHaveURL(/\/overview(?:\?|$)/, { timeout: 5 * 60_000 });
   expect(manualMfaChallengeObserved).toBe(true);
 
-  const scheduleQuery = new URLSearchParams({
-    select: 'id,enabled',
-    id: `eq.${targetSchedule}`,
-    user_id: `eq.${targetUser}`,
-  });
-  const initialSchedules = await readRows<{ id: string; enabled: boolean }>(
-    'workflow_schedules',
-    scheduleQuery,
+  await page.goto('/automations');
+  const enabledCards = page.locator('article[data-schedule-id]').filter({ hasText: /^Enabled ·/ });
+  await expect(
+    enabledCards.first(),
+    'an enabled schedule must be visible to the signed-in owner',
+  ).toBeVisible();
+  const card = enabledCards.first();
+  const targetSchedule = requiredUuid(
+    await card.getAttribute('data-schedule-id'),
+    'owned schedule id',
   );
-  expect(initialSchedules).toEqual([{ id: targetSchedule, enabled: false }]);
+  await expect(
+    card.getByRole('button', { name: 'Disable schedule (fresh MFA required)' }),
+  ).toBeVisible();
+  await expect(card.getByText(/^Enabled ·/)).toBeVisible();
+
+  const unauthenticated = await page.request.post(
+    new URL('/api/schedules/update', env.LIVE_E2E_BASE_URL).href,
+    { data: { scheduleId: targetSchedule, enabled: false } },
+  );
+  expect(unauthenticated.status()).toBe(401);
 
   const eventQuery = new URLSearchParams({
     select: 'verified_at',
@@ -115,21 +117,26 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
   expect(events).toHaveLength(1);
   expect(Date.now() - Date.parse(events[0]!.verified_at)).toBeGreaterThan(5 * 60_000);
 
-  const staleAttempt = await page.evaluate(
-    async (body) => {
-      const response = await fetch('/api/schedules/update', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      return { status: response.status, body: (await response.json()) as { code?: string } };
-    },
-    { scheduleId: targetSchedule, enabled: false },
-  );
+  const staleRequest = { scheduleId: targetSchedule, enabled: false };
+  const staleAttempt = await page.evaluate(async (body) => {
+    const response = await fetch('/api/schedules/update', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return {
+      status: response.status,
+      usedMfaGate: Object.prototype.hasOwnProperty.call(body, 'mfaGateId'),
+      body: (await response.json()) as { code?: string },
+    };
+  }, staleRequest);
   expect(staleAttempt).toMatchObject({ status: 403, body: { code: 'fresh_mfa_required' } });
-  expect(
-    await readRows<{ id: string; enabled: boolean }>('workflow_schedules', scheduleQuery),
-  ).toEqual([{ id: targetSchedule, enabled: false }]);
+  expect(staleAttempt.usedMfaGate).toBe(false);
+  await expect(card.getByText(/^Enabled ·/)).toBeVisible();
+  await expect(card.getByLabel('Six-digit code')).toHaveCount(0);
+  await expect(card.getByText('Fresh MFA is required before changing this schedule.')).toHaveCount(
+    0,
+  );
 
   const probe = await page.evaluate(async () => {
     const response = await fetch('/api/auth/mfa/aal2-probe', {
@@ -142,9 +149,6 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
   expect(probe.status).toBe(200);
   expect(probe.body.probeId).toMatch(/^[a-zA-Z0-9][a-zA-Z0-9:-]{0,127}$/);
 
-  await page.goto('/automations');
-  const card = page.locator(`[data-schedule-id="${targetSchedule}"]`);
-  await expect(card).toBeVisible();
   await card.getByRole('button', { name: 'Disable schedule (fresh MFA required)' }).click();
   await expect(card.getByLabel('Six-digit code')).toBeVisible();
   process.stdout.write(
@@ -168,9 +172,10 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
   expect(updateResponse.status()).toBe(200);
   expect(await updateResponse.json()).toMatchObject({ schedule: { enabled: false } });
   await expect(card.getByText('Schedule disabled.')).toBeVisible();
-  expect(
-    await readRows<{ id: string; enabled: boolean }>('workflow_schedules', scheduleQuery),
-  ).toEqual([{ id: targetSchedule, enabled: false }]);
+  await page.reload();
+  await expect(
+    page.locator(`[data-schedule-id="${targetSchedule}"]`).getByText(/^Disabled ·/),
+  ).toBeVisible();
 
   const webkitBrowser = await webkit.launch({ headless: false });
   try {

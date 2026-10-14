@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { describe, it } from 'node:test';
+
+const runnerPath = resolve('infrastructure/scripts/run-live-e2e.ts');
+const journeyPath = resolve('tests/e2e-live/auth-acceptance.spec.ts');
+
+describe('live auth acceptance harness', () => {
+  it('never uses the service role to read user-owned schedules', async () => {
+    const runner = await readFile(runnerPath, 'utf8');
+    const journey = await readFile(journeyPath, 'utf8');
+
+    assert.doesNotMatch(runner, /rest\/v1\/workflow_schedules/);
+    assert.doesNotMatch(runner, /LIVE_E2E_SCHEDULE_ID/);
+    assert.doesNotMatch(journey, /readRows<[^>]+>\(\s*['"]workflow_schedules['"]/);
+    assert.match(journey, /article\[data-schedule-id\].*Enabled/);
+  });
+
+  it('proves stale denial without an MFA gate before the real fresh-MFA action', async () => {
+    const journey = await readFile(journeyPath, 'utf8');
+
+    assert.match(journey, /const staleRequest = \{ scheduleId: targetSchedule, enabled: false \}/);
+    assert.match(
+      journey,
+      /usedMfaGate: Object\.prototype\.hasOwnProperty\.call\(body, 'mfaGateId'\)/,
+    );
+    assert.match(journey, /status: 403, body: \{ code: 'fresh_mfa_required' \}/);
+    assert.match(journey, /expect\(staleAttempt\.usedMfaGate\)\.toBe\(false\)/);
+    assert.match(journey, /Disable schedule \(fresh MFA required\)/);
+  });
+});

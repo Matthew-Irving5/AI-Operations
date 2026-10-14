@@ -151,33 +151,9 @@ async function main(): Promise<void> {
     const profiles = (await profileResponse.json()) as Array<{ id: string; is_allowed: boolean }>;
     if (profiles.length !== 1 || !profiles[0]?.is_allowed)
       throw new Error('The allowlisted staging profile is missing or ambiguous.');
-    const scheduleQuery = new URLSearchParams({
-      select: 'id,enabled',
-      user_id: `eq.${profiles[0].id}`,
-      enabled: 'eq.false',
-      order: 'id.asc',
-      limit: '1',
-    });
-    const scheduleResponse = await fetch(
-      `${stagingTarget.supabaseUrl}/rest/v1/workflow_schedules?${scheduleQuery}`,
-      {
-        headers: {
-          apikey: env.LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY,
-          authorization: `Bearer ${env.LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY}`,
-        },
-      },
-    );
-    if (!scheduleResponse.ok)
-      throw new Error(
-        `Staging schedule fixture check failed with HTTP ${scheduleResponse.status}.`,
-      );
-    const schedules = (await scheduleResponse.json()) as Array<{ id: string; enabled: boolean }>;
-    if (schedules.length !== 1 || schedules[0]?.enabled !== false)
-      throw new Error('A disabled staging schedule is required for the no-state-change MFA proof.');
     process.env.LIVE_E2E_USER_ID = profiles[0].id;
-    process.env.LIVE_E2E_SCHEDULE_ID = schedules[0].id;
     process.stdout.write(
-      'Staging auth prerequisites passed: one allowlisted user and one disabled schedule selected for an idempotent update proof.\n',
+      'Staging auth prerequisite passed: one allowlisted user selected; owned schedules will be read through the authenticated UI.\n',
     );
   }
   if (mode === 'fixtures' || mode === 'suite' || mode === 'fixture-mismatch') {
