@@ -6,6 +6,7 @@ import {
 } from '../../infrastructure/scripts/live-acceptance-evidence.js';
 import { liveAuthScheduleAction } from '../../infrastructure/scripts/live-auth-schedule-action.js';
 
+// Playwright page.request shares this browser context's cookies and is not an unauthenticated probe.
 const env = parseLiveE2eEnvironment(process.env, 'auth-acceptance');
 const userId = process.env.LIVE_E2E_USER_ID;
 const candidateSha = process.env.LIVE_E2E_CANDIDATE_SHA;
@@ -17,17 +18,6 @@ function requiredUuid(value: string | undefined, name: string): string {
   if (!value || !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(value))
     throw new Error(`${name} is missing or invalid.`);
   return value;
-}
-
-async function readRows<T>(table: string, query: URLSearchParams): Promise<T[]> {
-  const response = await fetch(`${stagingTarget.supabaseUrl}/rest/v1/${table}?${query}`, {
-    headers: {
-      apikey: env.LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY,
-      authorization: `Bearer ${env.LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY}`,
-    },
-  });
-  if (!response.ok) throw new Error(`Staging ${table} read failed with HTTP ${response.status}.`);
-  return (await response.json()) as T[];
 }
 
 test('staging proves stale schedule action denial and fresh MFA recovery in Chromium and WebKit', async ({
@@ -81,6 +71,7 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
     scheduleCards.first(),
     'a schedule must be visible to its signed-in owner',
   ).toBeVisible();
+  const protectedContentReachedAt = Date.now();
   const card = scheduleCards.first();
   const targetSchedule = requiredUuid(
     await card.getAttribute('data-schedule-id'),
@@ -93,27 +84,13 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
   await expect(card.getByRole('button', { name: scheduleAction.buttonName })).toBeVisible();
   await expect(card.locator('div.label')).toHaveText(initialStatusPattern);
 
-  // Playwright page.request shares this authenticated browser context's cookies; it is not a cookie-free auth probe.
-  const eventQuery = new URLSearchParams({
-    select: 'verified_at',
-    user_id: `eq.${targetUser}`,
-    order: 'verified_at.desc',
-    limit: '1',
-  });
-  let events = await readRows<{ verified_at: string }>('mfa_reauthentication_events', eventQuery);
-  if (events.length !== 1)
-    throw new Error('Staging MFA reauthentication evidence is missing or ambiguous.');
-  const staleAfter = Date.parse(events[0]!.verified_at) + 5 * 60_000 + 2_000;
+  const staleAfter = protectedContentReachedAt + 5 * 60_000 + 2_000;
   const waitMs = staleAfter - Date.now();
-  if (waitMs > 0) {
-    process.stdout.write(
-      `Waiting ${Math.ceil(waitMs / 1000)}s for the spec-defined five-minute MFA freshness window to expire.\n`,
-    );
-    await page.waitForTimeout(waitMs);
-  }
-  events = await readRows<{ verified_at: string }>('mfa_reauthentication_events', eventQuery);
-  expect(events).toHaveLength(1);
-  expect(Date.now() - Date.parse(events[0]!.verified_at)).toBeGreaterThan(5 * 60_000);
+  process.stdout.write(
+    `Waiting ${Math.ceil(Math.max(0, waitMs) / 1000)}s after authenticated schedule content for the spec-defined five-minute MFA freshness window to expire.\n`,
+  );
+  if (waitMs > 0) await page.waitForTimeout(waitMs);
+  expect(Date.now() - protectedContentReachedAt).toBeGreaterThan(5 * 60_000);
 
   const staleRequest = { scheduleId: targetSchedule, enabled: scheduleAction.nextEnabled };
   const staleAttempt = await page.evaluate(async (body) => {

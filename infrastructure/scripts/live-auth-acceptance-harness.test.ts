@@ -39,9 +39,27 @@ describe('live auth acceptance harness', () => {
 
     assert.match(
       journey,
-      /page\.request shares this authenticated browser context's cookies; it is not a cookie-free auth probe/,
+      /page\.request shares this browser context's cookies and is not an unauthenticated probe/,
     );
     assert.doesNotMatch(journey, /page\.request\.post\(/);
+  });
+
+  it('waits for MFA freshness to expire after authenticated protected content is visible', async () => {
+    const journey = await readFile(journeyPath, 'utf8');
+    const scheduleVisible = journey.indexOf('a schedule must be visible to its signed-in owner');
+    const timerStarts = journey.indexOf('const protectedContentReachedAt = Date.now()');
+
+    assert.doesNotMatch(journey, /readRows(?:<[^>]+>)?\(\s*['"]mfa_reauthentication_events['"]/);
+    assert.ok(scheduleVisible >= 0, 'the protected schedule content assertion must exist');
+    assert.ok(
+      timerStarts > scheduleVisible,
+      'the stale timer must start after protected content is visible',
+    );
+    assert.match(journey, /protectedContentReachedAt \+ 5 \* 60_000 \+ 2_000/);
+    assert.match(
+      journey,
+      /expect\(Date\.now\(\) - protectedContentReachedAt\)\.toBeGreaterThan\(5 \* 60_000\)/,
+    );
   });
 
   it('proves stale denial without an MFA gate before the real fresh-MFA action', async () => {
