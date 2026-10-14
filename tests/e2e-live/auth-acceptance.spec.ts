@@ -119,9 +119,13 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
       headers: { 'content-type': 'application/json' },
       body: '{}',
     });
-    return { status: response.status, body: (await response.json()) as { probeId?: string } };
+    return {
+      status: response.status,
+      body: (await response.json()) as { probeId?: string; status?: number; code?: string },
+    };
   });
   expect(probe.status).toBe(200);
+  expect(probe.body).toMatchObject({ status: 400, code: 'invalid_plan' });
   expect(probe.body.probeId).toMatch(/^[a-zA-Z0-9][a-zA-Z0-9:-]{0,127}$/);
 
   await card.getByRole('button', { name: scheduleAction.buttonName }).click();
@@ -173,9 +177,13 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
         headers: { 'content-type': 'application/json' },
         body: '{}',
       });
-      return { status: response.status, body: (await response.json()) as { probeId?: string } };
+      return {
+        status: response.status,
+        body: (await response.json()) as { probeId?: string; status?: number; code?: string },
+      };
     });
     expect(webkitProbe.status).toBe(200);
+    expect(webkitProbe.body).toMatchObject({ status: 400, code: 'invalid_plan' });
     expect(webkitProbe.body.probeId).toMatch(/^[a-zA-Z0-9][a-zA-Z0-9:-]{0,127}$/);
 
     const outputPath = process.env.LIVE_E2E_ACCEPTANCE_OUTPUT_PATH;

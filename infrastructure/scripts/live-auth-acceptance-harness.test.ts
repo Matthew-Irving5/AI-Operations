@@ -7,6 +7,15 @@ import { liveAuthScheduleAction } from './live-auth-schedule-action.js';
 const runnerPath = resolve('infrastructure/scripts/run-live-e2e.ts');
 const journeyPath = resolve('tests/e2e-live/auth-acceptance.spec.ts');
 
+function assertOrdered(source: string, markers: string[]) {
+  let previousIndex = -1;
+  for (const marker of markers) {
+    const index = source.indexOf(marker, previousIndex + 1);
+    assert.ok(index > previousIndex, `missing or out-of-order auth journey marker: ${marker}`);
+    previousIndex = index;
+  }
+}
+
 describe('live auth acceptance harness', () => {
   it('never uses the service role to read user-owned schedules', async () => {
     const runner = await readFile(runnerPath, 'utf8');
@@ -60,6 +69,61 @@ describe('live auth acceptance harness', () => {
       journey,
       /expect\(Date\.now\(\) - protectedContentReachedAt\)\.toBeGreaterThan\(5 \* 60_000\)/,
     );
+  });
+
+  it('pins the full authenticated journey context, state, and response matrix', async () => {
+    const [runner, journey] = await Promise.all([
+      readFile(runnerPath, 'utf8'),
+      readFile(journeyPath, 'utf8'),
+    ]);
+
+    assert.match(runner, /mode === 'auth-acceptance'[\s\S]*?rest\/v1\/app_users/);
+    assert.match(
+      runner,
+      /Staging auth profile check failed with HTTP \$\{profileResponse\.status\}/,
+    );
+    assert.match(runner, /profiles\.length !== 1 \|\| !profiles\[0\]\?\.is_allowed/);
+    assert.doesNotMatch(runner, /rest\/v1\/(?:workflow_schedules|mfa_reauthentication_events)/);
+    assert.doesNotMatch(
+      journey,
+      /rest\/v1\/(?:app_users|workflow_schedules|mfa_reauthentication_events)/,
+    );
+
+    assertOrdered(journey, [
+      "page.request.get(new URL('/api/release'",
+      'expect(release.status()).toBe(200)',
+      "new URL(frame.url()).pathname === '/mfa'",
+      "await page.goto('/login')",
+      'await expect(page).toHaveURL(/\\/overview',
+      'expect(manualMfaChallengeObserved).toBe(true)',
+      "await page.goto('/automations')",
+      "'a schedule must be visible to its signed-in owner'",
+      'const protectedContentReachedAt = Date.now()',
+      'await page.waitForTimeout(waitMs)',
+      'expect(Date.now() - protectedContentReachedAt).toBeGreaterThan(5 * 60_000)',
+      'const staleRequest = { scheduleId: targetSchedule, enabled: scheduleAction.nextEnabled }',
+      "method: 'POST'",
+      "body: { code: 'fresh_mfa_required' }",
+      'expect(staleAttempt.usedMfaGate).toBe(false)',
+      "await expect(card.locator('div.label')).toHaveText(initialStatusPattern)",
+      "await expect(card.getByLabel('Six-digit code')).toHaveCount(0)",
+      'expect(probe.status).toBe(200)',
+      "expect(probe.body).toMatchObject({ status: 400, code: 'invalid_plan' })",
+      "await card.getByRole('button', { name: scheduleAction.buttonName }).click()",
+      "await expect(card.getByLabel('Six-digit code')).toBeVisible()",
+      'expect(updateResponse.status()).toBe(200)',
+      'schedule: { enabled: scheduleAction.nextEnabled }',
+      'await page.reload()',
+      'const webkitBrowser = await webkit.launch({ headless: false })',
+      'storageState: await page.context().storageState()',
+      'expect(webkitProbe.status).toBe(200)',
+      "expect(webkitProbe.body).toMatchObject({ status: 400, code: 'invalid_plan' })",
+      'await writeLiveStagingAcceptanceEvidence(outputPath, {',
+    ]);
+
+    assert.match(journey, /liveAuthScheduleAction\(initialStatusLabel\)/);
+    assert.match(journey, /staleAttemptUsedMfaGate: false/);
+    assert.match(journey, /browserChecks: \{ chromium: 'passed', webkit: 'passed' \}/);
   });
 
   it('proves stale denial without an MFA gate before the real fresh-MFA action', async () => {
