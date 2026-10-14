@@ -22,16 +22,28 @@ async function body(response: Response): Promise<Record<string, unknown>> {
 }
 
 function request(
-  options: { method?: string; authorized?: boolean; workerId?: string } = {},
+  options: {
+    method?: string;
+    authorized?: boolean;
+    workerId?: string;
+    runId?: string;
+    rawBody?: string;
+  } = {},
 ): Request {
   const headers = new Headers();
   if (options.authorized !== false) headers.set("x-worker-secret", "valid");
   if (options.workerId !== undefined) {
     headers.set("x-worker-id", options.workerId);
   }
+  const requestBody = options.rawBody ??
+    (options.runId ? JSON.stringify({ runId: options.runId }) : undefined);
+  if (requestBody !== undefined) {
+    headers.set("content-type", "application/json");
+  }
   return new Request("https://local.test/job-worker", {
     method: options.method ?? "POST",
     headers,
+    body: requestBody,
   });
 }
 
@@ -46,6 +58,7 @@ function dependencies(
     errorCode: string | null;
   }>;
   executions: string[];
+  targetedClaims: Array<{ workerId: string; runId: string }>;
 } {
   const completions: Array<{
     jobId: string;
@@ -54,6 +67,7 @@ function dependencies(
     errorCode: string | null;
   }> = [];
   const executions: string[] = [];
+  const targetedClaims: Array<{ workerId: string; runId: string }> = [];
   const resolved: JobWorkerDependencies = {
     isAuthorized: () => true,
     claim: () =>
@@ -61,6 +75,13 @@ function dependencies(
         data: [{ id: jobId, run_id: runId, job_type: "workflow_execute" }],
         error: false,
       }),
+    claimForRun: (workerId, requestedRunId) => {
+      targetedClaims.push({ workerId, runId: requestedRunId });
+      return Promise.resolve({
+        data: [{ id: jobId, run_id: runId, job_type: "workflow_execute" }],
+        error: false,
+      });
+    },
     execute: (requestedRunId) => {
       executions.push(requestedRunId);
       return Promise.resolve({
@@ -83,6 +104,7 @@ function dependencies(
     handler: createJobWorkerHandler(resolved),
     completions,
     executions,
+    targetedClaims,
   };
 }
 
@@ -121,6 +143,73 @@ Deno.test("job worker passes only the claimed run ID to ai-execute", async () =>
     job: { id: jobId, runId },
     reportId,
   });
+});
+
+Deno.test("job worker accepts the full job_queue row returned by the claim RPC", async () => {
+  const deps = dependencies({
+    claim: () =>
+      Promise.resolve({
+        data: [{
+          id: jobId,
+          user_id: "00000000-0000-4000-8000-000000001804",
+          run_id: runId,
+          job_type: "workflow_execute",
+          payload: { runId },
+          priority: 2,
+          available_at: "2026-10-14T11:00:00Z",
+          lease_owner: "worker-a",
+          lease_expires_at: "2026-10-14T11:05:00Z",
+          attempt_count: 1,
+          maximum_attempts: 3,
+          status: "leased",
+          deduplication_key: `workflow-run:${runId}`,
+          created_at: "2026-10-14T10:59:00Z",
+          completed_at: null,
+        }],
+        error: false,
+      }),
+  });
+
+  const response = await deps.handler(request({ workerId: "worker-a" }));
+
+  assertEquals(response.status, 200);
+  assertEquals(deps.executions, [runId]);
+});
+
+Deno.test("job worker uses an exclusive run-targeted claim when requested", async () => {
+  const deps = dependencies();
+  const response = await deps.handler(request({
+    workerId: "workflow-launch:target",
+    runId,
+  }));
+
+  assertEquals(response.status, 200);
+  assertEquals(deps.targetedClaims, [{
+    workerId: "workflow-launch:target",
+    runId,
+  }]);
+  assertEquals(deps.executions, [runId]);
+});
+
+Deno.test("job worker rejects malformed targeted claims without claiming", async () => {
+  let claims = 0;
+  const deps = dependencies({
+    claim: () => {
+      claims += 1;
+      return Promise.resolve({ data: [], error: false });
+    },
+    claimForRun: () => {
+      claims += 1;
+      return Promise.resolve({ data: [], error: false });
+    },
+  });
+
+  const response = await deps.handler(request({
+    workerId: "worker-target",
+    rawBody: JSON.stringify({ runId: "not-a-uuid", extra: "rejected" }),
+  }));
+  assertEquals(response.status, 400);
+  assertEquals(claims, 0);
 });
 
 Deno.test("job worker maps retryable and terminal executor outcomes exactly", async () => {

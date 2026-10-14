@@ -18,6 +18,13 @@ Deno.serve(createJobWorkerHandler({
     });
     return { data, error: error !== null };
   },
+  claimForRun: async (workerId, runId) => {
+    const { data, error } = await service.rpc("claim_job_queue_for_run", {
+      p_worker_id: workerId,
+      p_run_id: runId,
+    });
+    return { data, error: error !== null };
+  },
   execute: async (runId) => {
     const { data, error } = await service.functions.invoke("ai-execute", {
       body: { runId },

@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { z } from 'zod';
-import { createHostedStagingSuiteEvidence } from './release-gate.js';
+import { Ai15WorkflowProofsSchema, createHostedStagingSuiteEvidence } from './release-gate.js';
 
 const EvidenceWriteInputSchema = z
   .object({
@@ -31,6 +31,7 @@ const EvidenceWriteInputSchema = z
       .array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9:-]{0,127}$/))
       .min(1)
       .max(20),
+    workflowRuns: Ai15WorkflowProofsSchema,
     acceptedAt: z.string().datetime({ offset: true }),
   })
   .strict();
@@ -52,6 +53,7 @@ export async function writeLiveStagingAcceptanceEvidence(
     humanMfa: 'user-completed',
     checks: input.checks,
     correlationIds: input.correlationIds,
+    workflowRuns: input.workflowRuns,
     acceptedAt: input.acceptedAt,
   });
   const temporaryPath = `${path}.tmp-${randomUUID()}`;

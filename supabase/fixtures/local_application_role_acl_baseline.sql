@@ -41,7 +41,7 @@ GRANT SELECT ON TABLE
     public.digital_plans, public.digital_scans, public.evidence_links, public.evidence_references, public.execution_receipts, public.execution_requests,
     public.finance_accounts, public.finance_categories, public.finance_close_periods, public.finance_sheet_adapters, public.finance_statements, public.finance_transactions,
     public.google_drive_files, public.google_messages, public.google_sync_requests, public.integration_cursors, public.inter_agent_replies, public.inter_agent_requests,
-    public.job_queue, public.location_preparation_rules, public.location_travel_rules, public.manager_capabilities, public.notifications, public.oauth_states,
+    public.job_queue, public.location_preparation_rules, public.location_travel_rules, public.manager_capabilities, public.model_pricing, public.notifications, public.oauth_states,
     public.onboarding_checklist_items, public.personal_locations, public.personal_profiles, public.prompt_templates, public.prompt_versions, public.routines,
     public.source_objects, public.time_preferences, public.webhook_events, public.worker_action_manifests, public.worker_devices, public.worker_heartbeats,
     public.workflow_definitions, public.workflow_runs
@@ -67,6 +67,18 @@ GRANT SELECT (approval_state, conversation_id, created_at, description, id, stat
   EXECUTE $sql$
 GRANT SELECT (code, id)
   ON TABLE public.managers TO service_role
+  $sql$;
+  EXECUTE $sql$
+GRANT SELECT (categories, created_at, id, positive, user_id)
+  ON TABLE public.feedback TO service_role
+  $sql$;
+  EXECUTE $sql$
+GRANT SELECT (expires_at, hard_cap, id, model_ceiling, reserved_amount, run_id, search_ceiling, status)
+  ON TABLE public.on_demand_budgets TO service_role
+  $sql$;
+  EXECUTE $sql$
+GRANT SELECT (id, run_id, structured_metrics)
+  ON TABLE public.reports TO service_role
   $sql$;
   EXECUTE $sql$
 REVOKE EXECUTE ON FUNCTION public.mobile_adapter_validation_issues(text, text, jsonb) FROM service_role

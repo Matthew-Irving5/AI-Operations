@@ -1,4 +1,60 @@
 begin;
+do $fixture$
+declare
+  owner_id uuid := '00000000-0000-0000-0000-000000000101';
+  owner_email text;
+begin
+  select (regexp_match(pg_get_constraintdef(oid), $pattern$'([^']+)'$pattern$))[1]
+    into owner_email
+  from pg_constraint
+  where conrelid = 'public.app_users'::regclass
+    and conname = 'app_users_email_check';
+
+  if not exists (select 1 from auth.users where id = owner_id) then
+    insert into auth.users (
+      instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+      raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+    ) values (
+      '00000000-0000-0000-0000-000000000000', owner_id,
+      'authenticated', 'authenticated', owner_email,
+      crypt('synthetic-only', gen_salt('bf')), now(), '{}'::jsonb, '{}'::jsonb,
+      now(), now()
+    );
+  end if;
+
+  insert into public.app_users(id, email, is_allowed)
+  select id, email, true from auth.users where id = owner_id
+  on conflict (id) do update set is_allowed = true;
+end;
+$fixture$;
+
+insert into public.workflow_runs(
+  id, user_id, workflow_definition_id, status, trigger, correlation_id,
+  idempotency_key, requested_at, completed_at
+)
+select
+  '00000000-0000-4000-8000-000000000303',
+  '00000000-0000-0000-0000-000000000101',
+  id, 'succeeded', 'schedule', '00000000-0000-4000-8000-000000000404',
+  'access-contract-synthetic-run', now() - interval '1 hour', now()
+from public.workflow_definitions
+where code = 'systems-daily-cost-capacity'
+on conflict do nothing;
+
+insert into public.reports(
+  id, user_id, run_id, report_type, title, summary, markdown,
+  structured_metrics, status
+)
+values (
+  '00000000-0000-4000-8000-000000000505',
+  '00000000-0000-0000-0000-000000000101',
+  '00000000-0000-4000-8000-000000000303',
+  'systems-daily-cost-capacity', 'Synthetic report',
+  'Synthetic report for access contract coverage.', '# Synthetic report',
+  '{"synthetic":true}'::jsonb, 'validated'
+)
+on conflict (id) do nothing;
+
 create temporary table expected_authenticated_access (
   table_name name primary key,
   select_grant boolean not null,
@@ -19,6 +75,7 @@ insert into expected_authenticated_access(table_name, select_grant, policy_name)
   ('ai_calls', true, 'own_ai_calls'),
   ('workflow_runs', true, 'own_runs'),
   ('job_queue', true, 'own_jobs'),
+  ('run_step_attempts', true, 'own_run_step_attempts'),
   ('data_freshness', true, 'own_freshness'),
   ('calendar_events', true, 'own_calendar_events'),
   ('reminders', true, 'own_reminders'),
@@ -47,7 +104,7 @@ insert into expected_authenticated_access(table_name, select_grant, policy_name)
   ('time_preferences', true, 'own_time_preferences'),
   ('worker_devices', false, 'own_worker_devices');
 
-select plan(25);
+select plan(26);
 
 select ok(
   not exists (
@@ -75,6 +132,11 @@ select ok(
     having count(policy.policyname) = 0
   ),
   'every exposed public table has at least one explicit row policy'
+);
+
+select ok(
+  not has_table_privilege('service_role', 'public.run_step_attempts', 'SELECT,INSERT,UPDATE,DELETE'),
+  'workflow stage attempts are accessed only through the server-owned stage RPC'
 );
 
 select ok(

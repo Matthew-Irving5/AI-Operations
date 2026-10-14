@@ -1,31 +1,27 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
+import { reportOutputSchema } from "../_shared/openai-contract.ts";
+import { createWorkflowExecutionHandler } from "./handler.ts";
+import { AI15_WORKFLOW_RUN_SELECT } from "./read-contract.ts";
+import { submitProviderResponse as submitProviderResponseWithRetry } from "./provider-submission.ts";
 import {
-  extractResponseOutputText,
-  redactedProviderUsage,
-  reportOutputSchema,
-  validateReportOutput,
-} from "../_shared/openai-contract.ts";
+  allowedActionTypesForWorkflow,
+  resolveWorkflowMode,
+  selectModelUnderCeiling,
+} from "./execution-policy.ts";
+import {
+  type ExecuteWorkflowOutcome,
+  loadTrustedWorkflowExecution,
+  type WorkflowExecutionSource,
+} from "./orchestration-contract.ts";
 
-const url = Deno.env.get("SUPABASE_URL") ?? "";
 const service = createClient(
-  url,
+  Deno.env.get("SUPABASE_URL") ?? "",
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
 );
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
-  });
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
-const isUuid = (value: unknown): value is string =>
-  typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(value);
-const isRequestId = (value: unknown): value is string =>
-  typeof value === "string" && /^[A-Za-z0-9._:-]{8,200}$/.test(value);
-const safeText = (value: unknown, max: number): value is string =>
-  typeof value === "string" && value.length > 0 && value.length <= max;
-const isRetryable = (status: number) =>
-  status === 408 || status === 409 || status === 429 || status >= 500;
+
 const timingSafeEqual = (left: string, right: string) => {
   if (left.length !== right.length) return false;
   let difference = 0;
@@ -34,99 +30,646 @@ const timingSafeEqual = (left: string, right: string) => {
   }
   return difference === 0;
 };
-const isAuthorisedInternal = (request: Request) => {
-  const workerSecret = Deno.env.get("WORKER_SECRET") ?? "";
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  const workerAuthorised = workerSecret.length > 0 &&
-    timingSafeEqual(request.headers.get("x-worker-secret") ?? "", workerSecret);
-  const serviceAuthorised = serviceKey.length > 0 &&
-    timingSafeEqual(
-      request.headers.get("authorization") ?? "",
-      `Bearer ${serviceKey}`,
-    );
-  return workerAuthorised || serviceAuthorised;
-};
 
-async function sha256(value: string): Promise<string> {
-  const bytes = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(value),
+const outcomeFor = (
+  runId: string,
+  outcome: "retryable_failure" | "terminal_failure",
+  errorCode: string,
+): ExecuteWorkflowOutcome => ({ runId, outcome, errorCode });
+
+async function submitProviderResponse(
+  runId: string,
+  responseId: string,
+): Promise<{ id: string; status: string } | null> {
+  return await submitProviderResponseWithRetry(
+    runId,
+    responseId,
+    async (candidateRunId, candidateResponseId) =>
+      await service.rpc("submit_workflow_job_response", {
+        p_run_id: candidateRunId,
+        p_response_id: candidateResponseId,
+      }),
   );
-  return Array.from(
-    new Uint8Array(bytes),
-    (byte) => byte.toString(16).padStart(2, "0"),
-  ).join("");
 }
 
-type ExecutionRequest = Readonly<{
-  runId: string;
-  promptCode: string;
-  model: "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-5.6-sol";
-  input: string;
-  evidence: ReadonlyArray<Readonly<{ id: string; source: string }>>;
-  estimatedCost: number;
-  requestId: string;
-  maxAttempts: number;
-  background: boolean;
-}>;
+async function successOutcomeForExistingReport(
+  runId: string,
+): Promise<ExecuteWorkflowOutcome | null> {
+  const result = await service.from("reports").select("id").eq("run_id", runId)
+    .maybeSingle();
+  return result.error || typeof result.data?.id !== "string"
+    ? null
+    : { runId, outcome: "succeeded", reportId: result.data.id };
+}
 
-function parseRequest(value: unknown): ExecutionRequest | null {
-  if (
-    !isRecord(value) || !isUuid(value.runId) ||
-    !safeText(value.promptCode, 100) ||
-    !["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"].includes(
-      String(value.model),
-    ) ||
-    !safeText(value.input, 24_000) || !Number.isFinite(value.estimatedCost) ||
-    (value.estimatedCost as number) < 0 ||
-    (value.estimatedCost as number) > 2 ||
-    !isRequestId(value.requestId) || !Number.isInteger(value.maxAttempts) ||
-    (value.maxAttempts as number) < 1 || (value.maxAttempts as number) > 2 ||
-    typeof value.background !== "boolean" ||
-    !Array.isArray(value.evidence) ||
-    value.evidence.length < 1 || value.evidence.length > 50
-  ) return null;
-  const evidence = value.evidence.map((item) => {
-    if (
-      !isRecord(item) || !safeText(item.id, 200) || !safeText(item.source, 500)
-    ) return null;
-    return { id: item.id, source: item.source };
-  });
-  if (evidence.some((item) => item === null)) return null;
+const relationRecord = (value: unknown): Record<string, unknown> | null => {
+  const relation = Array.isArray(value) ? value[0] : value;
+  return isRecord(relation) ? relation : null;
+};
+
+function executionSource(): WorkflowExecutionSource {
   return {
-    runId: value.runId,
-    promptCode: value.promptCode,
-    model: value.model as ExecutionRequest["model"],
-    input: value.input,
-    evidence: evidence as Array<{ id: string; source: string }>,
-    estimatedCost: value.estimatedCost as number,
-    requestId: value.requestId,
-    maxAttempts: value.maxAttempts as number,
-    background: value.background,
+    async loadRun(runId) {
+      const result = await service
+        .from("workflow_runs")
+        .select(AI15_WORKFLOW_RUN_SELECT)
+        .eq("id", runId)
+        .maybeSingle();
+      if (result.error || !result.data) return null;
+      const definition = relationRecord(result.data.workflow_definitions);
+      const manager = relationRecord(definition?.managers);
+      if (!definition || !manager) return null;
+      return {
+        contractVersion: 1,
+        id: result.data.id,
+        userId: result.data.user_id,
+        workflowDefinitionId: result.data.workflow_definition_id,
+        managerCode: manager.code,
+        status: result.data.status,
+        trigger: result.data.trigger,
+        correlationId: result.data.correlation_id,
+        idempotencyKey: result.data.idempotency_key,
+        priority: result.data.priority,
+        requestedAt: result.data.requested_at,
+        startedAt: result.data.started_at,
+        completedAt: result.data.completed_at,
+        cancelledAt: result.data.cancelled_at,
+        errorCode: result.data.error_code,
+        redactedError: result.data.redacted_error,
+        reportId: null,
+        budgetReservationId: result.data.budget_reservation_id,
+      };
+    },
+    async loadDefinition(definitionId) {
+      const result = await service
+        .from("workflow_definitions")
+        .select(
+          "id,code,version,manager_id,managers!inner(code),trigger_type,input_schema,output_schema,active",
+        )
+        .eq("id", definitionId)
+        .maybeSingle();
+      if (result.error || !result.data) return null;
+      const manager = relationRecord(result.data.managers);
+      if (!manager) return null;
+      return {
+        contractVersion: 1,
+        id: result.data.id,
+        managerCode: manager.code,
+        code: result.data.code,
+        version: result.data.version,
+        triggerType: result.data.trigger_type,
+        inputSchema: result.data.input_schema,
+        outputSchema: result.data.output_schema,
+        active: result.data.active,
+      };
+    },
+    async loadInput(runId) {
+      const result = await service
+        .from("job_queue")
+        .select("payload")
+        .eq("run_id", runId)
+        .eq("job_type", "workflow_execute")
+        .maybeSingle();
+      if (result.error || !result.data) return null;
+      const payload: unknown = result.data.payload;
+      if (!isRecord(payload)) return null;
+      if (isRecord(payload.request)) return payload.request;
+      const requestEntries = Object.entries(payload).filter(
+        ([key]) => !["run_id", "schedule_id"].includes(key),
+      );
+      return requestEntries.length === 0
+        ? {}
+        : Object.fromEntries(requestEntries);
+    },
   };
 }
 
-async function providerResponse(
-  request: ExecutionRequest,
-  instructions: string,
-): Promise<Record<string, unknown> | null> {
-  const apiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!apiKey) return null;
-  let lastStatus = 0;
-  for (let attempt = 1; attempt <= request.maxAttempts; attempt += 1) {
-    try {
-      const response = await fetch("https://api.openai.com/v1/responses", {
+async function persistStage(
+  run: { id: string; correlationId: string },
+  stepCode: string,
+  sequence: number,
+  status: "running" | "succeeded" | "failed",
+  reference: string | null,
+  redactedError: string | null = null,
+): Promise<void> {
+  const result = await service.rpc("record_workflow_stage", {
+    p_run_id: run.id,
+    p_step_code: stepCode,
+    p_sequence: sequence,
+    p_status: status,
+    p_input_reference: reference,
+    p_output_reference: status === "succeeded"
+      ? `run_steps:${run.id}:${stepCode}`
+      : null,
+    p_redacted_error: redactedError,
+  });
+  if (result.error) throw new Error("stage_persistence_failed");
+}
+
+async function executeDeterministic(
+  runId: string,
+): Promise<ExecuteWorkflowOutcome> {
+  const run = await service.from("workflow_runs").select("correlation_id").eq(
+    "id",
+    runId,
+  ).maybeSingle();
+  if (run.error || !run.data) {
+    return outcomeFor(
+      runId,
+      "retryable_failure",
+      "deterministic_run_unavailable",
+    );
+  }
+  const stageRun = { id: runId, correlationId: run.data.correlation_id };
+  await persistStage(
+    stageRun,
+    "validate_inputs",
+    1,
+    "succeeded",
+    `workflow_runs:${runId}`,
+  );
+  await persistStage(
+    stageRun,
+    "load_context",
+    2,
+    "succeeded",
+    `workflow_runs:${runId}`,
+  );
+  await persistStage(
+    stageRun,
+    "deterministic_execution",
+    3,
+    "running",
+    `workflow_runs:${runId}`,
+  );
+  const result = await service.rpc("complete_deterministic_workflow_run", {
+    p_run_id: runId,
+  });
+  if (result.error || typeof result.data !== "string") {
+    await persistStage(
+      stageRun,
+      "deterministic_execution",
+      3,
+      "failed",
+      `workflow_runs:${runId}`,
+      "deterministic_execution_failed",
+    );
+    return outcomeFor(
+      runId,
+      "retryable_failure",
+      "deterministic_execution_failed",
+    );
+  }
+  await persistStage(
+    stageRun,
+    "deterministic_execution",
+    3,
+    "succeeded",
+    `reports:${result.data}`,
+  );
+  await persistStage(
+    stageRun,
+    "validate_output",
+    4,
+    "succeeded",
+    `reports:${result.data}`,
+  );
+  await persistStage(
+    stageRun,
+    "post_process",
+    5,
+    "succeeded",
+    `reports:${result.data}`,
+  );
+  await persistStage(
+    stageRun,
+    "persist_actions",
+    6,
+    "succeeded",
+    `reports:${result.data}`,
+  );
+  await persistStage(
+    stageRun,
+    "persist_evidence",
+    7,
+    "succeeded",
+    `reports:${result.data}`,
+  );
+  await persistStage(
+    stageRun,
+    "persist_report",
+    8,
+    "succeeded",
+    `reports:${result.data}`,
+  );
+  await persistStage(
+    stageRun,
+    "notification_decision",
+    9,
+    "succeeded",
+    `workflow_runs:${runId}`,
+  );
+  return { runId, outcome: "succeeded", reportId: result.data };
+}
+
+async function executeAiWorkflow(
+  execution: Awaited<ReturnType<typeof loadTrustedWorkflowExecution>>,
+): Promise<ExecuteWorkflowOutcome> {
+  const { run, definition, input } = execution;
+  const mode = resolveWorkflowMode(run.managerCode, definition.code);
+  if (!mode) {
+    return outcomeFor(
+      run.id,
+      "terminal_failure",
+      "workflow_capability_missing",
+    );
+  }
+  if (mode === "deterministic") return await executeDeterministic(run.id);
+  const allowedActionTypes = allowedActionTypesForWorkflow(
+    run.managerCode,
+    definition.code,
+  );
+  if (!definition.active) {
+    return outcomeFor(
+      run.id,
+      "terminal_failure",
+      "workflow_definition_inactive",
+    );
+  }
+  await persistStage(
+    run,
+    "validate_inputs",
+    1,
+    "succeeded",
+    `workflow_runs:${run.id}`,
+  );
+  await persistStage(
+    run,
+    "load_context",
+    2,
+    "running",
+    `workflow_definitions:${definition.id}`,
+  );
+
+  const { data: existingReport } = await service
+    .from("reports")
+    .select("id,structured_metrics")
+    .eq("run_id", run.id)
+    .maybeSingle();
+  const existingCallId = isRecord(existingReport?.structured_metrics) &&
+      typeof existingReport.structured_metrics.ai_call_id === "string"
+    ? existingReport.structured_metrics.ai_call_id
+    : null;
+  if (existingReport?.id && existingCallId) {
+    const callState = await service.from("ai_calls").select("status").eq(
+      "id",
+      existingCallId,
+    ).maybeSingle();
+    if (callState.data?.status === "succeeded") {
+      return {
+        runId: run.id,
+        outcome: "succeeded",
+        reportId: existingReport.id,
+      };
+    }
+  }
+
+  const budgetResult = await service
+    .from("on_demand_budgets")
+    .select(
+      "id,hard_cap,reserved_amount,model_ceiling,status,expires_at,search_ceiling",
+    )
+    .eq("run_id", run.id)
+    .maybeSingle();
+  if (budgetResult.error) {
+    return outcomeFor(run.id, "terminal_failure", "execution_budget_missing");
+  }
+  const budget = budgetResult.data;
+  if (
+    budget &&
+    (budget.status !== "active" || Date.parse(budget.expires_at) <= Date.now())
+  ) {
+    return outcomeFor(
+      run.id,
+      "terminal_failure",
+      "execution_budget_unavailable",
+    );
+  }
+  await persistStage(
+    run,
+    "reserve_budget",
+    3,
+    "running",
+    `workflow_runs:${run.id}`,
+  );
+
+  const definitionResult = await service
+    .from("workflow_definitions")
+    .select(
+      "id,manager_id,default_model_route,default_reasoning,budget_category,required_sources,notification_policy,approval_policy",
+    )
+    .eq("id", run.workflowDefinitionId)
+    .maybeSingle();
+  if (definitionResult.error || !definitionResult.data) {
+    return outcomeFor(
+      run.id,
+      "terminal_failure",
+      "workflow_definition_unavailable",
+    );
+  }
+  const definitionConfig = definitionResult.data;
+  const modelCeiling = budget?.model_ceiling ??
+    definitionConfig.default_model_route;
+  const selectedModel = selectModelUnderCeiling(
+    definitionConfig.default_model_route,
+    modelCeiling,
+  );
+  if (!selectedModel) {
+    return outcomeFor(run.id, "terminal_failure", "model_route_unavailable");
+  }
+  const modelResult = await service
+    .from("ai_model_catalog")
+    .select("id,model_id,enabled")
+    .eq("model_id", selectedModel)
+    .eq("enabled", true)
+    .maybeSingle();
+  if (modelResult.error || !modelResult.data) {
+    return outcomeFor(run.id, "terminal_failure", "model_unavailable");
+  }
+
+  const promptResult = await service
+    .from("prompt_templates")
+    .select("id,active_version")
+    .eq("manager_id", definitionConfig.manager_id)
+    .eq("code", "controlled-agent-report")
+    .maybeSingle();
+  if (promptResult.error || !promptResult.data?.active_version) {
+    return outcomeFor(
+      run.id,
+      "terminal_failure",
+      "approved_prompt_unavailable",
+    );
+  }
+  const promptVersionResult = await service
+    .from("prompt_versions")
+    .select("id,system_text,developer_text,evaluation_status")
+    .eq("template_id", promptResult.data.id)
+    .eq("version", promptResult.data.active_version)
+    .maybeSingle();
+  if (
+    promptVersionResult.error ||
+    !promptVersionResult.data ||
+    !["approved", "promoted"].includes(
+      promptVersionResult.data.evaluation_status,
+    )
+  ) {
+    return outcomeFor(
+      run.id,
+      "terminal_failure",
+      "approved_prompt_unavailable",
+    );
+  }
+
+  const feedbackResult = await service
+    .from("feedback")
+    .select("id,categories,created_at")
+    .eq("user_id", run.userId)
+    .eq("positive", false)
+    .gte(
+      "created_at",
+      new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+    )
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (feedbackResult.error) {
+    return outcomeFor(
+      run.id,
+      "retryable_failure",
+      "required_sources_unavailable",
+    );
+  }
+  const evidence = (feedbackResult.data ?? []).flatMap((feedback) => {
+    if (!Array.isArray(feedback.categories)) return [];
+    return feedback.categories.flatMap((category) =>
+      typeof category === "string"
+        ? [{
+          id: feedback.id,
+          source: `Recent quality feedback category: ${category}`,
+        }]
+        : []
+    );
+  });
+  const evidenceIds = [...new Set(evidence.map((item) => item.id))];
+  const workflowInput = JSON.stringify({
+    workflow: definition.code,
+    request: input,
+    evidence,
+    constraints: {
+      model: selectedModel,
+      searchCalls: 0,
+      approvalPolicy: definitionConfig.approval_policy,
+    },
+  });
+  if (new TextEncoder().encode(workflowInput).byteLength > 24_000) {
+    return outcomeFor(run.id, "terminal_failure", "workflow_context_too_large");
+  }
+  await persistStage(
+    run,
+    "load_context",
+    2,
+    "succeeded",
+    `evidence:${evidenceIds.length}`,
+  );
+
+  const pricing = await service
+    .from("model_pricing")
+    .select(
+      "input_per_million,output_per_million,cached_input_per_million,web_search_per_call",
+    )
+    .eq("model_id", modelResult.data.id)
+    .lte("effective_from", new Date().toISOString())
+    .order("effective_from", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (pricing.error || !pricing.data) {
+    return outcomeFor(run.id, "terminal_failure", "model_pricing_unavailable");
+  }
+  const estimatedCost = Math.ceil(
+    ((8_000 * pricing.data.input_per_million +
+      2_000 * pricing.data.output_per_million) /
+      1_000_000) *
+      1_000_000,
+  ) / 1_000_000;
+  if (
+    budget &&
+    estimatedCost > Number(budget.hard_cap) - Number(budget.reserved_amount)
+  ) {
+    return outcomeFor(run.id, "terminal_failure", "execution_budget_exceeded");
+  }
+  const unresolvedCall = await service.from("ai_calls")
+    .select("id,status,response_id,request_id")
+    .eq("run_id", run.id)
+    .in("status", [
+      "submitted",
+      "completed_pending_reconciliation",
+      "reconciliation_failed",
+    ])
+    .not("response_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (unresolvedCall.error) {
+    return outcomeFor(
+      run.id,
+      "retryable_failure",
+      "ai_call_recovery_lookup_failed",
+    );
+  }
+  if (unresolvedCall.data?.response_id) {
+    const queueState = await submitProviderResponse(
+      run.id,
+      unresolvedCall.data.response_id,
+    );
+    if (queueState?.status === "succeeded") {
+      const success = await successOutcomeForExistingReport(run.id);
+      if (success) return success;
+    }
+    if (queueState?.status === "dead_letter") {
+      return outcomeFor(
+        run.id,
+        "terminal_failure",
+        "provider_response_timeout",
+      );
+    }
+    if (queueState?.status !== "awaiting_provider") {
+      return outcomeFor(
+        run.id,
+        "retryable_failure",
+        "provider_queue_submission_failed",
+      );
+    }
+    await persistStage(
+      run,
+      "invoke_ai",
+      4,
+      "succeeded",
+      `ai_calls:${unresolvedCall.data.id}`,
+    );
+    await persistStage(
+      run,
+      "awaiting_provider",
+      5,
+      "running",
+      `responses:${unresolvedCall.data.response_id}`,
+    );
+    return {
+      runId: run.id,
+      outcome: "submitted",
+      responseId: unresolvedCall.data.response_id,
+    };
+  }
+  const pendingReservation = await service.from("ai_calls")
+    .select("id,status,response_id,request_id")
+    .eq("run_id", run.id)
+    .eq("status", "reserved")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (pendingReservation.error) {
+    return outcomeFor(
+      run.id,
+      "retryable_failure",
+      "ai_call_recovery_lookup_failed",
+    );
+  }
+  const attemptResult = await service.from("job_queue")
+    .select("attempt_count")
+    .eq("run_id", run.id)
+    .eq("job_type", "workflow_execute")
+    .maybeSingle();
+  if (
+    attemptResult.error || typeof attemptResult.data?.attempt_count !== "number"
+  ) {
+    return outcomeFor(run.id, "retryable_failure", "queue_attempt_unavailable");
+  }
+  const requestId = pendingReservation.data?.request_id ??
+    `ai15:${run.id}:attempt:${Math.max(1, attemptResult.data.attempt_count)}`;
+  const priorCallResult = pendingReservation.data
+    ? { data: pendingReservation.data, error: null }
+    : await service.from("ai_calls").select("id,status,response_id,request_id")
+      .eq("request_id", requestId).maybeSingle();
+  if (priorCallResult.error) {
+    return outcomeFor(
+      run.id,
+      "retryable_failure",
+      "ai_call_recovery_lookup_failed",
+    );
+  }
+  if (priorCallResult.data && priorCallResult.data.status !== "reserved") {
+    return outcomeFor(run.id, "terminal_failure", "ai_call_recovery_required");
+  }
+  if (!Deno.env.get("OPENAI_API_KEY")) {
+    return outcomeFor(
+      run.id,
+      "retryable_failure",
+      "provider_credential_unavailable",
+    );
+  }
+  let callId = priorCallResult.data?.id;
+  if (!callId) {
+    const reservation = await service.rpc("reserve_instrumented_ai_call", {
+      p_user_id: run.userId,
+      p_run_id: run.id,
+      p_model_id: modelResult.data.id,
+      p_prompt_version_id: promptVersionResult.data.id,
+      p_estimated_cost: estimatedCost,
+      p_request_id: requestId,
+      p_redacted_trace: {
+        workflow: definition.code,
+        prompt_version: promptResult.data.active_version,
+        model: selectedModel,
+        evidence_ids: evidenceIds,
+        evidence_count: evidenceIds.length,
+        reasoning: definitionConfig.default_reasoning,
+        notification_policy: definitionConfig.notification_policy,
+        allowed_action_types: allowedActionTypes,
+        execution_mode: "ai",
+      },
+    });
+    if (reservation.error || typeof reservation.data !== "string") {
+      return outcomeFor(run.id, "terminal_failure", "reservation_rejected");
+    }
+    callId = reservation.data;
+  }
+  await persistStage(
+    run,
+    "reserve_budget",
+    3,
+    "succeeded",
+    `ai_calls:${callId}`,
+  );
+  await persistStage(run, "invoke_ai", 4, "running", `ai_calls:${callId}`);
+
+  const apiKey = Deno.env.get("OPENAI_API_KEY")!;
+  let response: Record<string, unknown> | null = null;
+  try {
+    const providerResponse = await fetch(
+      "https://api.openai.com/v1/responses",
+      {
         method: "POST",
         headers: {
           authorization: `Bearer ${apiKey}`,
           "content-type": "application/json",
-          "idempotency-key": request.requestId,
+          "idempotency-key": requestId,
         },
         body: JSON.stringify({
-          model: request.model,
-          instructions,
-          input: request.input,
-          background: request.background,
+          model: selectedModel,
+          reasoning: { effort: definitionConfig.default_reasoning },
+          instructions:
+            `${promptVersionResult.data.system_text}\n\n${promptVersionResult.data.developer_text}`,
+          input: workflowInput,
+          background: true,
+          max_output_tokens: 2_000,
           store: false,
           tools: [],
           text: {
@@ -138,84 +681,22 @@ async function providerResponse(
             },
           },
         }),
-      });
-      lastStatus = response.status;
-      const body: unknown = await response.json().catch(() => null);
-      if (response.ok && isRecord(body)) return body;
-      if (!isRetryable(response.status)) break;
-    } catch {
-      lastStatus = 599;
-    }
+      },
+    );
+    const decoded: unknown = await providerResponse.json().catch(() => null);
+    if (providerResponse.ok && isRecord(decoded)) response = decoded;
+  } catch {
+    // The queue owner applies bounded retry/backoff after this typed failure.
   }
-  return lastStatus === 0 ? null : null;
-}
-
-Deno.serve(async (request) => {
-  if (
-    request.method !== "POST" ||
-    !isAuthorisedInternal(request)
-  ) return json({ code: "unauthorised" }, 401);
-  const body = parseRequest(await request.json().catch(() => null));
-  if (!body) return json({ code: "invalid_request" }, 400);
-  const [runResult, modelResult, promptResult] = await Promise.all([
-    service.from("workflow_runs").select("id,user_id,correlation_id,status").eq(
-      "id",
-      body.runId,
-    ).in("status", ["queued", "running"]).maybeSingle(),
-    service.from("ai_model_catalog").select("id,model_id,enabled").eq(
-      "model_id",
-      body.model,
-    ).eq("enabled", true).maybeSingle(),
-    service.from("prompt_templates").select("id,active_version").eq(
-      "code",
-      body.promptCode,
-    ).maybeSingle(),
-  ]);
-  if (runResult.error || !runResult.data) {
-    return json({ code: "run_not_executable" }, 422);
-  }
-  if (modelResult.error || !modelResult.data) {
-    return json({ code: "model_unavailable" }, 422);
-  }
-  if (promptResult.error || !promptResult.data?.active_version) {
-    return json({ code: "prompt_unavailable" }, 422);
-  }
-  const run = runResult.data;
-  const promptVersion = await service.from("prompt_versions").select(
-    "id,system_text,developer_text",
-  ).eq("template_id", promptResult.data.id).eq(
-    "version",
-    promptResult.data.active_version,
-  ).maybeSingle();
-  if (promptVersion.error || !promptVersion.data) {
-    return json({ code: "prompt_version_unavailable" }, 422);
-  }
-  const reserve = await service.rpc("reserve_instrumented_ai_call", {
-    p_user_id: run.user_id,
-    p_run_id: body.runId,
-    p_model_id: modelResult.data.id,
-    p_prompt_version_id: promptVersion.data.id,
-    p_estimated_cost: body.estimatedCost,
-    p_request_id: body.requestId,
-    p_redacted_trace: {
-      request_id: body.requestId,
-      model: body.model,
-      prompt_code: body.promptCode,
-      background: body.background,
-      web_search: false,
-      evidence_ids: body.evidence.map((item) => item.id),
-      max_attempts: body.maxAttempts,
-    },
-  });
-  if (reserve.error || !reserve.data) {
-    return json({ code: "reservation_rejected" }, 422);
-  }
-  const callId = reserve.data as string;
-  const response = await providerResponse(
-    body,
-    `${promptVersion.data.system_text}\n\n${promptVersion.data.developer_text}`,
-  );
-  if (!response || !safeText(response.id, 300)) {
+  if (!response || typeof response.id !== "string") {
+    await persistStage(
+      run,
+      "invoke_ai",
+      4,
+      "failed",
+      `ai_calls:${callId}`,
+      "provider_failed",
+    );
     await service.rpc("settle_instrumented_ai_call", {
       p_call_id: callId,
       p_actual_cost: 0,
@@ -226,177 +707,86 @@ Deno.serve(async (request) => {
       p_search_calls: 0,
       p_provider_usage: {},
       p_redacted_trace: {
-        request_id: body.requestId,
+        workflow: definition.code,
         provider_result: "failed_or_incomplete",
       },
       p_validation_passed: false,
     });
-    await service.from("workflow_runs").update({
-      status: "failed",
-      completed_at: new Date().toISOString(),
-      error_code: "ai_provider_failed",
-      redacted_error: "AI provider failed or returned an incomplete response.",
-    }).eq("id", body.runId);
-    return json({ code: "provider_failed" }, 502);
+    return outcomeFor(run.id, "retryable_failure", "provider_failed");
   }
   const submitted = await service.rpc("mark_instrumented_ai_call_submitted", {
     p_call_id: callId,
     p_response_id: response.id,
   });
-  if (submitted.error) return json({ code: "submission_record_failed" }, 500);
-  if (body.background) {
-    await service.from("trace_events").insert({
-      user_id: run.user_id,
-      correlation_id: run.correlation_id,
-      event_type: "background_response_submitted",
-      redacted_payload: {
-        call_id: callId,
-        response_id: response.id,
-        max_attempts: body.maxAttempts,
-      },
-    });
-    return json({ callId, responseId: response.id, status: "submitted" }, 202);
+  if (submitted.error) {
+    return outcomeFor(run.id, "retryable_failure", "submission_record_failed");
   }
-  const outputText = extractResponseOutputText(response);
-  if (!outputText) {
-    await service.rpc("settle_instrumented_ai_call", {
-      p_call_id: callId,
-      p_actual_cost: 0,
-      p_input_tokens: 0,
-      p_output_tokens: 0,
-      p_cached_input_tokens: 0,
-      p_reasoning_tokens: 0,
-      p_search_calls: 0,
-      p_provider_usage: {},
-      p_redacted_trace: {
-        request_id: body.requestId,
-        response_id: response.id,
-        provider_result: "missing_output",
-      },
-      p_validation_passed: false,
-    });
-    await service.from("workflow_runs").update({
-      status: "failed",
-      completed_at: new Date().toISOString(),
-      error_code: "ai_provider_incomplete",
-      redacted_error: "AI provider response had no output.",
-    }).eq("id", body.runId);
-    return json({ code: "provider_incomplete" }, 502);
+  const queueState = await submitProviderResponse(run.id, response.id);
+  if (queueState?.status === "succeeded") {
+    const success = await successOutcomeForExistingReport(run.id);
+    if (success) return success;
   }
-  let output: unknown = null;
-  try {
-    output = JSON.parse(outputText);
-  } catch { /* settled below as invalid */ }
-  const validated = validateReportOutput(
-    output,
-    new Set(body.evidence.map((item) => item.id)),
-  );
-  const usage = redactedProviderUsage(response);
-  const cost = await service.rpc("calculate_instrumented_ai_cost", {
-    p_model_id: modelResult.data.id,
-    p_input_tokens: usage.input_tokens,
-    p_output_tokens: usage.output_tokens,
-    p_cached_input_tokens: usage.cached_input_tokens,
-    p_search_calls: 0,
-  });
-  if (
-    cost.error || typeof cost.data !== "number" ||
-    cost.data > body.estimatedCost
-  ) return json({ code: "usage_reconciliation_failed" }, 409);
-  const settled = await service.rpc("settle_instrumented_ai_call", {
-    p_call_id: callId,
-    p_actual_cost: cost.data,
-    p_input_tokens: usage.input_tokens,
-    p_output_tokens: usage.output_tokens,
-    p_cached_input_tokens: usage.cached_input_tokens,
-    p_reasoning_tokens: usage.reasoning_tokens,
-    p_search_calls: 0,
-    p_provider_usage: usage,
-    p_redacted_trace: {
-      request_id: body.requestId,
-      response_id: response.id,
-      response_sha256: await sha256(outputText),
-      model: body.model,
-      validation_passed: validated !== null,
-      background: false,
-      web_search: false,
-    },
-    p_validation_passed: validated !== null,
-  });
-  if (settled.error || !validated) {
-    await service.from("workflow_runs").update({
-      status: "failed",
-      completed_at: new Date().toISOString(),
-      error_code: "ai_output_invalid",
-      redacted_error:
-        "AI response did not satisfy the persisted structured-output contract.",
-    }).eq("id", body.runId);
-    return json({ code: "structured_output_invalid" }, 422);
+  if (queueState?.status === "dead_letter") {
+    return outcomeFor(run.id, "terminal_failure", "provider_response_timeout");
   }
-  const report = await service.from("reports").insert({
-    user_id: run.user_id,
-    run_id: body.runId,
-    report_type: body.promptCode,
-    title: "Validated AI Operations report",
-    summary: validated.summary,
-    markdown: `## Validated AI Operations report\n\n${validated.summary}`,
-    structured_metrics: {
-      ai_call_id: callId,
-      response_id: response.id,
-      validation: "passed",
-      evidence_ids: body.evidence.map((item) => item.id),
-    },
-    status: "validated",
-  }).select("id").single();
-  if (report.error || !report.data) {
-    return json({ code: "report_store_failed" }, 500);
-  }
-  const sections = validated.report_sections.map((section, index) => ({
-    report_id: report.data.id,
-    code: section.code,
-    title: section.title,
-    display_order: index,
-    content: section.content,
-    structured_data: { findings: validated.findings },
-    evidence_references: validated.evidence,
-  }));
-  const sectionResult = await service.from("report_sections").insert(sections);
-  if (sectionResult.error) {
-    return json({ code: "report_sections_store_failed" }, 500);
-  }
-  if (validated.actions.length > 0) {
-    const actions = await service.from("actions").insert(
-      validated.actions.map((action) => ({
-        user_id: run.user_id,
-        run_id: body.runId,
-        action_type: action.type,
-        title: action.title,
-        description:
-          "AI-proposed action; explicit approval is required before execution.",
-        risk_class: action.risk,
-        status: "proposed",
-        proposed_payload: {
-          source: "validated_ai_output",
-          response_id: response.id,
-        },
-      })),
+  if (queueState?.status !== "awaiting_provider") {
+    return outcomeFor(
+      run.id,
+      "retryable_failure",
+      "provider_queue_submission_failed",
     );
-    if (actions.error) return json({ code: "actions_store_failed" }, 500);
   }
-  await service.from("workflow_runs").update({
-    status: "succeeded",
-    completed_at: new Date().toISOString(),
-  }).eq("id", body.runId);
-  await service.from("trace_events").insert({
-    user_id: run.user_id,
-    correlation_id: run.correlation_id,
-    event_type: "ai_report_validated",
-    redacted_payload: {
-      call_id: callId,
-      report_id: report.data.id,
-      response_id: response.id,
-      validation: "passed",
-    },
-  });
-  return json({ callId, reportId: report.data.id });
-});
+  await persistStage(run, "invoke_ai", 4, "succeeded", `ai_calls:${callId}`);
+  await persistStage(
+    run,
+    "awaiting_provider",
+    5,
+    "running",
+    `responses:${response.id}`,
+  );
+  return { runId: run.id, outcome: "submitted", responseId: response.id };
+}
+
+async function executeCanonicalRun(
+  runId: string,
+): Promise<ExecuteWorkflowOutcome> {
+  try {
+    const execution = await loadTrustedWorkflowExecution(
+      runId,
+      executionSource(),
+    );
+    const mode = resolveWorkflowMode(
+      execution.run.managerCode,
+      execution.definition.code,
+    );
+    if (!mode) {
+      return outcomeFor(
+        runId,
+        "terminal_failure",
+        "workflow_capability_missing",
+      );
+    }
+    if (mode === "deterministic") return await executeDeterministic(runId);
+    return await executeAiWorkflow(execution);
+  } catch (error) {
+    if (
+      error instanceof Error && error.message === "workflow_run_not_executable"
+    ) {
+      return outcomeFor(
+        runId,
+        "terminal_failure",
+        "workflow_run_not_executable",
+      );
+    }
+    return outcomeFor(runId, "retryable_failure", "workflow_execution_failed");
+  }
+}
+
+Deno.serve(
+  createWorkflowExecutionHandler({
+    workerSecret: Deno.env.get("WORKER_SECRET") ?? "",
+    serviceRoleKey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+    execute: executeCanonicalRun,
+    timingSafeEqual,
+  }),
+);

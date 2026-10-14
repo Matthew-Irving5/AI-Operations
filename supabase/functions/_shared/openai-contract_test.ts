@@ -39,6 +39,31 @@ Deno.test("strict report output accepts only allowed evidence", () => {
   );
 });
 
+Deno.test("strict report output accepts empty evidence only with no findings", () => {
+  assertEquals(
+    validateReportOutput({
+      ...output,
+      findings: [],
+      evidence: [],
+      uncertainties: ["No supported feedback evidence was supplied."],
+    }, new Set()),
+    {
+      ...output,
+      findings: [],
+      evidence: [],
+      uncertainties: ["No supported feedback evidence was supplied."],
+    },
+  );
+  assertEquals(
+    validateReportOutput({
+      ...output,
+      findings: [{ claim: "An unsupported claim.", evidenceIds: ["invented"] }],
+      evidence: [],
+    }, new Set()),
+    null,
+  );
+});
+
 Deno.test("provider usage strips untrusted provider response fields", () => {
   assertEquals(
     redactedProviderUsage({
