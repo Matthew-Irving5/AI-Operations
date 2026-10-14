@@ -1,5 +1,5 @@
 begin;
-select plan(16);
+select plan(20);
 
 create temporary table ai15_fixture_owner (user_id uuid not null, email text not null) on commit drop;
 do $fixture$
@@ -100,6 +100,30 @@ select is((select status::text from public.job_queue where deduplication_key = '
 select is((select count(*)::integer from public.notifications where dedupe_key = 'workflow-report:00000000-0000-4000-8000-000000000316'), 1, 'report policy creates one account-linked notification');
 select is((select recipient from public.notifications where dedupe_key = 'workflow-report:00000000-0000-4000-8000-000000000316'), (select email from ai15_fixture_owner), 'notification recipient comes from the linked user account');
 select is((select count(*)::integer from public.actions where run_id = '00000000-0000-4000-8000-000000000316'), 1, 'validated actions persist as proposals once and remain approval-gated');
+select is(
+  (select count(*)::integer from public.trace_events event
+   join public.workflow_runs run on run.correlation_id = event.correlation_id
+   where run.id = '00000000-0000-4000-8000-000000000316'
+     and event.event_type = 'workflow_notification_decision'),
+  1,
+  'report policy emits exactly one notification decision trace after an idempotent replay'
+);
+select ok(
+  (select event.redacted_payload @> jsonb_build_object(
+     'run_id', '00000000-0000-4000-8000-000000000316'::uuid,
+     'policy', 'report',
+     'notification_created', true
+   )
+   from public.trace_events event
+   join public.workflow_runs run on run.correlation_id = event.correlation_id
+   where run.id = '00000000-0000-4000-8000-000000000316'
+     and event.event_type = 'workflow_notification_decision'),
+  'report decision trace records policy and notification outcome without sensitive content'
+);
+
+update public.workflow_definitions
+set notification_policy = 'silent'
+where code = 'systems-weekly-quality-platform';
 
 insert into public.workflow_runs (id, user_id, workflow_definition_id, status, trigger, idempotency_key)
 select '00000000-0000-4000-8000-000000000317', (select user_id from ai15_fixture_owner), id, 'running', 'on_demand', 'ai15-silent-report-regression'
@@ -131,6 +155,26 @@ select lives_ok($$select public.commit_instrumented_ai_report_with_queue(
   '[]'::jsonb, 0.01, 10, 20, 0, 0, '{"input_tokens":10,"output_tokens":20}'::jsonb, '{}'::jsonb
 )$$, 'silent notification policy still commits report and queue outcome');
 select is((select count(*)::integer from public.notifications where dedupe_key = 'workflow-report:00000000-0000-4000-8000-000000000317'), 0, 'silent policy records no notification row');
+select is(
+  (select count(*)::integer from public.trace_events event
+   join public.workflow_runs run on run.correlation_id = event.correlation_id
+   where run.id = '00000000-0000-4000-8000-000000000317'
+     and event.event_type = 'workflow_notification_decision'),
+  1,
+  'silent policy still emits exactly one notification decision trace'
+);
+select ok(
+  (select event.redacted_payload @> jsonb_build_object(
+     'run_id', '00000000-0000-4000-8000-000000000317'::uuid,
+     'policy', 'silent',
+     'notification_created', false
+   )
+   from public.trace_events event
+   join public.workflow_runs run on run.correlation_id = event.correlation_id
+   where run.id = '00000000-0000-4000-8000-000000000317'
+     and event.event_type = 'workflow_notification_decision'),
+  'silent decision trace records no notification was created'
+);
 
 select * from finish();
 rollback;
