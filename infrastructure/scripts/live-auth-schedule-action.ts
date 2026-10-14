@@ -1,5 +1,6 @@
 export type LiveAuthScheduleAction = Readonly<{
   initialLabel: 'Enabled' | 'Disabled';
+  initialEnabled: boolean;
   nextEnabled: boolean;
   buttonName: 'Enable schedule (fresh MFA required)' | 'Disable schedule (fresh MFA required)';
   confirmationMessage: 'Schedule enabled.' | 'Schedule disabled.';
@@ -12,6 +13,7 @@ export function liveAuthScheduleAction(statusLabel: string): LiveAuthScheduleAct
   const initiallyEnabled = match[1] === 'Enabled';
   return {
     initialLabel: initiallyEnabled ? 'Enabled' : 'Disabled',
+    initialEnabled: initiallyEnabled,
     nextEnabled: !initiallyEnabled,
     buttonName: initiallyEnabled
       ? 'Disable schedule (fresh MFA required)'

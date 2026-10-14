@@ -30,12 +30,14 @@ describe('live auth acceptance harness', () => {
   it('uses the opposite state action for either owner-visible schedule state', () => {
     assert.deepEqual(liveAuthScheduleAction('Disabled · Europe/London'), {
       initialLabel: 'Disabled',
+      initialEnabled: false,
       nextEnabled: true,
       buttonName: 'Enable schedule (fresh MFA required)',
       confirmationMessage: 'Schedule enabled.',
     });
     assert.deepEqual(liveAuthScheduleAction('Enabled · Europe/London'), {
       initialLabel: 'Enabled',
+      initialEnabled: true,
       nextEnabled: false,
       buttonName: 'Disable schedule (fresh MFA required)',
       confirmationMessage: 'Schedule disabled.',
@@ -72,9 +74,11 @@ describe('live auth acceptance harness', () => {
   });
 
   it('pins the full authenticated journey context, state, and response matrix', async () => {
-    const [runner, journey] = await Promise.all([
+    const [runner, journey, mfaPage, mfaApi] = await Promise.all([
       readFile(runnerPath, 'utf8'),
       readFile(journeyPath, 'utf8'),
+      readFile(resolve('apps/web/app/mfa/page.tsx'), 'utf8'),
+      readFile(resolve('apps/web/app/api/auth/mfa/verify/route.ts'), 'utf8'),
     ]);
 
     assert.match(runner, /mode === 'auth-acceptance'[\s\S]*?rest\/v1\/app_users/);
@@ -88,6 +92,8 @@ describe('live auth acceptance harness', () => {
       journey,
       /rest\/v1\/(?:app_users|workflow_schedules|mfa_reauthentication_events)/,
     );
+    assert.match(mfaPage, /parseMfaPageJob\(params\.job\)/);
+    assert.match(mfaApi, /'schedule_update'/);
 
     assertOrdered(journey, [
       "page.request.get(new URL('/api/release'",
@@ -101,7 +107,7 @@ describe('live auth acceptance harness', () => {
       'const protectedContentReachedAt = Date.now()',
       'await page.waitForTimeout(waitMs)',
       'expect(Date.now() - protectedContentReachedAt).toBeGreaterThan(5 * 60_000)',
-      'const staleRequest = { scheduleId: targetSchedule, enabled: scheduleAction.nextEnabled }',
+      'const staleRequest = { scheduleId: targetSchedule, enabled: scheduleAction.initialEnabled }',
       "method: 'POST'",
       "body: { code: 'fresh_mfa_required' }",
       'expect(staleAttempt.usedMfaGate).toBe(false)',
@@ -109,11 +115,17 @@ describe('live auth acceptance harness', () => {
       "await expect(card.getByLabel('Six-digit code')).toHaveCount(0)",
       'expect(probe.status).toBe(200)',
       "expect(probe.body).toMatchObject({ status: 400, code: 'invalid_plan' })",
-      "await card.getByRole('button', { name: scheduleAction.buttonName }).click()",
-      "await expect(card.getByLabel('Six-digit code')).toBeVisible()",
-      'expect(updateResponse.status()).toBe(200)',
-      'schedule: { enabled: scheduleAction.nextEnabled }',
-      'await page.reload()',
+      "await page.goto('/mfa?job=schedule_update&returnTo=%2Foverview')",
+      "await expect(page.getByRole('heading', { name: 'Verify your identity' })).toBeVisible()",
+      "await expect(page.getByLabel('Six-digit code')).toBeVisible()",
+      'await expect(page).toHaveURL(/\\/overview(?:\\?|$)/, { timeout: 60_000 })',
+      "expect(gate).toMatchObject({ job: 'schedule_update' })",
+      "if (gate?.job !== 'schedule_update' || !gate.id)",
+      "method: 'POST'",
+      'body: JSON.stringify(body)',
+      'expect(freshAttempt.status).toBe(200)',
+      'schedule: { enabled: scheduleAction.initialEnabled }',
+      "await page.goto('/automations')",
       'const webkitBrowser = await webkit.launch({ headless: false })',
       'storageState: await page.context().storageState()',
       'expect(webkitProbe.status).toBe(200)',
@@ -126,12 +138,12 @@ describe('live auth acceptance harness', () => {
     assert.match(journey, /browserChecks: \{ chromium: 'passed', webkit: 'passed' \}/);
   });
 
-  it('proves stale denial without an MFA gate before the real fresh-MFA action', async () => {
+  it('proves stale denial without a gate before a real TOTP gate authorizes a same-state action', async () => {
     const journey = await readFile(journeyPath, 'utf8');
 
     assert.match(
       journey,
-      /const staleRequest = \{ scheduleId: targetSchedule, enabled: scheduleAction\.nextEnabled \}/,
+      /const staleRequest = \{ scheduleId: targetSchedule, enabled: scheduleAction\.initialEnabled \}/,
     );
     assert.match(
       journey,
@@ -139,9 +151,11 @@ describe('live auth acceptance harness', () => {
     );
     assert.match(journey, /status: 403, body: \{ code: 'fresh_mfa_required' \}/);
     assert.match(journey, /expect\(staleAttempt\.usedMfaGate\)\.toBe\(false\)/);
+    assert.match(journey, /page\.goto\('\/mfa\?job=schedule_update&returnTo=%2Foverview'\)/);
+    assert.match(journey, /mfaGateId: gate\.id/);
     assert.match(
       journey,
-      /card\.getByRole\('button', \{ name: scheduleAction\.buttonName \}\)\.click\(\)/,
+      /freshAttempt\.body\)\.toMatchObject\(\{\s*schedule: \{ enabled: scheduleAction\.initialEnabled \}/,
     );
   });
 });

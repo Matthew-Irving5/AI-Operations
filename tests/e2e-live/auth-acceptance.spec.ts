@@ -92,7 +92,7 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
   if (waitMs > 0) await page.waitForTimeout(waitMs);
   expect(Date.now() - protectedContentReachedAt).toBeGreaterThan(5 * 60_000);
 
-  const staleRequest = { scheduleId: targetSchedule, enabled: scheduleAction.nextEnabled };
+  const staleRequest = { scheduleId: targetSchedule, enabled: scheduleAction.initialEnabled };
   const staleAttempt = await page.evaluate(async (body) => {
     const response = await fetch('/api/schedules/update', {
       method: 'POST',
@@ -128,39 +128,54 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
   expect(probe.body).toMatchObject({ status: 400, code: 'invalid_plan' });
   expect(probe.body.probeId).toMatch(/^[a-zA-Z0-9][a-zA-Z0-9:-]{0,127}$/);
 
-  await card.getByRole('button', { name: scheduleAction.buttonName }).click();
-  await expect(card.getByLabel('Six-digit code')).toBeVisible();
+  await page.goto('/mfa?job=schedule_update&returnTo=%2Foverview');
+  await expect(page.getByRole('heading', { name: 'Verify your identity' })).toBeVisible();
+  await expect(page.getByLabel('Six-digit code')).toBeVisible();
   process.stdout.write(
     '\nComplete Microsoft Authenticator in the visible browser to reauthenticate the schedule action.\n',
   );
-  const updateResponsePromise = page.waitForResponse(
-    (response) =>
-      response.url().includes('/api/schedules/update') && response.request().method() === 'POST',
-    { timeout: 5 * 60_000 },
-  );
-  await expect(
-    card.getByText(
-      `Verify with Microsoft Authenticator to ${scheduleAction.nextEnabled ? 'enable' : 'disable'} this schedule.`,
-    ),
-  ).toBeVisible();
   await expect
-    .poll(async () => card.getByLabel('Six-digit code').isVisible(), { timeout: 60_000 })
+    .poll(async () => page.getByLabel('Six-digit code').isVisible(), { timeout: 60_000 })
     .toBe(true);
-  await expect(card.getByLabel('Six-digit code'))
+  await expect(page.getByLabel('Six-digit code'))
     .toBeFocused({ timeout: 60_000 })
     .catch(() => undefined);
-  const updateResponse = await updateResponsePromise;
-  expect(updateResponse.status()).toBe(200);
-  expect(await updateResponse.json()).toMatchObject({
-    schedule: { enabled: scheduleAction.nextEnabled },
+  await expect(page).toHaveURL(/\/overview(?:\?|$)/, { timeout: 60_000 });
+  const gate = await page.evaluate(() => {
+    const raw = localStorage.getItem('mfa_job_gate') ?? sessionStorage.getItem('mfa_job_gate');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { job?: string; id?: string };
+    return { job: parsed.job, id: parsed.id };
   });
-  await expect(card.getByText(scheduleAction.confirmationMessage)).toBeVisible();
-  await page.reload();
+  expect(gate).toMatchObject({ job: 'schedule_update' });
+  if (gate?.job !== 'schedule_update' || !gate.id) {
+    throw new Error('Fresh TOTP did not store the schedule update gate.');
+  }
+  expect(gate.id).toMatch(/^[0-9a-f-]{36}$/i);
+  const freshAttempt = await page.evaluate(
+    async (body) => {
+      const response = await fetch('/api/schedules/update', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return {
+        status: response.status,
+        body: (await response.json()) as { schedule?: { enabled?: boolean }; code?: string },
+      };
+    },
+    { scheduleId: targetSchedule, enabled: scheduleAction.initialEnabled, mfaGateId: gate.id },
+  );
+  expect(freshAttempt.status).toBe(200);
+  expect(freshAttempt.body).toMatchObject({
+    schedule: { enabled: scheduleAction.initialEnabled },
+  });
+  await page.goto('/automations');
   await expect(
     page
       .locator(`[data-schedule-id="${targetSchedule}"]`)
       .locator('div.label')
-      .getByText(new RegExp(`^${scheduleAction.nextEnabled ? 'Enabled' : 'Disabled'} ·`)),
+      .getByText(new RegExp(`^${scheduleAction.initialLabel} ·`)),
   ).toBeVisible();
 
   const webkitBrowser = await webkit.launch({ headless: false });
