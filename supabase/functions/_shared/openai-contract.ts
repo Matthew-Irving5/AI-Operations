@@ -132,8 +132,7 @@ export function validateReportOutput(
     !Array.isArray(value.findings) || value.findings.length > 50 ||
     !Array.isArray(value.actions) || value.actions.length > 20 ||
     !Array.isArray(value.evidence) || value.evidence.length > 50 ||
-    !Array.isArray(value.report_sections) || value.report_sections.length < 1 ||
-    value.report_sections.length > 20
+    !Array.isArray(value.report_sections) || value.report_sections.length > 20
   ) return null;
   const findings = value.findings.map((finding) => {
     if (

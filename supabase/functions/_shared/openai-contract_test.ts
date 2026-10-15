@@ -64,6 +64,20 @@ Deno.test("strict report output accepts empty evidence only with no findings", (
   );
 });
 
+Deno.test("strict report output accepts the governed empty-sections shape", () => {
+  const validated = validateReportOutput({
+    ...output,
+    findings: [],
+    recommendations: [],
+    actions: [],
+    alerts: [],
+    evidence: [],
+    uncertainties: ["The supplied evidence is insufficient."],
+    report_sections: [],
+  }, new Set());
+  assertEquals(validated?.report_sections, []);
+});
+
 Deno.test("provider usage strips untrusted provider response fields", () => {
   assertEquals(
     redactedProviderUsage({
