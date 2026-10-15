@@ -55,7 +55,8 @@ WITH grants AS (
       -- AI-16 governance RPCs are checked against their exact service_role
       -- grants by rpc_security.sql; the captured staging fingerprint predates them.
       to_regprocedure('public.record_prompt_evaluation(uuid,jsonb)'),
-      to_regprocedure('public.transition_prompt_version(uuid,integer,integer,uuid,text,text)')
+      to_regprocedure('public.transition_prompt_version(uuid,integer,integer,uuid,text,text)'),
+      to_regprocedure('public.create_prompt_candidate(uuid,text,text,jsonb,text,integer,integer,jsonb)')
     )
 )
 SELECT is(

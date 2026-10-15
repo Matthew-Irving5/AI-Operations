@@ -7150,6 +7150,19 @@ export type Database = {
         Args: { p_evaluation_result: Json; p_prompt_version_id: string };
         Returns: undefined;
       };
+      create_prompt_candidate: {
+        Args: {
+          p_developer_text: string;
+          p_json_schema: Json;
+          p_model_route: string;
+          p_schema_version: number;
+          p_system_text: string;
+          p_template_id: string;
+          p_tool_policy: Json;
+          p_tool_policy_version: number;
+        };
+        Returns: { id: string; version: number }[];
+      };
       record_source_freshness: {
         Args: {
           p_evidence: Json;

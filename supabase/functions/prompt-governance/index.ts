@@ -90,10 +90,13 @@ async function getCurrent() {
   const relation = Array.isArray(templateResult.data.managers)
     ? templateResult.data.managers[0]
     : templateResult.data.managers;
-  const current = buildCurrentPromptResponse({
-    ...templateResult.data,
-    managerCode: isRecord(relation) ? relation.code : null,
-  }, versionResult.data);
+  const current = buildCurrentPromptResponse(
+    {
+      ...templateResult.data,
+      managerCode: isRecord(relation) ? relation.code : null,
+    },
+    versionResult.data,
+  );
   return current
     ? json(current)
     : json({ code: "active_prompt_governance_invalid" }, 500);
@@ -141,40 +144,21 @@ async function createCandidate(body: Record<string, unknown>) {
   ) {
     return json({ code: "prompt_governance_invalid" }, 400);
   }
-  const lastVersion = await service
-    .from("prompt_versions")
-    .select("version")
-    .eq("template_id", template.id)
-    .order("version", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (lastVersion.error) {
-    return json({ code: "prompt_version_lookup_failed" }, 500);
-  }
-  const nextVersion = (lastVersion.data?.version ?? 0) + 1;
-  const inserted = await service
-    .from("prompt_versions")
-    .insert({
-      template_id: template.id,
-      version: nextVersion,
-      system_text: body.systemText,
-      developer_text: body.developerText,
-      json_schema: body.schema,
-      evaluation_status: "draft",
-      model_route: candidateGovernance.modelRoute,
-      schema_version: candidateGovernance.schemaVersion,
-      tool_policy_version: candidateGovernance.toolPolicyVersion,
-      tool_policy: candidateGovernance.toolPolicy,
-    })
-    .select("id,version")
-    .single();
-  if (inserted.error) {
+  const inserted = await service.rpc("create_prompt_candidate", {
+    p_template_id: template.id,
+    p_system_text: body.systemText,
+    p_developer_text: body.developerText,
+    p_json_schema: body.schema,
+    p_model_route: candidateGovernance.modelRoute,
+    p_schema_version: candidateGovernance.schemaVersion,
+    p_tool_policy_version: candidateGovernance.toolPolicyVersion,
+    p_tool_policy: candidateGovernance.toolPolicy,
+  });
+  const candidate = Array.isArray(inserted.data) ? inserted.data[0] : null;
+  if (inserted.error || !candidate) {
     return json({ code: "prompt_candidate_store_failed" }, 500);
   }
-  return json(
-    { candidateId: inserted.data.id, version: inserted.data.version },
-    201,
-  );
+  return json({ candidateId: candidate.id, version: candidate.version }, 201);
 }
 
 async function evaluateCandidate(body: Record<string, unknown>) {
