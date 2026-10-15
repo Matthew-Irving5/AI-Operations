@@ -7227,6 +7227,7 @@ export type Database = {
           estimated_cost: number;
           id: string;
           model_id: string | null;
+          model_route: string | null;
           prompt_version_id: string | null;
           provider_usage: NonNullable<Json>;
           reasoning_tokens: number;
@@ -7234,8 +7235,10 @@ export type Database = {
           request_id: string | null;
           response_id: string | null;
           run_id: string | null;
+          schema_version: number | null;
           search_calls: number;
           status: string;
+          tool_policy_version: number | null;
           trace_object_reference: string | null;
           user_id: string;
           validation_status: string;

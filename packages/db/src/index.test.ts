@@ -50,12 +50,21 @@ describe('prompt governance database types', () => {
       p_target_version: 2,
       p_template_id: '00000000-0000-0000-0000-000000000002',
     };
+    const settledCallIdentity: Pick<
+      Database['public']['Functions']['settle_instrumented_ai_call']['Returns'],
+      'model_route' | 'schema_version' | 'tool_policy_version'
+    > = {
+      model_route: 'gpt-5.6-terra',
+      schema_version: 1,
+      tool_policy_version: 1,
+    };
 
     expect([
       callIdentity.schema_version,
       version.schema_version,
       transition.active_version,
-    ]).toEqual([1, 1, 2]);
+      settledCallIdentity.schema_version,
+    ]).toEqual([1, 1, 2, 1]);
     expect(evaluateArgs.p_prompt_version_id).toBeTruthy();
     expect(transitionArgs.p_target_version).toBe(2);
   });
