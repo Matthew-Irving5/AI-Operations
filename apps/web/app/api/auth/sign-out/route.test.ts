@@ -32,7 +32,7 @@ describe('sign out', () => {
     expect(signOut).not.toHaveBeenCalled();
   });
 
-  it('revokes all sessions before reporting success', async () => {
+  it('revokes only this session before reporting idle sign-out success', async () => {
     const response = await POST(
       new Request('https://example.test/api/auth/sign-out', {
         method: 'POST',
@@ -41,11 +41,11 @@ describe('sign out', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(signOut).toHaveBeenCalledWith({ scope: 'global' });
+    expect(signOut).toHaveBeenCalledWith({ scope: 'local' });
     await expect(response.json()).resolves.toEqual({ signedOut: true });
   });
 
-  it('does not report success when global session revocation fails', async () => {
+  it('does not report success when local session revocation fails', async () => {
     signOut.mockResolvedValueOnce({ error: new Error('revocation failed') });
     const response = await POST(
       new Request('https://example.test/api/auth/sign-out', {
@@ -55,7 +55,7 @@ describe('sign out', () => {
     );
 
     expect(response.status).toBe(503);
-    expect(signOut).toHaveBeenCalledWith({ scope: 'global' });
+    expect(signOut).toHaveBeenCalledWith({ scope: 'local' });
     await expect(response.json()).resolves.toMatchObject({ code: 'session_revoke_failed' });
   });
 });

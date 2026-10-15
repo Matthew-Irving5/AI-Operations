@@ -7,7 +7,9 @@ export async function POST(request: Request) {
   if (rejected) return rejected;
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.auth.signOut({ scope: 'global' });
+  // Idle expiry applies only to this browser session. Revoking every session
+  // here can invalidate a separate active device (including a live test run).
+  const { error } = await supabase.auth.signOut({ scope: 'local' });
   if (error) {
     return NextResponse.json({ code: 'session_revoke_failed' }, { status: 503 });
   }
