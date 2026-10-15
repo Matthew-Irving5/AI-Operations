@@ -10,7 +10,9 @@ function fixture(ticket = 'AI-68') {
     ...REQUIRED_SECTIONS.flatMap((section) => [
       '## ' + section,
       '',
-      'For ' + ticket + ', verify the existing baseline and interface contract first; identify a concrete narrow test before deployment.',
+      'For ' +
+        ticket +
+        ', verify the existing baseline and interface contract first; identify a concrete narrow test before deployment.',
       '',
     ]),
   ].join('\n');
@@ -33,12 +35,18 @@ test('rejects a readback for a different ticket', () => {
 test('rejects absent required sections and unresolved scaffold text', () => {
   const incomplete = fixture().replace('## Delegation and blockers', '## Notes');
   assert.match(validateReadback(incomplete, 'AI-68').join(' '), /Delegation and blockers/);
-  const placeholder = fixture().replace('For AI-68, verify the existing baseline', 'TODO: verify the existing baseline');
+  const placeholder = fixture().replace(
+    'For AI-68, verify the existing baseline',
+    'TODO: verify the existing baseline',
+  );
   assert.match(validateReadback(placeholder, 'AI-68').join(' '), /Unresolved template/);
 });
 
 test('rejects near-empty generic readbacks and version mismatches', () => {
   const empty = fixture().replace(/For AI-68, verify[^\n]+/, 'Yes.');
   assert.match(validateReadback(empty, 'AI-68').join(' '), /ticket-specific detail/);
-  assert.match(validateReadback(fixture().replace('Contract version: 1', 'Contract version: 2'), 'AI-68').join(' '), /version 1/);
+  assert.match(
+    validateReadback(fixture().replace('Contract version: 1', 'Contract version: 2'), 'AI-68').join(' '),
+    /version 1/,
+  );
 });
