@@ -1,11 +1,11 @@
 # Agent-native Codex workflow (AI Operations)
 
-Last checked: 15 October 2026. Linear remains the work queue, GitHub the PR/release authority, and this repository's tests the source of verification. External skills are tools, **not** authority to alter product scope, skip tests, disable security or change branch protection.
+Last checked: 15 October 2026. Codex default model was reset from an unsupported GPT-6 Sol override to the verified GPT-5.6 Terra for ChatGPT authentication. Linear remains the work queue, GitHub the PR/release authority, and this repository's tests the source of verification. External skills are tools, **not** authority to alter product scope, skip tests, disable security or change branch protection.
 
 ## Installed on the authorized Windows Codex host
 
 - Ponytail Codex plugin 5.2.0: simplify diffs and favour existing abstractions; never replace feature completeness with less code.
-- P-Stack Codex plugin 0.9.30 (community Codex port of Lauren Tan's Cursor skill set): prefer targeted `how`, `blast-radius`, `tdd`, `fix-ci`, `deslop`, `babysit` when appropriate. Do not automatically run `arena`, `swarm`, `interrogate` or full `poteto-mode` on every ticket; multiple model defaults may be unavailable in Codex.
+- Selected P-Stack 0.9.30 Codex-port skills (`how`, `blast-radius`, `fix-ci`, `deslop`, `babysit`) are installed at the user skill scope. The full plugin was removed because it crowded the Codex skill-description budget; the existing Superpowers skill covers TDD. No `arena`/`swarm` by default.
 - Serena 2.0.0 MCP server: semantically navigate symbols and references. The Codex Desktop app may need to explicitly activate the AI Operations checkout at conversation start. Fallback: built-in language tooling, `rg`, TypeScript and `repo:map`.
 - Context7 Codex plugin 1.0.2: consult current third-party library docs **only** when necessary. An OAuth login or network access may be required; never treat installed as proof of authenticated readiness. Fallback: official docs and installed type definitions.
 - Existing Superpowers plugin: available, but don't combine whole-methodology workflows with P-Stack. Existing QA, release and auth controls remain authoritative.
