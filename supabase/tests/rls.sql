@@ -1,5 +1,5 @@
 begin;
-select plan(138);
+select plan(140);
 select ok(exists(select 1 from information_schema.columns where table_schema='public' and table_name='personal_profiles' and column_name='date_of_birth'), 'Personal profiles store date of birth');
 select ok(exists(select 1 from information_schema.columns where table_schema='public' and table_name='personal_locations' and column_name='default_travel_minutes'), 'Approved locations store travel buffers');
 select ok((select relrowsecurity from pg_class where relname='time_preferences' and relnamespace = 'public'::regnamespace), 'Weekly time preferences have RLS enabled');
@@ -147,6 +147,10 @@ select ok(
   'GitHub evidence sync has a named one-time MFA gate'
 );
 select ok(
+  position('schedule_update' in pg_get_functiondef('public.create_mfa_action_gate(text)'::regprocedure)) > 0,
+  'Schedule changes have a named one-time MFA gate'
+);
+select ok(
   position('finance_configure' in (
     select pg_get_constraintdef(oid)
     from pg_constraint
@@ -166,6 +170,14 @@ select ok(
     where conname = 'mfa_action_gates_action_key_check'
   )) > 0,
   'GitHub MFA sync action key is database-constrained'
+);
+select ok(
+  position('schedule_update' in (
+    select pg_get_constraintdef(oid)
+    from pg_constraint
+    where conname = 'mfa_action_gates_action_key_check'
+  )) > 0,
+  'Schedule update MFA action key is database-constrained'
 );
 select ok(
   position('is_allowed_aal2' in pg_get_functiondef('public.create_worker_device_from_mfa_gate(uuid,text,text,text,timestamptz)'::regprocedure)) = 0,

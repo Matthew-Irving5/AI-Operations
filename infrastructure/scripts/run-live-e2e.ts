@@ -26,11 +26,14 @@ async function main(): Promise<void> {
   const mode = process.argv[2];
   if (
     mode !== 'suite' &&
+    mode !== 'auth-acceptance' &&
     mode !== 'fixtures' &&
     mode !== 'fixture-mismatch' &&
     mode !== 'mismatch'
   ) {
-    throw new Error('Choose one live E2E mode: suite, fixtures, fixture-mismatch, or mismatch.');
+    throw new Error(
+      'Choose one live E2E mode: suite, auth-acceptance, fixtures, fixture-mismatch, or mismatch.',
+    );
   }
 
   if (mode === 'mismatch') {
@@ -63,7 +66,10 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  if (mode === 'suite' && process.env.LIVE_E2E_MANUAL_MFA !== 'true') {
+  if (
+    (mode === 'suite' || mode === 'auth-acceptance') &&
+    process.env.LIVE_E2E_MANUAL_MFA !== 'true'
+  ) {
     throw new Error(
       'Live suite requires LIVE_E2E_MANUAL_MFA=true so Playwright opens a user-visible browser for the real MFA checkpoint.',
     );
@@ -75,7 +81,7 @@ async function main(): Promise<void> {
   let acceptanceDeploymentRunId: string | undefined;
   let acceptanceCandidateTreeSha: string | undefined;
   let acceptancePullRequestNumber: number | undefined;
-  if (mode === 'suite') {
+  if (mode === 'suite' || mode === 'auth-acceptance') {
     acceptanceCandidateSha = process.env.LIVE_E2E_CANDIDATE_SHA;
     acceptanceDeploymentRunId = process.env.LIVE_E2E_DEPLOYMENT_RUN_ID;
     acceptanceCandidateTreeSha = process.env.LIVE_E2E_CANDIDATE_TREE_SHA;
@@ -127,6 +133,28 @@ async function main(): Promise<void> {
       await mkdir(resolve('test-results'), { recursive: true });
       process.env.LIVE_E2E_ACCEPTANCE_OUTPUT_PATH = acceptanceOutputPath;
     }
+  }
+  if (mode === 'auth-acceptance') {
+    const profileQuery = new URLSearchParams({ select: 'id,is_allowed', is_allowed: 'eq.true' });
+    if (env.LIVE_E2E_EMAIL) profileQuery.set('email', `eq.${env.LIVE_E2E_EMAIL}`);
+    const profileResponse = await fetch(
+      `${stagingTarget.supabaseUrl}/rest/v1/app_users?${profileQuery}`,
+      {
+        headers: {
+          apikey: env.LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY,
+          authorization: `Bearer ${env.LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+      },
+    );
+    if (!profileResponse.ok)
+      throw new Error(`Staging auth profile check failed with HTTP ${profileResponse.status}.`);
+    const profiles = (await profileResponse.json()) as Array<{ id: string; is_allowed: boolean }>;
+    if (profiles.length !== 1 || !profiles[0]?.is_allowed)
+      throw new Error('The allowlisted staging profile is missing or ambiguous.');
+    process.env.LIVE_E2E_USER_ID = profiles[0].id;
+    process.stdout.write(
+      'Staging auth prerequisite passed: one allowlisted user selected; owned schedules will be read through the authenticated UI.\n',
+    );
   }
   if (mode === 'fixtures' || mode === 'suite' || mode === 'fixture-mismatch') {
     // Supabase access stays in this Node process. Reset only queued runs owned by the
@@ -276,15 +304,19 @@ async function main(): Promise<void> {
   }
 
   try {
-    execFileSync(
-      'corepack',
-      ['pnpm', 'exec', 'playwright', 'test', '--config=playwright.live.config.ts'],
-      {
-        stdio: 'inherit',
-        shell: process.platform === 'win32',
-        env: { ...process.env, ...env },
-      },
-    );
+    const liveArgs = [
+      'pnpm',
+      'exec',
+      'playwright',
+      'test',
+      '--config=playwright.live.config.ts',
+      ...(mode === 'auth-acceptance' ? ['tests/e2e-live/auth-acceptance.spec.ts'] : []),
+    ];
+    execFileSync('corepack', liveArgs, {
+      stdio: 'inherit',
+      shell: process.platform === 'win32',
+      env: { ...process.env, ...env },
+    });
     if (
       acceptanceOutputPath &&
       acceptanceCandidateSha &&

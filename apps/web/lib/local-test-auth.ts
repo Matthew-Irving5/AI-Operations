@@ -85,3 +85,17 @@ export async function validateStagingAuthCredentials(
     return false;
   }
 }
+
+/** Keep local GoTrue failures actionable without returning provider payloads or identity data. */
+export function localAuthFailureDiagnostic(status: number, body: unknown) {
+  const record =
+    body && typeof body === 'object' && !Array.isArray(body)
+      ? (body as Record<string, unknown>)
+      : undefined;
+  const candidate = record?.error_code ?? record?.code;
+  const authCode =
+    typeof candidate === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(candidate)
+      ? candidate
+      : undefined;
+  return { authStatus: status, ...(authCode ? { authCode } : {}) };
+}

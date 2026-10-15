@@ -27,11 +27,18 @@ const EvidenceWriteInputSchema = z
         releaseVersion: z.literal('passed'),
       })
       .strict(),
+    freshMfaAction: z
+      .object({
+        staleDenied: z.literal('passed'),
+        staleAttemptUsedMfaGate: z.literal(false),
+        freshReauthAccepted: z.literal('passed'),
+      })
+      .strict(),
     correlationIds: z
       .array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9:-]{0,127}$/))
       .min(1)
       .max(20),
-    workflowRuns: Ai15WorkflowProofsSchema,
+    workflowRuns: Ai15WorkflowProofsSchema.optional(),
     acceptedAt: z.string().datetime({ offset: true }),
   })
   .strict();
@@ -52,6 +59,7 @@ export async function writeLiveStagingAcceptanceEvidence(
     stagingOrigin: input.stagingOrigin,
     humanMfa: 'user-completed',
     checks: input.checks,
+    freshMfaAction: input.freshMfaAction,
     correlationIds: input.correlationIds,
     workflowRuns: input.workflowRuns,
     acceptedAt: input.acceptedAt,

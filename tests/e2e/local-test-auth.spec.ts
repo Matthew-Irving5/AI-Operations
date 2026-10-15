@@ -82,6 +82,17 @@ test('parallel local sessions receive independent protected browser sessions', a
     const secondAuthCookie = secondCookies.find((cookie) => cookie.name.endsWith('-auth-token'));
     expect(firstAuthCookie).toBeDefined();
     expect(secondAuthCookie).toBeDefined();
+    // WebKit's cookie inventory reports SameSite=None for a response whose
+    // Set-Cookie header is SameSite=Lax. local-auth.ts checks the wire policy;
+    // this browser assertion checks the stored HttpOnly, non-Secure session.
+    expect(firstAuthCookie).toMatchObject({
+      httpOnly: true,
+      secure: false,
+    });
+    expect(secondAuthCookie).toMatchObject({
+      httpOnly: true,
+      secure: false,
+    });
     expect(firstAuthCookie?.value).not.toBe(secondAuthCookie?.value);
     await Promise.all([firstPage.goto('/reports'), secondPage.goto('/reports')]);
     await Promise.all([

@@ -2,7 +2,7 @@
 
 The sole production identity is allowlisted in the database. Authenticated routes require Supabase AAL2, privileged actions require MFA completed within five minutes, and RLS defaults to deny. Browser clients receive only public Supabase configuration; privileged operations are JWT-verified Edge Functions. Audit payloads are redacted.
 
-State-changing Next.js routes reject requests without a same-origin `Origin` header and authenticate the user with Supabase `getUser` before an access token is relayed to a JWT-verified Edge Function. Supabase session cookies are server-managed. Service-role credentials, access tokens, database passwords, Cloudflare tokens, and R2 credentials remain server/deployment secrets and must never be bundled into frontend output.
+State-changing Next.js routes reject requests without a same-origin `Origin` header and authenticate the user with Supabase `getUser` before an access token is relayed to a JWT-verified Edge Function. Supabase session cookies are server-managed, HttpOnly, SameSite=Lax, and Secure in hosted environments. Password recovery is restricted to the allowlisted identity, uses a PKCE callback and a short-lived HttpOnly marker, then revokes all sessions after a successful password update. Service-role credentials, access tokens, database passwords, Cloudflare tokens, and R2 credentials remain server/deployment secrets and must never be bundled into frontend output.
 
 The Google OAuth start function verifies the active Supabase session and the
 production identity allowlist. It does not impose a second five-minute MFA
@@ -11,4 +11,4 @@ active session is the correct gate for initiating a connection. Actions that
 change credentials, scopes, budgets, or approvals retain their dedicated
 fresh-MFA checks.
 
-The browser is protected with a restrictive CSP, frame denial, no-referrer policy, disabled camera/microphone/geolocation permissions, MIME sniffing protection, and HSTS. Database tables use RLS and authenticated table mutations are removed where a privileged action must pass an Edge Function’s AAL2, allowlist, validation, idempotency, and audit checks. Schedule enabling additionally requires the recorded production acceptance; the service function verifies it server-side and does not trust UI state.
+The browser is protected with a restrictive CSP, frame denial, no-referrer policy, disabled camera/microphone/geolocation permissions, MIME sniffing protection, and HSTS. Database tables use RLS and authenticated table mutations are removed where a privileged action must pass an Edge Function’s AAL2, allowlist, validation, idempotency, and audit checks. Schedule changes require a user-bound, one-time fresh-MFA gate in addition to recorded production acceptance before the service function updates them; neither condition is trusted from UI state.
