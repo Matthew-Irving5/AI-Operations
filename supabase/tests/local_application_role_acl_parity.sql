@@ -47,6 +47,8 @@ WITH grants AS (
     -- These AI-18 routines are validated against their exact service_role
     -- grants by rpc_security.sql; the captured staging fingerprint predates them.
     AND p.oid NOT IN (
+      -- AI-19's transition RPC is separately checked in rpc_security.sql.
+      to_regprocedure('public.transition_ai14_contract_handoff(uuid,uuid,public.handoff_status,boolean)'),
       to_regprocedure('public.claim_job_queue_internal(text,integer,uuid)'),
       to_regprocedure('public.claim_job_queue_for_run(text,uuid)'),
       to_regprocedure('public.complete_job_queue(uuid,text,text,text)'),
@@ -56,7 +58,10 @@ WITH grants AS (
 )
 SELECT is(
   (SELECT md5(string_agg(object_name||'|'||grantee||'|'||privilege_type||'|'||is_grantable::text, E'\n' ORDER BY object_name,grantee,privilege_type,is_grantable)) FROM grants),
-  '4acc94f98c2d7302e0a6794353955789',
+  -- AI-19 revokes the historical PUBLIC EXECUTE grant on
+  -- record_conversation_handoff_event(); rpc_security.sql enforces its exact
+  -- anon/authenticated/service_role false/false/false matrix.
+  '5b5f2cad2b94fac077c2a94e3b2fa014',
   'local routine ACL tuples match staging plus AI15 execution RPCs'
 );
 

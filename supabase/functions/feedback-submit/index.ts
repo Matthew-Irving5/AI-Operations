@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
+import { redactTraceFields } from "@ai-operations/observability";
 import { authenticateUserRequest } from "../_shared/auth-contract.ts";
 import { consumeRateLimit } from "../_shared/rate-limit.ts";
 
@@ -94,11 +95,11 @@ Deno.serve(async (request) => {
       user_id: identity.user.id,
       correlation_id: run.data.correlation_id,
       event_type: "feedback_submitted",
-      redacted_payload: {
+      redacted_payload: redactTraceFields({
         feedback_id: feedback.data.id,
         positive: body.positive,
         categories: body.categories,
-      },
+      }),
     });
   }
   await service.from("audit_events").insert({

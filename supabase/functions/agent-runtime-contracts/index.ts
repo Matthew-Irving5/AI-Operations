@@ -276,7 +276,7 @@ async function createFixture(userId: string, fixtureKey: string) {
     correlation_id: conversation.correlationId,
     result: "success",
     redacted_after: { fixture: "ai14-live-e2e", fixtureKey },
-  });
+  }, { onConflict: "id", ignoreDuplicates: true });
   if (auditError) {
     console.error(JSON.stringify(agentRuntimeFixtureWriteFailure(
       "audit_upsert",
@@ -482,30 +482,30 @@ Deno.serve(async (request) => {
   ) {
     return json({ code: "handoff_not_found" }, 404);
   }
-  const { data, error } = await service
-    .from("conversation_handoffs")
-    .update({ status: input.status })
-    .eq("id", input.handoffId)
-    .eq("user_id", identity.user.id)
-    .select("id,conversation_id,status,accepted_at")
-    .maybeSingle();
+  const { data, error } = await service.rpc(
+    "transition_ai14_contract_handoff",
+    {
+      p_user_id: identity.user.id,
+      p_handoff_id: input.handoffId,
+      p_status: input.status,
+      p_aal2_verified: true,
+    },
+  );
   if (error) {
     if (error.message.includes("invalid_agent_contract_transition")) {
       return json({ code: "invalid_transition" }, 409);
     }
+    if (error.message.includes("handoff_transition_audit_context_required")) {
+      return json({ code: "handoff_audit_context_failed" }, 500);
+    }
     return json({ code: "handoff_transition_failed" }, 422);
   }
-  if (!data) return json({ code: "handoff_not_found" }, 404);
-  const { error: auditError } = await service.from("audit_events").upsert({
-    id: data.id,
-    user_id: identity.user.id,
-    actor_type: "user",
-    action_type: "transition_ai14_contract_handoff",
-    target_type: "conversation_handoff",
-    target_id: data.id,
-    aal: "aal2",
-    result: "success",
+  const transitioned = data?.[0];
+  if (!transitioned) return json({ code: "handoff_not_found" }, 404);
+  return json({
+    id: transitioned.id,
+    conversation_id: transitioned.conversation_id,
+    status: transitioned.status,
+    accepted_at: transitioned.accepted_at,
   });
-  if (auditError) return json({ code: "handoff_audit_failed" }, 500);
-  return json(data);
 });

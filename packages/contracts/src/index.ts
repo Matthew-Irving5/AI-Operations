@@ -3,6 +3,7 @@ export * from './agents.ts';
 export * from './conversations.ts';
 export * from './evidence.ts';
 export * from './execution.ts';
+export * from './observability.ts';
 
 export const capabilitySchema = z.enum([
   'view_sensitive_data',
