@@ -1,5 +1,4 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
-import { reportOutputSchema } from "../_shared/openai-contract.ts";
 import { createWorkflowExecutionHandler } from "./handler.ts";
 import { AI15_WORKFLOW_RUN_SELECT } from "./read-contract.ts";
 import { submitProviderResponse as submitProviderResponseWithRetry } from "./provider-submission.ts";
@@ -8,6 +7,10 @@ import {
   resolveWorkflowMode,
   selectModelUnderCeiling,
 } from "./execution-policy.ts";
+import {
+  validatePromptGovernance,
+  validateReportOutputSchema,
+} from "../../../packages/ai-runtime/src/governance.ts";
 import {
   type ExecuteWorkflowOutcome,
   loadTrustedWorkflowExecution,
@@ -378,24 +381,40 @@ async function executeAiWorkflow(
     );
   }
   const definitionConfig = definitionResult.data;
+  const pendingReservation = await service.from("ai_calls")
+    .select("id,status,response_id,request_id,prompt_version_id,model_id")
+    .eq("run_id", run.id)
+    .eq("status", "reserved")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (pendingReservation.error) {
+    return outcomeFor(
+      run.id,
+      "retryable_failure",
+      "ai_call_recovery_lookup_failed",
+    );
+  }
   const modelCeiling = budget?.model_ceiling ??
     definitionConfig.default_model_route;
-  const selectedModel = selectModelUnderCeiling(
+  const defaultSelectedModel = selectModelUnderCeiling(
     definitionConfig.default_model_route,
     modelCeiling,
   );
-  if (!selectedModel) {
+  if (!pendingReservation.data && !defaultSelectedModel) {
     return outcomeFor(run.id, "terminal_failure", "model_route_unavailable");
   }
-  const modelResult = await service
-    .from("ai_model_catalog")
-    .select("id,model_id,enabled")
-    .eq("model_id", selectedModel)
-    .eq("enabled", true)
-    .maybeSingle();
+  const modelQuery = service.from("ai_model_catalog")
+    .select("id,model_id,enabled");
+  const modelResult = pendingReservation.data
+    ? await modelQuery.eq("id", pendingReservation.data.model_id)
+      .eq("enabled", true).maybeSingle()
+    : await modelQuery.eq("model_id", defaultSelectedModel!)
+      .eq("enabled", true).maybeSingle();
   if (modelResult.error || !modelResult.data) {
     return outcomeFor(run.id, "terminal_failure", "model_unavailable");
   }
+  const selectedModel = modelResult.data.model_id;
 
   const promptResult = await service
     .from("prompt_templates")
@@ -410,17 +429,24 @@ async function executeAiWorkflow(
       "approved_prompt_unavailable",
     );
   }
-  const promptVersionResult = await service
+  const promptVersionQuery = service
     .from("prompt_versions")
-    .select("id,system_text,developer_text,evaluation_status")
-    .eq("template_id", promptResult.data.id)
-    .eq("version", promptResult.data.active_version)
-    .maybeSingle();
+    .select(
+      "id,system_text,developer_text,evaluation_status,json_schema,model_route,schema_version,tool_policy_version,tool_policy",
+    );
+  const selectedPromptVersion = pendingReservation.data
+    ? await promptVersionQuery.eq(
+      "id",
+      pendingReservation.data.prompt_version_id,
+    )
+      .maybeSingle()
+    : await promptVersionQuery.eq("template_id", promptResult.data.id)
+      .eq("version", promptResult.data.active_version).maybeSingle();
   if (
-    promptVersionResult.error ||
-    !promptVersionResult.data ||
+    selectedPromptVersion.error ||
+    !selectedPromptVersion.data ||
     !["approved", "promoted"].includes(
-      promptVersionResult.data.evaluation_status,
+      selectedPromptVersion.data.evaluation_status,
     )
   ) {
     return outcomeFor(
@@ -428,6 +454,20 @@ async function executeAiWorkflow(
       "terminal_failure",
       "approved_prompt_unavailable",
     );
+  }
+  const promptGovernance = {
+    modelRoute: selectedPromptVersion.data.model_route,
+    schemaVersion: selectedPromptVersion.data.schema_version,
+    toolPolicyVersion: selectedPromptVersion.data.tool_policy_version,
+    toolPolicy: selectedPromptVersion.data.tool_policy,
+  };
+  if (
+    !validatePromptGovernance(promptGovernance) ||
+    !validateReportOutputSchema(selectedPromptVersion.data.json_schema) ||
+    selectModelUnderCeiling(promptGovernance.modelRoute, selectedModel) !==
+      selectedModel
+  ) {
+    return outcomeFor(run.id, "terminal_failure", "prompt_governance_invalid");
   }
 
   const feedbackResult = await service
@@ -568,20 +608,6 @@ async function executeAiWorkflow(
       responseId: unresolvedCall.data.response_id,
     };
   }
-  const pendingReservation = await service.from("ai_calls")
-    .select("id,status,response_id,request_id")
-    .eq("run_id", run.id)
-    .eq("status", "reserved")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (pendingReservation.error) {
-    return outcomeFor(
-      run.id,
-      "retryable_failure",
-      "ai_call_recovery_lookup_failed",
-    );
-  }
   const attemptResult = await service.from("job_queue")
     .select("attempt_count")
     .eq("run_id", run.id)
@@ -621,7 +647,7 @@ async function executeAiWorkflow(
       p_user_id: run.userId,
       p_run_id: run.id,
       p_model_id: modelResult.data.id,
-      p_prompt_version_id: promptVersionResult.data.id,
+      p_prompt_version_id: selectedPromptVersion.data.id,
       p_estimated_cost: estimatedCost,
       p_request_id: requestId,
       p_redacted_trace: {
@@ -666,18 +692,18 @@ async function executeAiWorkflow(
           model: selectedModel,
           reasoning: { effort: definitionConfig.default_reasoning },
           instructions:
-            `${promptVersionResult.data.system_text}\n\n${promptVersionResult.data.developer_text}`,
+            `${selectedPromptVersion.data.system_text}\n\n${selectedPromptVersion.data.developer_text}`,
           input: workflowInput,
           background: true,
           max_output_tokens: 2_000,
           store: false,
-          tools: [],
+          tools: promptGovernance.toolPolicy.tools,
           text: {
             format: {
               type: "json_schema",
               name: "ai_operations_report",
               strict: true,
-              schema: reportOutputSchema,
+              schema: selectedPromptVersion.data.json_schema,
             },
           },
         }),

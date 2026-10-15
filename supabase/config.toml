@@ -165,3 +165,7 @@ otp_expiry = 1800
 enroll_enabled = true
 verify_enabled = true
 max_enrolled_factors = 1
+
+[functions.prompt-governance]
+enabled = true
+verify_jwt = true
