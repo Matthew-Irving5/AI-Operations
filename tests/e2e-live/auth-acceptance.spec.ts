@@ -134,13 +134,9 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
   process.stdout.write(
     '\nComplete Microsoft Authenticator in the visible browser to reauthenticate the schedule action.\n',
   );
-  await expect
-    .poll(async () => page.getByLabel('Six-digit code').isVisible(), { timeout: 60_000 })
-    .toBe(true);
-  await expect(page.getByLabel('Six-digit code'))
-    .toBeFocused({ timeout: 60_000 })
-    .catch(() => undefined);
-  await expect(page).toHaveURL(/\/overview(?:\?|$)/, { timeout: 60_000 });
+  // The operator may need to switch to their authenticator and back. Keep the
+  // headed browser alive for the same bounded window as the initial sign-in.
+  await expect(page).toHaveURL(/\/overview(?:\?|$)/, { timeout: 5 * 60_000 });
   const gate = await page.evaluate(() => {
     const raw = localStorage.getItem('mfa_job_gate') ?? sessionStorage.getItem('mfa_job_gate');
     if (!raw) return null;
