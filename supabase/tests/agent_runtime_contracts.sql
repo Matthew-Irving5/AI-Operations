@@ -1,5 +1,5 @@
 begin;
-select plan(34);
+select plan(42);
 
 select ok((select count(distinct m.code)=8 from public.manager_capabilities c join public.managers m on m.id=c.manager_id where c.contract_version=1), 'capabilities are seeded for all eight canonical managers');
 select ok(has_column_privilege('service_role','public.managers','id','SELECT'), 'trusted fixture lookup can read manager IDs');
@@ -32,6 +32,13 @@ insert into public.conversation_participants(conversation_id,user_id,kind,role)
 values ('00000000-0000-4000-8000-000000001001','00000000-0000-0000-0000-000000000101','user','owner');
 insert into public.conversation_messages(id,conversation_id,user_id,direction,sender_kind,channel,semantic_type,authority,body_text,body_sha256,deduplication_key,created_at)
 values ('00000000-0000-4000-8000-000000001002','00000000-0000-4000-8000-000000001001','00000000-0000-0000-0000-000000000101','inbound','user','web_chat','request','verified_user','test',repeat('a',64),'test-message-1',now());
+insert into public.audit_events(id,user_id,actor_type,action_type,target_type,target_id,aal,correlation_id,result)
+values ('00000000-0000-4000-8000-000000001001','00000000-0000-0000-0000-000000000101','user','create_ai14_contract_fixture','conversation','00000000-0000-4000-8000-000000001001','aal2','00000000-0000-4000-8000-000000001003','success')
+on conflict(id) do nothing;
+insert into public.audit_events(id,user_id,actor_type,action_type,target_type,target_id,aal,correlation_id,result)
+values ('00000000-0000-4000-8000-000000001001','00000000-0000-0000-0000-000000000101','user','create_ai14_contract_fixture','conversation','00000000-0000-4000-8000-000000001001','aal2','00000000-0000-4000-8000-000000001003','success')
+on conflict(id) do nothing;
+select ok((select count(*)=1 from public.audit_events where id='00000000-0000-4000-8000-000000001001'), 'fixture audit retry preserves one immutable audit row');
 
 select throws_ok(
   $$insert into public.conversation_messages(conversation_id,user_id,direction,sender_kind,channel,semantic_type,authority,body_text,body_sha256,deduplication_key) values ('00000000-0000-4000-8000-000000001001','00000000-0000-0000-0000-000000000101','inbound','user','web_chat','request','agent_generated','bad',repeat('b',64),'forged-authority')$$,
@@ -52,10 +59,36 @@ select throws_ok(
 
 insert into public.conversation_handoffs(user_id,conversation_id,from_manager_code,to_manager_code,reason,idempotency_key)
 values ('00000000-0000-0000-0000-000000000101','00000000-0000-4000-8000-000000001001','personal','career','contract test','test-handoff-1');
-update public.conversation_handoffs set status='accepted' where idempotency_key='test-handoff-1';
+select set_config('request.jwt.claims','{"role":"service_role"}',true);
+select * from public.transition_ai14_contract_handoff(
+  '00000000-0000-0000-0000-000000000101',
+  (select id from public.conversation_handoffs where idempotency_key='test-handoff-1'),
+  'accepted',true
+);
+select ok((select count(*)=1 from public.audit_events where action_type='transition_ai14_contract_handoff' and target_id=(select id::text from public.conversation_handoffs where idempotency_key='test-handoff-1')), 'accepted transition appends one audit event');
+select ok((select actor_type='user' and aal='aal2' and redacted_before->>'status'='requested' and redacted_after->>'status'='accepted' from public.audit_events where action_type='transition_ai14_contract_handoff' and target_id=(select id::text from public.conversation_handoffs where idempotency_key='test-handoff-1')), 'transition audit preserves verified user and AAL2 context with status evidence');
+select * from public.transition_ai14_contract_handoff(
+  '00000000-0000-0000-0000-000000000101',
+  (select id from public.conversation_handoffs where idempotency_key='test-handoff-1'),
+  'accepted',true
+);
+select ok((select count(*)=2 from public.conversation_handoff_events where handoff_id=(select id from public.conversation_handoffs where idempotency_key='test-handoff-1')) and (select count(*)=1 from public.audit_events where action_type='transition_ai14_contract_handoff' and target_id=(select id::text from public.conversation_handoffs where idempotency_key='test-handoff-1')), 'repeated same-status transition does not duplicate history or audit');
 select throws_ok(
-  $$update public.conversation_handoffs set status='requested' where idempotency_key='test-handoff-1'$$,
+  $$select * from public.transition_ai14_contract_handoff('00000000-0000-0000-0000-000000000101',(select id from public.conversation_handoffs where idempotency_key='test-handoff-1'),'requested',true)$$,
   'P0001', 'invalid_agent_contract_transition: conversation_handoffs.accepted -> requested', 'handoff state cannot move backwards'
+);
+select ok((select count(*)=2 from public.conversation_handoff_events where handoff_id=(select id from public.conversation_handoffs where idempotency_key='test-handoff-1')) and (select count(*)=1 from public.audit_events where action_type='transition_ai14_contract_handoff' and target_id=(select id::text from public.conversation_handoffs where idempotency_key='test-handoff-1')), 'invalid transition leaves handoff and audit history unchanged');
+select throws_ok(
+  $$select * from public.transition_ai14_contract_handoff('00000000-0000-0000-0000-000000000101',(select id from public.conversation_handoffs where idempotency_key='test-handoff-1'),'accepted',false)$$,
+  'P0001', 'aal2_verification_required', 'transition RPC rejects missing verified AAL2 context'
+);
+select throws_ok(
+  $$update public.audit_events set result='rewritten' where action_type='transition_ai14_contract_handoff' and target_id=(select id::text from public.conversation_handoffs where idempotency_key='test-handoff-1')$$,
+  'P0001', 'audit_events_are_append_only', 'audit event updates are rejected'
+);
+select throws_ok(
+  $$delete from public.audit_events where action_type='transition_ai14_contract_handoff' and target_id=(select id::text from public.conversation_handoffs where idempotency_key='test-handoff-1')$$,
+  'P0001', 'audit_events_are_append_only', 'audit event deletes are rejected'
 );
 select ok((select current_manager_code='career' from public.conversations where id='00000000-0000-4000-8000-000000001001'), 'accepted handoff changes canonical conversation owner');
 select ok((select count(*)=2 from public.conversation_handoff_events where handoff_id=(select id from public.conversation_handoffs where idempotency_key='test-handoff-1')), 'handoff history preserves requested and accepted events');

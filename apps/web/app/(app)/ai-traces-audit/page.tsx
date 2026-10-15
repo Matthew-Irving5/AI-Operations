@@ -21,12 +21,41 @@ export default async function TracesPage() {
             <article className="card" key={trace.id}>
               <div className="label">
                 {trace.severity} ·{' '}
-                {new Date(trace.created_at).toLocaleString('en-GB', { timeZone: 'Europe/London' })}
+                {new Date(trace.occurred_at ?? trace.created_at).toLocaleString('en-GB', {
+                  timeZone: 'Europe/London',
+                })}
               </div>
               <h2>{trace.event_type}</h2>
               <p>
                 Correlation: <code>{trace.correlation_id}</code>
               </p>
+              {trace.run_id ? (
+                <p>
+                  Run: <code>{trace.run_id}</code>
+                </p>
+              ) : null}
+              {trace.step_id ? (
+                <p>
+                  Step: <code>{trace.step_id}</code>
+                </p>
+              ) : null}
+              {trace.ai_call_id ? (
+                <p>
+                  AI call: <code>{trace.ai_call_id}</code>
+                </p>
+              ) : null}
+              {trace.parent_event_id ? (
+                <p>
+                  Parent event: <code>{trace.parent_event_id}</code>
+                </p>
+              ) : null}
+              {trace.environment || trace.build_version ? (
+                <p>
+                  {trace.environment ?? 'Environment unknown'}
+                  {trace.build_version ? ` · ${trace.build_version}` : ''}
+                </p>
+              ) : null}
+              {trace.archive_reference ? <p>Archived payload metadata is available.</p> : null}
             </article>
           ))}
         </section>
