@@ -290,6 +290,14 @@
       "rationale": "The outbound-only Windows worker authenticates with its revocable device credential."
     },
     {
+      "slug": "prompt-governance",
+      "authMode": "user_jwt_aal2",
+      "verifyJwt": true,
+      "principal": "allowlisted user",
+      "identitySource": "validated Supabase Auth user and signed AAL2 claim",
+      "rationale": "Creating, evaluating, promoting, and rolling back prompt candidates require the approved operator at AAL2; candidate promotion is gated by repository-owned evaluations."
+    },
+    {
       "slug": "worker-submit-action-result",
       "authMode": "worker_device_secret",
       "verifyJwt": false,
