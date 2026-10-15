@@ -119,6 +119,22 @@ Agent debugging optimizes **localisation time**, not the number of patches attem
 7. Every escaped deterministic bug leaves three artifacts: the fix, a regression test, and an earlier diagnostic/invariant so the same class cannot escape to that stage again.
 
 Errors must be actionable without secret/personal-data leakage: identify the failed invariant, boundary/subsystem, expected vs actual state, correlation ID when available, owning contract/source when known, and the exact reproduction command.
+## Mandatory ticket startup readback (execution contract v1)
+
+This repository uses `docs/testing/linear-ticket-execution-contract.md` as the compact execution contract echoed on open Linear tickets. Do not assume the parent Codex conversation or its subagents inherited repository instructions: load the applicable AGENTS.md and issue explicitly and pass relevant constraints into every subagent handoff.
+
+**Before modifying feature code**, publish a brief, concrete readback in the parent Codex conversation and create `docs/build/ticket-readbacks/AI-XX.md` with `node infrastructure/scripts/ticket-readback.mjs init AI-XX`. Replace the scaffold with:
+- the actual objective and 1–3 observable outcomes;
+- linked dependencies and the precise interfaces/permissions expected;
+- planned implementation and out-of-scope changes;
+- the cheapest focused reproduction/tests and final `verify:changed` proof;
+- whether hosted proof is genuinely required, plus safe fixture/auth/evidence readiness checks;
+- what each subagent must receive and return, or why none is used.
+
+Validate with `node infrastructure/scripts/ticket-readback.mjs check AI-XX`. No generic restatement of the issue, placeholder answers, passwords, tokens or personal operational data. The committed readback is a traceable record; the parent-conversation summary is the actual communication checkpoint. CI checks the readback's completeness on AI-numbered PRs, **not** factual correctness or whether it was written before editing. The owning agent remains responsible for both.
+
+Before requesting staging, prove relevant DB application-role/RPC/column grants and required fixtures locally, and dry-run the selected acceptance-evidence producer→validator→consumer contract without a hosted browser. For attended MFA, check that the user can actually access the headed browser before starting waits. Keep the existing exact-candidate staging, manual MFA and bounded live-proof rules intact.
+
 ## Pass start protocol
 
 1. Verify `Matthew-Irving5/AI-Operations`, fetch/prune and start from current `origin/main` without disturbing another active worktree.

@@ -30,6 +30,11 @@ jobs:
       - uses: actions/setup-node@v5
         with: { node-version: 22.18.0, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - name: Validate ticket startup readback
+        env:
+          GITHUB_HEAD_REF: ${{ github.head_ref }}
+          TICKET_CONTEXT: ${{ github.event.pull_request.title }}
+        run: node infrastructure/scripts/ticket-readback.mjs check
       - run: pnpm verify:changed --lane=core
 
   boundary:
