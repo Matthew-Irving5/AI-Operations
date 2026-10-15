@@ -125,6 +125,7 @@ export type Database = {
           estimated_cost: number;
           id: string;
           model_id: string | null;
+          model_route: string | null;
           prompt_version_id: string | null;
           provider_usage: NonNullable<Json>;
           reasoning_tokens: number;
@@ -132,8 +133,10 @@ export type Database = {
           request_id: string | null;
           response_id: string | null;
           run_id: string | null;
+          schema_version: number | null;
           search_calls: number;
           status: string;
+          tool_policy_version: number | null;
           trace_object_reference: string | null;
           user_id: string;
           validation_status: string;
@@ -148,6 +151,7 @@ export type Database = {
           estimated_cost?: number;
           id?: string;
           model_id?: string | null;
+          model_route?: string | null;
           prompt_version_id?: string | null;
           provider_usage?: NonNullable<Json>;
           reasoning_tokens?: number;
@@ -155,8 +159,10 @@ export type Database = {
           request_id?: string | null;
           response_id?: string | null;
           run_id?: string | null;
+          schema_version?: number | null;
           search_calls?: number;
           status: string;
+          tool_policy_version?: number | null;
           trace_object_reference?: string | null;
           user_id: string;
           validation_status?: string;
@@ -171,6 +177,7 @@ export type Database = {
           estimated_cost?: number;
           id?: string;
           model_id?: string | null;
+          model_route?: string | null;
           prompt_version_id?: string | null;
           provider_usage?: NonNullable<Json>;
           reasoning_tokens?: number;
@@ -178,8 +185,10 @@ export type Database = {
           request_id?: string | null;
           response_id?: string | null;
           run_id?: string | null;
+          schema_version?: number | null;
           search_calls?: number;
           status?: string;
+          tool_policy_version?: number | null;
           trace_object_reference?: string | null;
           user_id?: string;
           validation_status?: string;
@@ -5327,32 +5336,91 @@ export type Database = {
           },
         ];
       };
+      prompt_version_transitions: {
+        Row: {
+          active_version: number;
+          actor_user_id: string;
+          created_at: string;
+          evaluation_result: Json | null;
+          id: string;
+          idempotency_key: string;
+          operation: string;
+          previous_version: number | null;
+          template_id: string;
+        };
+        Insert: {
+          active_version: number;
+          actor_user_id: string;
+          created_at?: string;
+          evaluation_result?: Json | null;
+          id?: string;
+          idempotency_key: string;
+          operation: string;
+          previous_version?: number | null;
+          template_id: string;
+        };
+        Update: {
+          active_version?: number;
+          actor_user_id?: string;
+          created_at?: string;
+          evaluation_result?: Json | null;
+          id?: string;
+          idempotency_key?: string;
+          operation?: string;
+          previous_version?: number | null;
+          template_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'prompt_version_transitions_template_id_fkey';
+            columns: ['template_id'];
+            isOneToOne: false;
+            referencedRelation: 'prompt_templates';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
       prompt_versions: {
         Row: {
           developer_text: string;
+          evaluation_result: Json | null;
           evaluation_status: string;
           id: string;
           json_schema: NonNullable<Json>;
+          model_route: string;
+          schema_version: number;
           system_text: string;
           template_id: string;
+          tool_policy: NonNullable<Json>;
+          tool_policy_version: number;
           version: number;
         };
         Insert: {
           developer_text: string;
+          evaluation_result?: Json | null;
           evaluation_status?: string;
           id?: string;
           json_schema: NonNullable<Json>;
+          model_route?: string;
+          schema_version?: number;
           system_text: string;
           template_id: string;
+          tool_policy?: NonNullable<Json>;
+          tool_policy_version?: number;
           version: number;
         };
         Update: {
           developer_text?: string;
+          evaluation_result?: Json | null;
           evaluation_status?: string;
           id?: string;
           json_schema?: NonNullable<Json>;
+          model_route?: string;
+          schema_version?: number;
           system_text?: string;
           template_id?: string;
+          tool_policy?: NonNullable<Json>;
+          tool_policy_version?: number;
           version?: number;
         };
         Relationships: [
@@ -7078,6 +7146,10 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      record_prompt_evaluation: {
+        Args: { p_evaluation_result: Json; p_prompt_version_id: string };
+        Returns: undefined;
+      };
       record_source_freshness: {
         Args: {
           p_evidence: Json;
@@ -7213,6 +7285,17 @@ export type Database = {
       update_onboarding_checklist_item: {
         Args: { p_code: string; p_completed_at: string; p_metadata?: Json; p_user_id: string };
         Returns: undefined;
+      };
+      transition_prompt_version: {
+        Args: {
+          p_actor_user_id: string;
+          p_expected_active_version: number;
+          p_idempotency_key: string;
+          p_operation: string;
+          p_target_version: number;
+          p_template_id: string;
+        };
+        Returns: Json;
       };
       commit_instrumented_ai_report: {
         Args: {
