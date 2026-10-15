@@ -105,7 +105,6 @@ export const reportOutputSchema: Record<string, unknown> = {
     },
     report_sections: {
       type: "array",
-      minItems: 1,
       maxItems: 20,
       items: {
         type: "object",

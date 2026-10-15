@@ -1,5 +1,5 @@
 begin;
-select plan(20);
+select plan(21);
 
 create temporary table ai15_fixture_owner (user_id uuid not null, email text not null) on commit drop;
 do $fixture$
@@ -151,9 +151,16 @@ select lives_ok($$select public.commit_instrumented_ai_report_with_queue(
   (select id from public.job_queue where deduplication_key = 'ai15-silent-report-job'),
   'resp_ai15silent123', (select id from public.ai_calls where run_id = '00000000-0000-4000-8000-000000000317'),
   'systems-weekly-quality-platform', 'silent', 'Silent report', 'Summary', '## Silent report', '{}'::jsonb,
-  '[{"code":"quality-review","title":"Quality review","display_order":0,"content":"Content","structured_data":{},"evidence_references":[]}]'::jsonb,
+  '[]'::jsonb,
   '[]'::jsonb, 0.01, 10, 20, 0, 0, '{"input_tokens":10,"output_tokens":20}'::jsonb, '{}'::jsonb
 )$$, 'silent notification policy still commits report and queue outcome');
+select is(
+  (select count(*)::integer from public.report_sections section
+   join public.reports report on report.id = section.report_id
+   where report.run_id = '00000000-0000-4000-8000-000000000317'),
+  0,
+  'a valid provider output with no report sections commits without inventing sections'
+);
 select is((select count(*)::integer from public.notifications where dedupe_key = 'workflow-report:00000000-0000-4000-8000-000000000317'), 0, 'silent policy records no notification row');
 select is(
   (select count(*)::integer from public.trace_events event

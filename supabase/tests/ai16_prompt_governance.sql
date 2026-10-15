@@ -1,5 +1,5 @@
 begin;
-select plan(12);
+select plan(13);
 
 select is(
   (select schema_version from public.prompt_versions where evaluation_status = 'approved' and version = 2 limit 1),
@@ -10,6 +10,15 @@ select is(
   (select tool_policy from public.prompt_versions where evaluation_status = 'approved' and version = 2 limit 1),
   '{"version":1,"tools":[]}'::jsonb,
   'existing prompt starts with an explicit empty tool allowlist'
+);
+select ok(
+  not (
+    (select json_schema #> '{properties,report_sections}' from public.prompt_versions version
+      join public.prompt_templates template on template.id = version.template_id
+      where template.code = 'controlled-agent-report' and version.version = 2 limit 1
+    ) ? 'minItems'
+  ),
+  'governed report schema permits empty report sections accepted by the Edge contract'
 );
 
 select set_config('ai.prompt_governance_rpc', 'on', true);
