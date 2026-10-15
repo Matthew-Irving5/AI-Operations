@@ -17,6 +17,12 @@ database, access, provenance, and delivery boundaries.
   commands, and append-only `execution_receipts` records their acknowledgements
   and outcomes.
 - `trace_events` and `audit_events` remain the observability and audit stores.
+- AI-19 gives `trace_events` typed run, step, AI-call, parent, occurrence,
+  environment, build, outcome, and archive metadata. Existing producer payloads
+  stay backward-compatible; the insert trigger derives stable links from their
+  run, queue, and AI-call references. Run-step attempts emit linked lifecycle
+  events, and the authenticated Traces view shows IDs and archive availability
+  without exposing payloads.
 - `source_objects` and `research_sources` remain source stores. Versioned
   `evidence_references` link their records and typed domain evidence to
   conversations, actions, runs, reports, and execution records.
@@ -39,6 +45,12 @@ The database transition trigger matches the TypeScript transition helpers and
 fills lifecycle timestamps at the state boundary. Message and receipt history
 is append-only. A successful handoff changes the conversation's current owner
 in the same transaction.
+
+Audit events are append-only. The AI-14 handoff endpoint changes status through
+`transition_ai14_contract_handoff`, which verifies the service-role boundary,
+owner ID, and the AAL2 fact established by Edge authentication. Its status,
+handoff-history, and audit writes commit together. Initial fixture inserts keep
+their handoff history without being misrepresented as AAL2 transition audits.
 
 ## Access and data handling
 
