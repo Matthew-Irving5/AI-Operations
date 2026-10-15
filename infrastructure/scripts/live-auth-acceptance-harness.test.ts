@@ -120,7 +120,7 @@ describe('live auth acceptance harness', () => {
       "await page.goto('/mfa?job=schedule_update&returnTo=%2Foverview')",
       "await expect(page.getByRole('heading', { name: 'Verify your identity' })).toBeVisible()",
       "await expect(page.getByLabel('Six-digit code')).toBeVisible()",
-      'await expect(page).toHaveURL(/\\/overview(?:\\?|$)/, { timeout: 60_000 })',
+      'await expect(page).toHaveURL(/\\/overview(?:\\?|$)/, { timeout: 5 * 60_000 })',
       "expect(gate).toMatchObject({ job: 'schedule_update' })",
       "if (gate?.job !== 'schedule_update' || !gate.id)",
       "method: 'POST'",
