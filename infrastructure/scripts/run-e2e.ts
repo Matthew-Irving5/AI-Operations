@@ -5,6 +5,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { requiredBrowsersFromPlaywrightArgs, runLocalQaPreflight } from './local-qa-preflight';
+import { configureLocalAuthCallback } from './local-auth-config';
 import { copyLocalSupabaseWorkspaceFiles } from './qa-workspace-dependencies';
 
 function run(args: string[], env = process.env, timeoutMs = 120_000): string {
@@ -127,7 +128,7 @@ async function localPorts(): Promise<{
 function createIsolatedSupabaseProject(
   repositoryRoot: string,
   namespace: string,
-  ports: { api: number; database: number; shadow: number },
+  ports: { api: number; database: number; shadow: number; app: number },
   localTestPassword: string,
 ): { temporaryRoot: string; projectDirectory: string } {
   const workdir = mkdtempSync(join(tmpdir(), `aiops-local-qa-${namespace.slice(0, 8)}-`));
@@ -152,6 +153,7 @@ function createIsolatedSupabaseProject(
     /(\[db\]\s*\nport = )\d+/m,
     `$1${ports.database}\nshadow_port = ${ports.shadow}`,
   );
+  config = configureLocalAuthCallback(config, ports.app);
   if (!/^\[db\.seed\]/m.test(config)) {
     config += '\n[db.seed]\nsql_paths = ["./seed.sql"]\n';
   }

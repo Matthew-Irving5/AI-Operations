@@ -21,6 +21,7 @@ const bodySchema = z.object({
       'finance_configure',
       'finance_import',
       'github_sync',
+      'schedule_update',
     ])
     .optional(),
 });

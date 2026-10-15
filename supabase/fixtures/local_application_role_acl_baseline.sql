@@ -48,6 +48,9 @@ GRANT SELECT ON TABLE
   TO service_role
   $sql$;
   EXECUTE $sql$
+GRANT SELECT (id, user_id, enabled) ON TABLE public.workflow_schedules TO service_role
+  $sql$;
+  EXECUTE $sql$
 GRANT UPDATE ON TABLE
     public.ai_calls, public.attention_items, public.audit_events, public.calendar_events, public.career_github_evidence, public.commitments,
     public.connection_credentials, public.connections, public.conversation_attachments, public.conversation_entity_links, public.conversation_handoff_events, public.conversation_handoffs,
@@ -59,6 +62,9 @@ GRANT UPDATE ON TABLE
     public.personal_profiles, public.routines, public.time_preferences, public.webhook_events, public.worker_action_manifests, public.worker_devices,
     public.worker_heartbeats, public.workflow_runs
   TO service_role
+  $sql$;
+  EXECUTE $sql$
+GRANT UPDATE (enabled) ON TABLE public.workflow_schedules TO service_role
   $sql$;
   EXECUTE $sql$
 GRANT SELECT (approval_state, conversation_id, created_at, description, id, status, title, user_id)

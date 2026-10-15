@@ -1,6 +1,7 @@
 import { MfaChallenge } from './mfa-challenge';
 import { createSupabaseServerClient } from '../../lib/supabase-server';
 import { legacyStagingE2eFactorName } from '../../lib/live-e2e-safety';
+import { parseMfaPageJob } from '../../lib/mfa-page-job';
 
 export default async function MfaPage({
   searchParams,
@@ -19,19 +20,7 @@ export default async function MfaPage({
   const defaultFactorId =
     verifiedFactors.find((factor) => factor.friendlyName !== legacyStagingE2eFactorName)?.id ??
     verifiedFactors[0]?.id;
-  const requestedJob = params.job;
-  const job =
-    requestedJob === 'apple_bridge' ||
-    requestedJob === 'gmail_test' ||
-    requestedJob === 'connection_revoke' ||
-    requestedJob === 'connection_scope_change' ||
-    requestedJob === 'worker_device_register' ||
-    requestedJob === 'worker_device_revoke' ||
-    requestedJob === 'digital_scan_create' ||
-    requestedJob === 'finance_configure' ||
-    requestedJob === 'finance_import'
-      ? requestedJob
-      : undefined;
+  const job = parseMfaPageJob(params.job);
   const requestedReturnTo = params.returnTo;
   const workerReturnTo =
     job === 'worker_device_register'
