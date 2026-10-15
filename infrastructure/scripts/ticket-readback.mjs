@@ -31,7 +31,8 @@ export function validateReadback(content, ticket) {
     const match = matching[0];
     const next = matches.find((candidate) => candidate.index > match.index);
     const body = content.slice(match.index + match[0].length, next?.index ?? content.length).trim();
-    if (body.length < 45) errors.push('Readback section needs ticket-specific detail: ' + heading + '.');
+    if (body.length < 45)
+      errors.push('Readback section needs ticket-specific detail: ' + heading + '.');
     if (/\b(?:TODO|TBD|PLACEHOLDER|FILL ME IN|TO BE DECIDED)\b/i.test(body)) {
       errors.push('Unresolved template content in: ' + heading + '.');
     }
@@ -44,16 +45,27 @@ function template(ticket) {
     '# Startup readback: ' + ticket,
     'Contract version: 1',
     '',
-    ...REQUIRED_SECTIONS.flatMap((heading) => ['## ' + heading, '', 'TODO: Write a specific answer based on ' + ticket + ' and the current repository.', '']),
+    ...REQUIRED_SECTIONS.flatMap((heading) => [
+      '## ' + heading,
+      '',
+      'TODO: Write a specific answer based on ' + ticket + ' and the current repository.',
+      '',
+    ]),
   ].join('\n');
 }
 
 export function runCli(args = process.argv.slice(2), env = process.env) {
   const action = args[0] ?? 'check';
-  if (action !== 'check' && action !== 'init') throw new Error('Usage: node infrastructure/scripts/ticket-readback.mjs <init|check> [AI-123]');
+  if (action !== 'check' && action !== 'init') {
+    throw new Error('Usage: node infrastructure/scripts/ticket-readback.mjs <init|check> [AI-123]');
+  }
   const explicit = args[1];
   if (explicit && !/^AI-\d+$/i.test(explicit)) throw new Error('Invalid issue ID: ' + explicit);
-  const ticket = explicit?.toUpperCase() ?? ticketFromContext(env.GITHUB_HEAD_REF) ?? ticketFromContext(env.TICKET_CONTEXT) ?? ticketFromContext(env.GITHUB_REF_NAME);
+  const ticket =
+    explicit?.toUpperCase() ??
+    ticketFromContext(env.GITHUB_HEAD_REF) ??
+    ticketFromContext(env.TICKET_CONTEXT) ??
+    ticketFromContext(env.GITHUB_REF_NAME);
   if (!ticket) {
     if (action === 'init') throw new Error('Provide an AI-XX ticket ID to initialise a readback.');
     process.stdout.write('No AI-XX issue in PR branch/title; readback check not applicable.\n');
@@ -67,7 +79,16 @@ export function runCli(args = process.argv.slice(2), env = process.env) {
     process.stdout.write('Readback scaffold created: ' + target + '\n');
     return;
   }
-  if (!existsSync(target)) throw new Error('Missing required ' + ticket + ' startup readback at ' + target + '. Run: node infrastructure/scripts/ticket-readback.mjs init ' + ticket);
+  if (!existsSync(target)) {
+    throw new Error(
+      'Missing required ' +
+        ticket +
+        ' startup readback at ' +
+        target +
+        '. Run: node infrastructure/scripts/ticket-readback.mjs init ' +
+        ticket,
+    );
+  }
   const errors = validateReadback(readFileSync(target, 'utf8'), ticket);
   if (errors.length) throw new Error('Ticket startup readback rejected:\n- ' + errors.join('\n- '));
   process.stdout.write('Ticket startup readback valid: ' + target + '\n');
