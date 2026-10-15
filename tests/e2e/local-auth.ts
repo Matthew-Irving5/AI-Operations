@@ -14,4 +14,20 @@ export async function signInLocalTestUser(page: Page, baseURL: string | undefine
     response.status(),
     `Local test sign-in rejected: ${JSON.stringify(body ?? { code: 'no error code' })}`,
   ).toBe(200);
+
+  const authCookie = (await response.headersArray())
+    .filter((header) => header.name.toLowerCase() === 'set-cookie')
+    .find((header) => header.value.split(';', 1)[0]?.split('=', 1)[0]?.endsWith('-auth-token'));
+  expect(authCookie).toBeDefined();
+  const attributes = new Set(
+    authCookie?.value
+      .split(';')
+      .slice(1)
+      .map((attribute) => attribute.trim().toLowerCase()),
+  );
+  expect({
+    httpOnly: attributes.has('httponly'),
+    sameSite: [...attributes].find((attribute) => attribute.startsWith('samesite=')),
+    secure: attributes.has('secure'),
+  }).toEqual({ httpOnly: true, sameSite: 'samesite=lax', secure: false });
 }
