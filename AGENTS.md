@@ -96,6 +96,16 @@ Never:
 - Every UI state has loading, empty, error, and permission-denied handling.
 - Mobile Safari and desktop Chromium are required targets.
 
+## Agent-native skill and tool selection
+
+Codex discovers repository-scoped skills in `.agents/skills/`; read `docs/testing/ai-native-codex.md` for the current supported plugin setup, fallbacks and next-session prompt. Tool and skill installations never override this file, the Linear issue, security requirements or existing test/release gates.
+
+- For unfamiliar cross-module functionality, start with `ai-operations-investigate`; prefer Serena symbol/reference queries when connected, otherwise `rg`, installed types and the repo map. For version-specific external libraries, use Context7 if authenticated; otherwise official docs.
+- For a concrete failure, use `ai-operations-debug` to reproduce and localise it before edits.
+- For PR readiness/CI/staging/merge, use `ai-operations-ship` and **existing** GitHub workflows rather than a second release system.
+- For compaction, a parked human gate or delegation, use `ai-operations-handoff` to preserve exact current SHA, validated results, blockers and next command in the ticket.
+- P-Stack can provide focused `how`, `blast-radius`, `tdd`, `fix-ci` and cleanup skills; Ponytail can help minimise unnecessary code. Existing Superpowers is also installed. **Do not compose all these methodologies or automatically launch multi-model panels.** Choose the smallest useful technique and reuse existing QA.
+- The Codex desktop Serena MCP may need explicit project activation for this checkout. If a third-party tool is unavailable, use native tools and proceed without silent loss of verification.
 ## Debugging and incident method
 
 Agent debugging optimizes **localisation time**, not the number of patches attempted.
