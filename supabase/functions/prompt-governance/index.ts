@@ -6,6 +6,7 @@ import {
   validatePromptGovernance,
   validateReportOutputSchema,
 } from "../../../packages/ai-runtime/src/governance.ts";
+import { buildCurrentPromptResponse } from "./current.ts";
 
 const url = Deno.env.get("SUPABASE_URL") ?? "";
 const service = createClient(
@@ -48,12 +49,55 @@ Deno.serve(async (request) => {
   if (body.operation === "create_candidate") {
     return await createCandidate(body);
   }
+  if (body.operation === "get_current") return await getCurrent();
   if (body.operation === "evaluate") return await evaluateCandidate(body);
   if (body.operation === "promote" || body.operation === "rollback") {
     return await transition(body, identity.user.id);
   }
   return json({ code: "invalid_operation" }, 400);
 });
+
+async function getCurrent() {
+  const templateResult = await service
+    .from("prompt_templates")
+    .select("id,code,active_version,managers!inner(code)")
+    .eq("code", "controlled-agent-report")
+    .eq("managers.code", "systems")
+    .maybeSingle();
+  if (templateResult.error) {
+    return json({ code: "prompt_template_lookup_failed" }, 500);
+  }
+  if (!templateResult.data) {
+    return json({ code: "prompt_template_not_found" }, 404);
+  }
+
+  const activeVersion = templateResult.data.active_version;
+  if (!Number.isSafeInteger(activeVersion)) {
+    return json({ code: "active_prompt_version_invalid" }, 500);
+  }
+  const versionResult = await service
+    .from("prompt_versions")
+    .select(
+      "template_id,version,json_schema,model_route,schema_version,tool_policy_version,tool_policy",
+    )
+    .eq("template_id", templateResult.data.id)
+    .eq("version", activeVersion)
+    .maybeSingle();
+  if (versionResult.error || !versionResult.data) {
+    return json({ code: "active_prompt_version_lookup_failed" }, 500);
+  }
+
+  const relation = Array.isArray(templateResult.data.managers)
+    ? templateResult.data.managers[0]
+    : templateResult.data.managers;
+  const current = buildCurrentPromptResponse({
+    ...templateResult.data,
+    managerCode: isRecord(relation) ? relation.code : null,
+  }, versionResult.data);
+  return current
+    ? json(current)
+    : json({ code: "active_prompt_governance_invalid" }, 500);
+}
 
 async function loadSystemsTemplate(templateId: unknown) {
   if (typeof templateId !== "string" || !/^[0-9a-f-]{36}$/i.test(templateId)) {

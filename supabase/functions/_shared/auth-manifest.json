@@ -295,7 +295,7 @@
       "verifyJwt": true,
       "principal": "allowlisted user",
       "identitySource": "validated Supabase Auth user and signed AAL2 claim",
-      "rationale": "Creating, evaluating, promoting, and rolling back prompt candidates require the approved operator at AAL2; candidate promotion is gated by repository-owned evaluations."
+      "rationale": "Reading current Systems prompt governance and creating, evaluating, promoting, or rolling back candidates require the approved operator at AAL2; promotion is gated by repository-owned evaluations."
     },
     {
       "slug": "worker-submit-action-result",
