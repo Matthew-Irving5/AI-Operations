@@ -1268,7 +1268,18 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(hostedSuite, /operation: 'evaluate'/);
   assert.match(hostedSuite, /await proveAi16PromptGovernance\(page\)/);
   assert.match(hostedSuite, /operation: 'rollback'/);
-  assert.match(hostedSuite, /modelCeiling: ceiling[\s\S]*searchCeiling: 0[\s\S]*request: \{\}/);
+  assert.match(
+    hostedSuite,
+    /systemsLaunchRequest\(\{ workflowCode, hardCapUsd, modelCeiling, idempotencyKey \}\)/,
+  );
+  const systemsLaunchRequest = await readFile(
+    new URL('../../tests/support/systems-launch-request.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(
+    systemsLaunchRequest,
+    /managerCode: 'systems' as const,[\s\S]*hardCapUsd,[\s\S]*modelCeiling,[\s\S]*searchCeiling: 0 as const,[\s\S]*idempotencyKey,[\s\S]*request: \{\}/,
+  );
   assert.match(hostedSuite, /workflowRuns: \[deterministicProof, responsesProof\]/);
   assert.match(hostedSuite, /promptGovernanceProof: governanceProof\.evidence/);
   assert.match(hostedSuite, /let webkitProbeId: string \| null = null/);

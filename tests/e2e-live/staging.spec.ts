@@ -4,10 +4,15 @@ import { expect, test, webkit } from '@playwright/test';
 import { parseLiveE2eEnvironment } from '../../apps/web/lib/live-e2e-safety';
 import { writeLiveStagingAcceptanceEvidence } from '../../infrastructure/scripts/live-acceptance-evidence.js';
 import { liveAuthScheduleAction } from '../../infrastructure/scripts/live-auth-schedule-action.js';
+import {
+  systemsLaunchRequest,
+  type SystemsModelRoute,
+  type SystemsWorkflowCode,
+} from '../support/systems-launch-request';
 
 const env = parseLiveE2eEnvironment(process.env, 'suite');
 const stagingResponses = new WeakMap<import('@playwright/test').Page, string[]>();
-type ModelRoute = 'gpt-5.6-luna' | 'gpt-5.6-terra';
+type ModelRoute = SystemsModelRoute;
 let manualMfaChallengeObserved = false;
 
 function redactError(message: string): string {
@@ -199,7 +204,7 @@ async function postPromptGovernance(
 }
 
 type SystemsWorkflowProof = {
-  workflowCode: 'systems-daily-cost-capacity' | 'systems-weekly-quality-platform';
+  workflowCode: SystemsWorkflowCode;
   executionMode: 'deterministic' | 'ai';
   runId: string;
   correlationId: string;
@@ -222,28 +227,18 @@ async function launchSystemsWorkflow(
   modelCeiling: ModelRoute = 'gpt-5.6-luna',
 ): Promise<{ runId: string; idempotencyKey: string }> {
   const idempotencyKey = randomUUID();
-  const result = await page.evaluate(
-    async ({ workflowCode: code, hardCap, idempotency, ceiling }) => {
-      const response = await fetch('/api/workflows/launch', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          workflowCode: code,
-          managerCode: 'systems',
-          hardCapUsd: hardCap,
-          modelCeiling: ceiling,
-          searchCeiling: 0,
-          idempotencyKey: idempotency,
-          request: {},
-        }),
-      });
-      return {
-        status: response.status,
-        body: (await response.json()) as { runId?: string; code?: string },
-      };
-    },
-    { workflowCode, hardCap: hardCapUsd, idempotency: idempotencyKey, ceiling: modelCeiling },
-  );
+  const body = systemsLaunchRequest({ workflowCode, hardCapUsd, modelCeiling, idempotencyKey });
+  const result = await page.evaluate(async (requestBody) => {
+    const response = await fetch('/api/workflows/launch', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+    return {
+      status: response.status,
+      body: (await response.json()) as { runId?: string; code?: string },
+    };
+  }, body);
   expect(result.status, `Systems launch failed: ${result.body.code ?? 'unknown'}`).toBe(201);
   expect(result.body.runId).toMatch(/^[0-9a-f-]{36}$/i);
   return { runId: result.body.runId!, idempotencyKey };
