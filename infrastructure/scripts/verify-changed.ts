@@ -104,6 +104,7 @@ type ImpactPlan = {
   packages: string[];
   fullCore: boolean;
   browser: boolean;
+  workerPreview: boolean;
   db: boolean;
   edge: boolean;
   worker: boolean;
@@ -175,6 +176,10 @@ export function buildImpactPlan(files: string[]): ImpactPlan {
     (file) =>
       file === 'infrastructure/scripts/verify-changed.ts' ||
       file === 'infrastructure/scripts/run-e2e.ts' ||
+      file === 'infrastructure/scripts/run-worker-preview-e2e.ts' ||
+      file === 'infrastructure/scripts/local-worker-preview.sh' ||
+      file === 'infrastructure/scripts/wsl-worker-preview.sh' ||
+      file === 'playwright.worker-preview.config.ts' ||
       file === 'playwright.config.ts' ||
       file === '.github/workflows/ci.yml',
   );
@@ -190,13 +195,32 @@ export function buildImpactPlan(files: string[]): ImpactPlan {
   );
   const edge = normalized.some((file) => file.startsWith('supabase/functions/'));
   const worker = normalized.some((file) => file.startsWith('apps/windows-worker/'));
-  const browser = web || routerRisk || normalized.some((file) => file.startsWith('tests/e2e/'));
-  const security = normalized.some(
+  const workerPreview = normalized.some(
     (file) =>
-      file === 'package.json' ||
-      file === 'pnpm-lock.yaml' ||
-      /(?:auth|security|credential|rls|permission|secret)/i.test(file),
+      [
+        'apps/web/middleware.ts',
+        'apps/web/lib/auth.ts',
+        'apps/web/lib/supabase-server.ts',
+        'apps/web/app/mfa/page.tsx',
+        'apps/web/app/(app)/layout.tsx',
+        'apps/web/next.config.ts',
+        'apps/web/wrangler.jsonc',
+        'apps/web/open-next.config.ts',
+        'infrastructure/scripts/run-worker-preview-e2e.ts',
+        'infrastructure/scripts/local-worker-preview.sh',
+        'infrastructure/scripts/wsl-worker-preview.sh',
+        'playwright.worker-preview.config.ts',
+      ].includes(file) || file.startsWith('tests/e2e-worker/'),
   );
+  const browser =
+    web || routerRisk || workerPreview || normalized.some((file) => file.startsWith('tests/e2e/'));
+  const security =
+    normalized.some(
+      (file) =>
+        file === 'package.json' ||
+        file === 'pnpm-lock.yaml' ||
+        /(?:auth|security|credential|rls|permission|secret)/i.test(file),
+    ) || workerPreview;
   const packageDirs = new Set<string>();
   for (const file of normalized) {
     const match = file.match(/^packages\/([^/]+)\//);
@@ -207,6 +231,7 @@ export function buildImpactPlan(files: string[]): ImpactPlan {
     db && 'db',
     edge && 'edge',
     worker && 'windows-worker',
+    workerPreview && 'worker-preview',
     browser && 'browser',
     security && 'security',
     fullCore && 'full-core',
@@ -218,6 +243,7 @@ export function buildImpactPlan(files: string[]): ImpactPlan {
     packages: [...packageDirs].sort(),
     fullCore,
     browser,
+    workerPreview,
     db,
     edge,
     worker,
@@ -424,6 +450,22 @@ function runBoundary(plan: ImpactPlan): CheckResult[] {
       ],
       { timeout: 600_000 },
       ['Chromium browser setup'],
+    );
+  }
+  if (plan.workerPreview) {
+    add(
+      'OpenNext Worker MFA E2E',
+      'corepack',
+      [
+        'pnpm',
+        'qa:worker-preview',
+        '--',
+        '--config=playwright.worker-preview.config.ts',
+        'tests/e2e-worker/mfa-expired-session.spec.ts',
+        '--project=chromium',
+        '--workers=1',
+      ],
+      { timeout: 600_000 },
     );
   }
   if (plan.security) add('Dependency audit', 'corepack', ['pnpm', 'audit', '--audit-level=high']);

@@ -212,7 +212,11 @@ function localRunnerEnvironment(additions: NodeJS.ProcessEnv): NodeJS.ProcessEnv
       delete env[name];
     }
   }
-  return { ...env, ...additions };
+  const result = { ...env, ...additions };
+  for (const [name, value] of Object.entries(result)) {
+    if (value === undefined) delete result[name];
+  }
+  return result;
 }
 
 async function waitForLocalSupabase(url: string, anonKey: string): Promise<void> {
@@ -238,6 +242,10 @@ async function waitForLocalSupabase(url: string, anonKey: string): Promise<void>
 async function main(): Promise<void> {
   const playwrightArgs = process.argv.slice(2);
   if (playwrightArgs[0] === '--') playwrightArgs.shift();
+  const workerPreview = process.env.LOCAL_QA_WORKER_PREVIEW === 'true';
+  if (workerPreview && process.env.LOCAL_QA_AUTH_PROBE === 'true') {
+    throw new Error('The local-test-auth probe is only available on the Next development runtime.');
+  }
   runLocalQaPreflight(requiredBrowsersFromPlaywrightArgs(playwrightArgs));
   checkStagingAuthConfiguration(process.env);
 
@@ -312,21 +320,26 @@ async function main(): Promise<void> {
     const supabaseUrl = statusValue(status, 'API_URL');
     await waitForLocalSupabase(supabaseUrl, anonKey);
 
+    const baseURL = `${workerPreview ? 'http://localhost' : 'http://127.0.0.1'}:${ports.app}`;
     const env = localRunnerEnvironment({
-      NODE_ENV: 'development',
+      NODE_ENV: workerPreview ? 'production' : 'development',
       APP_ENV: 'local',
-      LOCAL_TEST_AUTH: 'true',
-      LOCAL_TEST_APP_ORIGIN: `http://127.0.0.1:${ports.app}`,
+      LOCAL_TEST_AUTH: workerPreview ? undefined : 'true',
+      LOCAL_TEST_APP_ORIGIN: workerPreview ? undefined : baseURL,
       LOCAL_TEST_EMAIL: process.env.LOCAL_TEST_EMAIL?.trim() || 'matthewirving99@gmail.com',
       LOCAL_TEST_PASSWORD: localTestPassword,
       E2E_JWT_SECRET: jwtSecret,
-      PUBLIC_APP_ORIGIN: `http://127.0.0.1:${ports.app}`,
+      PUBLIC_APP_ORIGIN: baseURL,
       NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
       NEXT_PUBLIC_SUPABASE_ANON_KEY: anonKey,
       LOCAL_TEST_AUTH_SIGNING_KEYS: signingKeys,
       E2E_NAMESPACE: namespace,
       E2E_PORT: String(ports.app),
+      E2E_BASE_URL: baseURL,
       LOCAL_QA_DIST_DIR: appBuildDir,
+      LOCAL_QA_WSL_BUILD_ROOT: workerPreview ? process.env.LOCAL_QA_WSL_BUILD_ROOT : undefined,
+      LOCAL_QA_WSL_NODE_BIN: workerPreview ? process.env.LOCAL_QA_WSL_NODE_BIN : undefined,
+      LOCAL_QA_WSL_DISTRO: workerPreview ? process.env.LOCAL_QA_WSL_DISTRO : undefined,
     });
     const runPlaywright = (args: string[]) =>
       execFileSync('corepack', ['pnpm', 'exec', 'playwright', 'test', ...args], {
