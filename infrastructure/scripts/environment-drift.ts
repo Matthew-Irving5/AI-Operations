@@ -918,6 +918,20 @@ export function parseLocalColumnMetadataOutput(output: string): ColumnTypeMetada
   throw new Error('Local Supabase public-column query returned no complete JSON object with rows.');
 }
 
+export function localMetadataQueryArguments(queryFile: string): string[] {
+  return [
+    'db',
+    'query',
+    '--local',
+    '--output-format',
+    'json',
+    '--agent',
+    'yes',
+    '--file',
+    queryFile,
+  ];
+}
+
 function localColumnTypeMetadata(): ColumnTypeMetadata[] {
   const queryFile = `.local-database-types-${process.pid}.sql`;
   writeFileSync(
@@ -932,18 +946,7 @@ where table_schema = 'public';\n`,
     try {
       output = execFileSync(
         'corepack',
-        [
-          'pnpm',
-          'exec',
-          'supabase',
-          'db',
-          'query',
-          '--local',
-          '--output',
-          'json',
-          '--file',
-          queryFile,
-        ],
+        ['pnpm', 'exec', 'supabase', ...localMetadataQueryArguments(queryFile)],
         {
           encoding: 'utf8',
           shell: process.platform === 'win32',

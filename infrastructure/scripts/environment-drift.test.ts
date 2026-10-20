@@ -24,6 +24,7 @@ import {
   generatedTypesMatch,
   parseColumnTypeMetadata,
   parseLocalColumnMetadataOutput,
+  localMetadataQueryArguments,
   safeLocalMetadataCommandFailure,
   type FunctionInventory,
   type WorkerInventory,
@@ -363,6 +364,20 @@ test('local metadata command diagnostics keep useful failures and redact connect
   assert.match(diagnostic, /\[REDACTED_DATABASE_URL\]/);
   assert.match(diagnostic, /Bearer \[REDACTED\]/);
   assert.doesNotMatch(diagnostic, /local-password|eyJheader/);
+});
+
+test('local metadata query forces the same structured CLI response in CI and agent shells', () => {
+  assert.deepEqual(localMetadataQueryArguments('columns.sql'), [
+    'db',
+    'query',
+    '--local',
+    '--output-format',
+    'json',
+    '--agent',
+    'yes',
+    '--file',
+    'columns.sql',
+  ]);
 });
 
 test('local database metadata parser selects the complete query object around CLI output', () => {
