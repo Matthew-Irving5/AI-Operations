@@ -396,6 +396,10 @@ test('local database metadata parser selects the complete query object around CL
   assert.throws(() =>
     parseLocalColumnMetadataOutput('query returned no metadata object {still not JSON}'),
   );
+  assert.throws(
+    () => parseLocalColumnMetadataOutput('{"rows":{"items":[]}}'),
+    /received object keys=items/,
+  );
 });
 
 const functions: FunctionInventory = [

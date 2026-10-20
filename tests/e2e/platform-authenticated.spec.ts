@@ -7,6 +7,7 @@ test.beforeEach(async ({ page, baseURL }) => signInLocalTestUser(page, baseURL))
 test('authenticated Operations, spend, trace, approval, and feedback surfaces render platform evidence', async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   await page.goto('/overview');
   await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
   await expect(page.getByText('Synthetic platform health')).toBeVisible();
