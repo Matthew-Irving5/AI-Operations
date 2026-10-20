@@ -497,6 +497,19 @@ export function migrationVersionFromFilename(fileName: string): string {
   return match[1];
 }
 
+export function migrationInventoryFromFilenames(
+  fileNames: string[],
+): { fileName: string; version: string }[] {
+  const migrations = fileNames
+    .filter((fileName) => fileName.endsWith('.sql'))
+    .map((fileName) => ({ fileName, version: migrationVersionFromFilename(fileName) }))
+    .sort((left, right) => left.version.localeCompare(right.version));
+  const versions = migrations.map(({ version }) => version);
+  if (new Set(versions).size !== versions.length)
+    throw new Error('Duplicate Supabase migration versions exist in the repository.');
+  return migrations;
+}
+
 export function validateConfig(
   name: EnvironmentName,
   actual: {
@@ -746,14 +759,7 @@ function generateTypes(projectRef: string, token: string): string {
 }
 
 function localMigrationInventory(): { fileName: string; version: string }[] {
-  const migrations = readdirSync('supabase/migrations')
-    .filter((file) => file.endsWith('.sql'))
-    .map((fileName) => ({ fileName, version: migrationVersionFromFilename(fileName) }))
-    .sort((left, right) => left.version.localeCompare(right.version));
-  const versions = migrations.map(({ version }) => version);
-  if (new Set(versions).size !== versions.length)
-    throw new Error('Duplicate Supabase migration versions exist in the repository.');
-  return migrations;
+  return migrationInventoryFromFilenames(readdirSync('supabase/migrations'));
 }
 
 function localMigrations(): string[] {

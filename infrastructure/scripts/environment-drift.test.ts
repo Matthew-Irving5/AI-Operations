@@ -11,6 +11,7 @@ import {
   compareMigrations,
   compareSourceAttestations,
   compareSourceDigests,
+  migrationInventoryFromFilenames,
   migrationVersionFromFilename,
   parseAuthManifest,
   parseFunctionAuth,
@@ -389,6 +390,17 @@ test('normalizes repository migration filenames to provider version identifiers'
     '20260927160301',
   );
   assert.throws(() => migrationVersionFromFilename('foundation.sql'));
+});
+
+test('rejects duplicate migration versions before local database reset', () => {
+  assert.throws(
+    () =>
+      migrationInventoryFromFilenames([
+        '20261015210000_ai15_allow_empty_report_sections.sql',
+        '20261015210000_ai19_observability.sql',
+      ]),
+    /Duplicate Supabase migration versions exist in the repository\./,
+  );
 });
 
 test('maps every local Edge Function to configured or default JWT verification', () => {
