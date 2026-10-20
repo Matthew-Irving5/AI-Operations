@@ -69,6 +69,109 @@ export const Ai15WorkflowProofsSchema = z
     }
   });
 
+const GovernedModelRouteSchema = z.enum(['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol']);
+const Ai16ProviderCallProofSchema = z
+  .object({
+    runId: SafeIdSchema,
+    correlationId: SafeIdSchema,
+    reportId: SafeIdSchema,
+    aiCallId: z.string().uuid(),
+    promptVersionId: z.string().uuid(),
+    model: GovernedModelRouteSchema,
+    modelRoute: GovernedModelRouteSchema,
+    schemaVersion: z.number().int().positive(),
+    toolPolicyVersion: z.number().int().positive(),
+    actualCostUsd: z.number().positive().max(0.15),
+    hardCapUsd: z.number().positive().max(0.15),
+    searchCalls: z.literal(0),
+  })
+  .strict()
+  .superRefine((call, context) => {
+    if (call.actualCostUsd > call.hardCapUsd) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: 'provider cost exceeds hard cap' });
+    }
+  });
+
+export const Ai16PromptGovernanceProofSchema = z
+  .object({
+    templateId: z.string().uuid(),
+    previousActiveVersion: z.number().int().positive(),
+    previousPromptVersionId: z.string().uuid(),
+    previousModelRoute: GovernedModelRouteSchema,
+    candidateId: z.string().uuid(),
+    candidateVersion: z.number().int().positive(),
+    candidateModelRoute: z.literal('gpt-5.6-luna'),
+    schemaVersion: z.number().int().positive(),
+    toolPolicyVersion: z.number().int().positive(),
+    evaluation: z
+      .object({
+        passed: z.literal(true),
+        caseCount: z.literal(24),
+        managerCount: z.literal(8),
+        safetyPassed: z.literal(true),
+        evidencePassed: z.literal(true),
+        toolAuthorityPassed: z.literal(true),
+        schemaPassed: z.literal(true),
+        costPassed: z.literal(true),
+        latencyPassed: z.literal(true),
+      })
+      .strict(),
+    promotionTransitionId: z.string().uuid(),
+    promotion: z
+      .object({
+        previousVersion: z.number().int().positive(),
+        activeVersion: z.number().int().positive(),
+        replayed: z.literal(false),
+      })
+      .strict(),
+    candidateRun: Ai16ProviderCallProofSchema,
+    rollbackTransitionId: z.string().uuid(),
+    rollback: z
+      .object({
+        previousVersion: z.number().int().positive(),
+        activeVersion: z.number().int().positive(),
+        replayed: z.literal(false),
+      })
+      .strict(),
+    postRollbackRun: Ai16ProviderCallProofSchema,
+    previousRunHistoryUnchanged: z.literal(true),
+    totalActualCostUsd: z.number().positive().max(0.2),
+  })
+  .strict()
+  .superRefine((proof, context) => {
+    if (
+      proof.candidateVersion <= proof.previousActiveVersion ||
+      proof.promotion.previousVersion !== proof.previousActiveVersion ||
+      proof.promotion.activeVersion !== proof.candidateVersion ||
+      proof.rollback.previousVersion !== proof.candidateVersion ||
+      proof.rollback.activeVersion !== proof.previousActiveVersion ||
+      proof.candidateRun.promptVersionId !== proof.candidateId ||
+      proof.postRollbackRun.promptVersionId !== proof.previousPromptVersionId ||
+      proof.candidateRun.model !== proof.candidateModelRoute ||
+      proof.candidateRun.modelRoute !== proof.candidateModelRoute ||
+      proof.postRollbackRun.model !== proof.previousModelRoute ||
+      proof.postRollbackRun.modelRoute !== proof.previousModelRoute ||
+      proof.candidateRun.schemaVersion !== proof.schemaVersion ||
+      proof.postRollbackRun.schemaVersion !== proof.schemaVersion ||
+      proof.candidateRun.toolPolicyVersion !== proof.toolPolicyVersion ||
+      proof.postRollbackRun.toolPolicyVersion !== proof.toolPolicyVersion ||
+      proof.candidateRun.hardCapUsd !== 0.05 ||
+      proof.candidateRun.runId === proof.postRollbackRun.runId ||
+      proof.candidateRun.aiCallId === proof.postRollbackRun.aiCallId ||
+      proof.candidateRun.correlationId === proof.postRollbackRun.correlationId ||
+      Math.abs(
+        proof.totalActualCostUsd -
+          proof.candidateRun.actualCostUsd -
+          proof.postRollbackRun.actualCostUsd,
+      ) > 0.000001
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'candidate, promotion, rollback, and provider-run evidence must agree',
+      });
+    }
+  });
+
 const StagingDeploymentSchema = z
   .object({
     candidateSha: ShaSchema,
@@ -142,6 +245,7 @@ const AcceptanceEvidenceSchema = z
     humanMfa: z.enum(['user-completed', 'not-required']),
     checks: z.union([CapabilityResultsSchema, TargetedCapabilityResultsSchema]),
     freshMfaAction: FreshMfaActionEvidenceSchema.optional(),
+    promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
     correlationIds: z.array(SafeIdSchema).max(20),
     workflowRuns: Ai15WorkflowProofsSchema.optional(),
     acceptedAt: z.string().datetime({ offset: true }),
@@ -283,6 +387,7 @@ const TargetedStagingSuiteEvidenceSchema = z
     checks: TargetedCapabilityResultsSchema,
     correlationIds: z.array(SafeIdSchema).max(20),
     workflowRuns: Ai15WorkflowProofsSchema.optional(),
+    promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
     acceptedAt: z.string().datetime({ offset: true }),
   })
   .strict();
@@ -644,6 +749,9 @@ export function createStagingAcceptanceStatus(input: unknown): StagingAcceptance
       : {}),
     correlationIds: parsed.hostedSuite.correlationIds,
     ...(parsed.hostedSuite.workflowRuns ? { workflowRuns: parsed.hostedSuite.workflowRuns } : {}),
+    ...(parsed.hostedSuite.promptGovernanceProof
+      ? { promptGovernanceProof: parsed.hostedSuite.promptGovernanceProof }
+      : {}),
     acceptedAt: parsed.hostedSuite.acceptedAt,
     accepted: true,
   });

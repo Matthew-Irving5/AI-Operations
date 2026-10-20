@@ -3,7 +3,11 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { z } from 'zod';
-import { Ai15WorkflowProofsSchema, createHostedStagingSuiteEvidence } from './release-gate.js';
+import {
+  Ai15WorkflowProofsSchema,
+  Ai16PromptGovernanceProofSchema,
+  createHostedStagingSuiteEvidence,
+} from './release-gate.js';
 
 const EvidenceWriteCommonSchema = z
   .object({
@@ -52,6 +56,7 @@ const AuthBrowserEvidenceWriteInputSchema = EvidenceWriteCommonSchema.extend({
 const TargetedEvidenceWriteInputSchema = EvidenceWriteCommonSchema.extend({
   acceptanceProfile: z.literal('targeted'),
   checks: EvidenceChecksSchema,
+  promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
 }).strict();
 
 const EvidenceWriteInputSchema = z.discriminatedUnion('acceptanceProfile', [
@@ -100,6 +105,7 @@ export async function writeLiveStagingAcceptanceEvidence(
             { name: 'chromium', result: input.browserChecks.chromium },
             { name: 'webkit', result: input.browserChecks.webkit },
           ],
+          promptGovernanceProof: input.promptGovernanceProof,
         });
   const temporaryPath = `${path}.tmp-${randomUUID()}`;
   await mkdir(dirname(path), { recursive: true });

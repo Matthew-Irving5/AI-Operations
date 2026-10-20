@@ -10,6 +10,7 @@ import {
 } from './live-acceptance-evidence.js';
 import { execFileSync } from 'node:child_process';
 import {
+  Ai16PromptGovernanceProofSchema,
   acceptStagingCandidate,
   acquireStagingSlot,
   authorizeProductionPromotion,
@@ -65,6 +66,63 @@ const ai15WorkflowRuns = [
     notificationDelivery: 'not_sent',
   },
 ] as const;
+
+const ai16PromptGovernanceProof = {
+  templateId: '00000000-0000-4000-8000-000000000001',
+  previousActiveVersion: 7,
+  previousPromptVersionId: '00000000-0000-4000-8000-000000000002',
+  previousModelRoute: 'gpt-5.6-terra',
+  candidateId: '00000000-0000-4000-8000-000000000003',
+  candidateVersion: 8,
+  candidateModelRoute: 'gpt-5.6-luna',
+  schemaVersion: 2,
+  toolPolicyVersion: 3,
+  evaluation: {
+    passed: true,
+    caseCount: 24,
+    managerCount: 8,
+    safetyPassed: true,
+    evidencePassed: true,
+    toolAuthorityPassed: true,
+    schemaPassed: true,
+    costPassed: true,
+    latencyPassed: true,
+  },
+  promotionTransitionId: '00000000-0000-4000-8000-000000000004',
+  promotion: { previousVersion: 7, activeVersion: 8, replayed: false },
+  candidateRun: {
+    runId: 'candidate-run-1',
+    correlationId: 'candidate-trace-1',
+    reportId: 'candidate-report-1',
+    aiCallId: '00000000-0000-4000-8000-000000000005',
+    promptVersionId: '00000000-0000-4000-8000-000000000003',
+    model: 'gpt-5.6-luna',
+    modelRoute: 'gpt-5.6-luna',
+    schemaVersion: 2,
+    toolPolicyVersion: 3,
+    actualCostUsd: 0.02,
+    hardCapUsd: 0.05,
+    searchCalls: 0,
+  },
+  rollbackTransitionId: '00000000-0000-4000-8000-000000000006',
+  rollback: { previousVersion: 8, activeVersion: 7, replayed: false },
+  postRollbackRun: {
+    runId: 'rollback-run-1',
+    correlationId: 'rollback-trace-1',
+    reportId: 'rollback-report-1',
+    aiCallId: '00000000-0000-4000-8000-000000000007',
+    promptVersionId: '00000000-0000-4000-8000-000000000002',
+    model: 'gpt-5.6-terra',
+    modelRoute: 'gpt-5.6-terra',
+    schemaVersion: 2,
+    toolPolicyVersion: 3,
+    actualCostUsd: 0.03,
+    hardCapUsd: 0.15,
+    searchCalls: 0,
+  },
+  previousRunHistoryUnchanged: true,
+  totalActualCostUsd: 0.05,
+} as const;
 
 function deployment(overrides: Partial<StagingDeploymentEvidence> = {}): StagingDeploymentEvidence {
   return {
@@ -1203,17 +1261,16 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(
     hostedSuite,
-    /staging live journey proves unauthorised rejection, manual MFA, AAL2 and both AI-15 workflows/,
+    /staging proves AI-16 prompt promotion\/rollback and AI-19 correlated workflows in one AAL2 journey/,
   );
-  assert.match(
-    hostedSuite,
-    /proveSystemsWorkflow\([\s\S]*'systems-daily-cost-capacity',[\s\S]*'deterministic',[\s\S]*0\.01[\s\S]*proveSystemsWorkflow\([\s\S]*'systems-weekly-quality-platform',[\s\S]*'ai',[\s\S]*0\.05/,
-  );
-  assert.match(
-    hostedSuite,
-    /modelCeiling: 'gpt-5\.6-luna'[\s\S]*searchCeiling: 0[\s\S]*request: \{\}/,
-  );
+  assert.match(hostedSuite, /async function proveAi16PromptGovernance\(/);
+  assert.match(hostedSuite, /operation: 'create_candidate'/);
+  assert.match(hostedSuite, /operation: 'evaluate'/);
+  assert.match(hostedSuite, /await proveAi16PromptGovernance\(page\)/);
+  assert.match(hostedSuite, /operation: 'rollback'/);
+  assert.match(hostedSuite, /modelCeiling: ceiling[\s\S]*searchCeiling: 0[\s\S]*request: \{\}/);
   assert.match(hostedSuite, /workflowRuns: \[deterministicProof, responsesProof\]/);
+  assert.match(hostedSuite, /promptGovernanceProof: governanceProof\.evidence/);
   assert.match(hostedSuite, /let webkitProbeId: string \| null = null/);
   assert.match(hostedSuite, /webkitProbeId = webkitProbe\.body\.probeId/);
   assert.match(hostedSuite, /Hosted acceptance evidence requires the passing WebKit probe result/);
@@ -1359,6 +1416,29 @@ test('hosted acceptance profile requires real MFA only for auth-browser changes'
 });
 
 test('targeted hosted acceptance is valid without MFA and cannot satisfy an auth-browser deployment', () => {
+  assert.deepEqual(
+    Ai16PromptGovernanceProofSchema.parse(ai16PromptGovernanceProof),
+    ai16PromptGovernanceProof,
+  );
+  assert.throws(() =>
+    Ai16PromptGovernanceProofSchema.parse({
+      ...ai16PromptGovernanceProof,
+      rollback: { previousVersion: 8, activeVersion: 8, replayed: false },
+    }),
+  );
+  assert.throws(() =>
+    Ai16PromptGovernanceProofSchema.parse({
+      ...ai16PromptGovernanceProof,
+      candidateRun: { ...ai16PromptGovernanceProof.candidateRun, searchCalls: 1 },
+    }),
+  );
+  assert.throws(() =>
+    Ai16PromptGovernanceProofSchema.parse({
+      ...ai16PromptGovernanceProof,
+      totalActualCostUsd: 0.06,
+    }),
+  );
+
   const targetedSuite = {
     schemaVersion: 1,
     state: 'TARGETED_STAGING_ACCEPTED',
@@ -1374,6 +1454,7 @@ test('targeted hosted acceptance is valid without MFA and cannot satisfy an auth
       { name: 'readiness-smoke', result: 'passed' },
     ],
     correlationIds: ['trace-1'],
+    promptGovernanceProof: ai16PromptGovernanceProof,
     acceptedAt: '2026-09-29T10:00:00.000Z',
   };
   const success = createStagingAcceptanceStatus({
@@ -1389,6 +1470,7 @@ test('targeted hosted acceptance is valid without MFA and cannot satisfy an auth
   assert.equal(success.acceptance?.acceptanceProfile, 'targeted');
   assert.equal(success.acceptance?.humanMfa, 'not-required');
   assert.ok(Array.isArray(success.acceptance?.checks));
+  assert.deepEqual(success.acceptance?.promptGovernanceProof, ai16PromptGovernanceProof);
   assert.throws(
     () =>
       createStagingAcceptanceStatus({
