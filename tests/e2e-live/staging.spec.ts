@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { expect, test, webkit } from '@playwright/test';
 import { parseLiveE2eEnvironment } from '../../apps/web/lib/live-e2e-safety';
 import { writeLiveStagingAcceptanceEvidence } from '../../infrastructure/scripts/live-acceptance-evidence.js';
+import { liveAuthScheduleAction } from '../../infrastructure/scripts/live-auth-schedule-action.js';
 
 const env = parseLiveE2eEnvironment(process.env, 'suite');
 const stagingResponses = new WeakMap<import('@playwright/test').Page, string[]>();
@@ -909,7 +910,7 @@ if (process.env.LIVE_E2E_FIXTURE_MISMATCH_EXPECTED_COUNT !== undefined) {
   });
 }
 
-test('staging proves AI-16 prompt promotion/rollback and AI-19 correlated workflows in one AAL2 journey', async ({
+test('staging proves AI-16 prompt promotion/rollback and AI-19 correlated workflows in one AAL2 journey @ai16-ai19-acceptance', async ({
   page,
 }, testInfo) => {
   testInfo.setTimeout(30 * 60_000);
@@ -949,6 +950,22 @@ test('staging proves AI-16 prompt promotion/rollback and AI-19 correlated workfl
   await expect(page.getByText(/Multi-factor authentication is required/)).toBeVisible();
 
   await signInWithFreshMfa(page);
+
+  await page.goto('/automations');
+  const ownedSchedule = page.locator('article[data-schedule-id]').first();
+  await expect(ownedSchedule, 'a schedule must be visible to its signed-in owner').toBeVisible();
+  const targetSchedule = await ownedSchedule.getAttribute('data-schedule-id');
+  if (!targetSchedule || !/^[0-9a-f-]{36}$/i.test(targetSchedule))
+    throw new Error('Owned schedule ID is missing or invalid.');
+  const initialStatusLabel = await ownedSchedule.locator('div.label').textContent();
+  if (!initialStatusLabel) throw new Error('Owned schedule status is missing.');
+  const scheduleAction = liveAuthScheduleAction(initialStatusLabel);
+  const initialStatusPattern = new RegExp(`^${scheduleAction.initialLabel} ·`);
+  await expect(
+    ownedSchedule.getByRole('button', { name: scheduleAction.buttonName }),
+  ).toBeVisible();
+  await expect(ownedSchedule.locator('div.label')).toHaveText(initialStatusPattern);
+  const protectedContentReachedAt = Date.now();
 
   const fixtureKey = `ai14-live-e2e:${randomUUID()}`;
   const createdFixtureResponse = await postAgentRuntime(page, {
@@ -1182,6 +1199,93 @@ test('staging proves AI-16 prompt promotion/rollback and AI-19 correlated workfl
     ).toBeVisible();
   }
 
+  const staleAfter = protectedContentReachedAt + 5 * 60_000 + 2_000;
+  const waitMs = staleAfter - Date.now();
+  process.stdout.write(
+    `Waiting ${Math.ceil(Math.max(0, waitMs) / 1000)}s after authenticated schedule content for the spec-defined five-minute MFA freshness window to expire.\n`,
+  );
+  if (waitMs > 0) await page.waitForTimeout(waitMs);
+  expect(Date.now() - protectedContentReachedAt).toBeGreaterThan(5 * 60_000);
+
+  await page.goto('/automations');
+  const scheduleCard = page.locator(`[data-schedule-id="${targetSchedule}"]`);
+  await expect(scheduleCard).toBeVisible();
+  const staleAttempt = await page.evaluate(
+    async (body) => {
+      const response = await fetch('/api/schedules/update', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return {
+        status: response.status,
+        usedMfaGate: Object.prototype.hasOwnProperty.call(body, 'mfaGateId'),
+        body: (await response.json()) as { code?: string },
+      };
+    },
+    { scheduleId: targetSchedule, enabled: scheduleAction.initialEnabled },
+  );
+  expect(staleAttempt).toMatchObject({ status: 403, body: { code: 'fresh_mfa_required' } });
+  expect(staleAttempt.usedMfaGate).toBe(false);
+  await expect(scheduleCard.locator('div.label')).toHaveText(initialStatusPattern);
+  await expect(scheduleCard.getByLabel('Six-digit code')).toHaveCount(0);
+  await expect(
+    scheduleCard.getByText('Fresh MFA is required before changing this schedule.'),
+  ).toHaveCount(0);
+
+  const freshMfaProbe = await page.evaluate(async () => {
+    const response = await fetch('/api/auth/mfa/aal2-probe', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+    return {
+      status: response.status,
+      body: (await response.json()) as { probeId?: string; status?: number; code?: string },
+    };
+  });
+  expect(freshMfaProbe.status).toBe(200);
+  expect(freshMfaProbe.body).toMatchObject({ status: 400, code: 'invalid_plan' });
+  expect(freshMfaProbe.body.probeId).toMatch(/^[a-zA-Z0-9][a-zA-Z0-9:-]{0,127}$/);
+
+  await page.goto('/mfa?job=schedule_update&returnTo=%2Foverview');
+  await expect(page.getByRole('heading', { name: 'Verify your identity' })).toBeVisible();
+  await expect(page.getByLabel('Six-digit code')).toBeVisible();
+  process.stdout.write(
+    '\nComplete the fresh Microsoft Authenticator challenge in this same browser journey.\n',
+  );
+  await expect(page).toHaveURL(/\/overview(?:\?|$)/, { timeout: 5 * 60_000 });
+  const gate = await page.evaluate(() => {
+    const raw = localStorage.getItem('mfa_job_gate') ?? sessionStorage.getItem('mfa_job_gate');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { job?: string; id?: string };
+    return { job: parsed.job, id: parsed.id };
+  });
+  expect(gate).toMatchObject({ job: 'schedule_update' });
+  if (gate?.job !== 'schedule_update' || !gate.id)
+    throw new Error('Fresh TOTP did not store the schedule update gate.');
+  expect(gate.id).toMatch(/^[0-9a-f-]{36}$/i);
+  const freshAttempt = await page.evaluate(
+    async (body) => {
+      const response = await fetch('/api/schedules/update', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return {
+        status: response.status,
+        body: (await response.json()) as { schedule?: { enabled?: boolean }; code?: string },
+      };
+    },
+    { scheduleId: targetSchedule, enabled: scheduleAction.initialEnabled, mfaGateId: gate.id },
+  );
+  expect(freshAttempt.status).toBe(200);
+  expect(freshAttempt.body).toMatchObject({
+    schedule: { enabled: scheduleAction.initialEnabled },
+  });
+  await page.goto('/automations');
+  await expect(scheduleCard.locator('div.label')).toHaveText(initialStatusPattern);
+
   let webkitProbeId: string | null = null;
   const webkitBrowser = await webkit.launch({ headless: true });
   try {
@@ -1230,7 +1334,7 @@ test('staging proves AI-16 prompt promotion/rollback and AI-19 correlated workfl
       pullRequestNumber: Number(pullRequestNumber),
       deploymentRunId,
       stagingOrigin: env.LIVE_E2E_BASE_URL,
-      acceptanceProfile: 'targeted',
+      acceptanceProfile: 'auth-browser',
       completeSuite: 'passed',
       manualMfaChallengeObserved,
       browserChecks: { chromium: 'passed', webkit: 'passed' },
@@ -1253,10 +1357,16 @@ test('staging proves AI-16 prompt promotion/rollback and AI-19 correlated workfl
         rollbackProof.correlationId,
         rollbackProof.reportId,
         aal2Probe.body.probeId!,
+        freshMfaProbe.body.probeId!,
         webkitProbeId,
       ],
       workflowRuns: [deterministicProof, responsesProof],
       promptGovernanceProof: governanceProof.evidence,
+      freshMfaAction: {
+        staleDenied: 'passed',
+        staleAttemptUsedMfaGate: false,
+        freshReauthAccepted: 'passed',
+      },
       acceptedAt: new Date().toISOString(),
     });
   }

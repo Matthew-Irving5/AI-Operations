@@ -325,6 +325,7 @@ const StagingAcceptanceInputSchema = z
     freshMfaAction: FreshMfaActionEvidenceSchema,
     correlationIds: z.array(SafeIdSchema).max(20),
     workflowRuns: Ai15WorkflowProofsSchema.optional(),
+    promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
     acceptedAt: z.string().datetime({ offset: true }),
   })
   .strict();
@@ -369,6 +370,7 @@ const AuthBrowserStagingSuiteEvidenceSchema = z
     freshMfaAction: FreshMfaActionEvidenceSchema,
     correlationIds: z.array(SafeIdSchema).min(1).max(20),
     workflowRuns: Ai15WorkflowProofsSchema.optional(),
+    promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
     acceptedAt: z.string().datetime({ offset: true }),
   })
   .strict();

@@ -44,6 +44,7 @@ const EvidenceChecksSchema = z
 const AuthBrowserEvidenceWriteInputSchema = EvidenceWriteCommonSchema.extend({
   acceptanceProfile: z.literal('auth-browser'),
   checks: EvidenceChecksSchema,
+  promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
   freshMfaAction: z
     .object({
       staleDenied: z.literal('passed'),
@@ -89,6 +90,7 @@ export async function writeLiveStagingAcceptanceEvidence(
           acceptanceProfile: 'auth-browser',
           checks: input.checks,
           freshMfaAction: input.freshMfaAction,
+          promptGovernanceProof: input.promptGovernanceProof,
         })
       : createHostedStagingSuiteEvidence({
           ...commonEvidence,
