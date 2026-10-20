@@ -107,6 +107,59 @@ test('generated database types normalize only catalog-proven generator differenc
   assert.equal(generatedTypesMatch(generated, checkedIn, []), false);
 });
 
+test('generated database type parity canonicalizes equivalent table-returning RPC shapes', () => {
+  const generated = `export type Database = { public: {
+    Tables: { handoffs: { Row: { id: string; status: string }; Insert: { id: string; status: string }; Update: { id?: string; status?: string } } };
+    Views: {};
+    Functions: { transition_handoff: {
+      Args: { p_handoff_id: string };
+      Returns: { id: string; status: string }[];
+      SetofOptions: { from: '*'; isOneToOne: false; isSetofReturn: true; to: 'handoffs' };
+    } };
+    Enums: {};
+    CompositeTypes: {};
+  } };`;
+  const checkedIn = `export type Database = { public: {
+    Tables: { handoffs: { Row: { id: string; status: string }; Insert: { id: string; status: string }; Update: { id?: string; status?: string } } };
+    Views: {};
+    Functions: { transition_handoff: {
+      Args: { p_handoff_id: string };
+      Returns: Database['public']['Tables']['handoffs']['Row'][];
+    } };
+    Enums: {};
+    CompositeTypes: {};
+  } };`;
+  const metadata = [
+    {
+      table_name: 'handoffs',
+      column_name: 'id',
+      data_type: 'uuid',
+      is_nullable: 'NO',
+      is_generated: 'NEVER',
+    },
+    {
+      table_name: 'handoffs',
+      column_name: 'status',
+      data_type: 'text',
+      is_nullable: 'NO',
+      is_generated: 'NEVER',
+    },
+  ];
+
+  assert.equal(generatedTypesMatch(generated, checkedIn, metadata), true);
+  assert.equal(
+    generatedTypesMatch(
+      generated.replace(
+        'Returns: { id: string; status: string }[]',
+        'Returns: { id: string; status: number }[]',
+      ),
+      checkedIn,
+      metadata,
+    ),
+    false,
+  );
+});
+
 test('generated database type parity retains real nullable-column, enum, and RPC drift', () => {
   const generated = `export type Database = { public: {
     Tables: { records: { Row: { optional_json: Json | null; amount: number | null }; Insert: { optional_json?: Json | null; amount?: number | null }; Update: { optional_json?: Json | null; amount?: number | null } } };

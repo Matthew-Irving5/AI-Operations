@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import ts from 'typescript';
 import { z } from 'zod';
@@ -178,6 +178,28 @@ function databasePublicType(sourceText: string, metadata: ColumnTypeMetadata[]):
   const property = (node: ts.TypeLiteralNode, name: string) =>
     node.members.filter(ts.isPropertySignature).find((member) => propertyName(member) === name);
 
+  const referencedSetofTable = (node: ts.TypeNode): string | undefined => {
+    if (!ts.isArrayTypeNode(node)) return undefined;
+    let current: ts.TypeNode = node.elementType;
+    const keys: string[] = [];
+    while (ts.isIndexedAccessTypeNode(current)) {
+      const index = current.indexType;
+      if (!ts.isLiteralTypeNode(index) || !ts.isStringLiteral(index.literal)) return undefined;
+      keys.unshift(index.literal.text);
+      current = current.objectType;
+    }
+    if (
+      !ts.isTypeReferenceNode(current) ||
+      current.typeName.getText(source) !== 'Database' ||
+      keys.length !== 4 ||
+      keys[0] !== 'public' ||
+      keys[1] !== 'Tables' ||
+      keys[3] !== 'Row'
+    )
+      return undefined;
+    return keys[2];
+  };
+
   const serializeFunction = (node: ts.TypeNode, path: string[]): string => {
     const overloads = ts.isUnionTypeNode(node) ? node.types : [node];
     const signatures = overloads.flatMap((overload) => {
@@ -187,8 +209,27 @@ function databasePublicType(sourceText: string, metadata: ColumnTypeMetadata[]):
       const options = property(overload, 'SetofOptions')?.type;
       if (!args || !returns) return [serialize(overload, path)];
       const argsVariants = ts.isUnionTypeNode(args) ? args.types : [args];
-      const returnedTable =
+      const configuredSetofTable =
         options && ts.isTypeLiteralNode(options) ? setofTable(overload) : undefined;
+      const referencedTable = referencedSetofTable(returns);
+      const returnedTable = configuredSetofTable ?? referencedTable;
+      const returnTable = returnedTable
+        ? property(tablesProperty.type, returnedTable)?.type
+        : undefined;
+      const tableRow =
+        returnTable && ts.isTypeLiteralNode(returnTable)
+          ? property(returnTable, 'Row')?.type
+          : undefined;
+      const sameTableRows =
+        ts.isArrayTypeNode(returns) &&
+        Boolean(
+          tableRow &&
+            (referencedTable === returnedTable ||
+              (configuredSetofTable === returnedTable &&
+                ts.isTypeLiteralNode(returns.elementType) &&
+                serialize(returns.elementType, [...path, 'Returns'], returnedTable) ===
+                  serialize(tableRow, ['Tables', returnedTable, 'Row']))),
+        );
       return argsVariants.map((argsVariant) => {
         const printedArgs = print(argsVariant).replace(/\s+/g, ' ').trim();
         const serializedArgs =
@@ -196,11 +237,11 @@ function databasePublicType(sourceText: string, metadata: ColumnTypeMetadata[]):
           (printedArgs === 'never' || printedArgs === 'Record<PropertyKey, never>')
             ? '__canonical_no_args__'
             : serialize(argsVariant, [...path, 'Args']);
-        return `{Args:${serializedArgs};Returns:${serialize(
-          returns,
-          [...path, 'Returns'],
-          returnedTable,
-        )};SetofOptions:${options ? serialize(options, [...path, 'SetofOptions']) : 'none'}}`;
+        return `{Args:${serializedArgs};Returns:${
+          sameTableRows
+            ? `__table_rows:${returnedTable}__`
+            : serialize(returns, [...path, 'Returns'], returnedTable)
+        };SetofOptions:${sameTableRows ? `__table_rows:${returnedTable}__` : options ? serialize(options, [...path, 'SetofOptions']) : 'none'}}`;
       });
     });
     return `Overloads[${signatures.sort().join('|')}]`;
@@ -758,6 +799,92 @@ function generateTypes(projectRef: string, token: string): string {
   }
 }
 
+function generateLocalTypes(): string {
+  try {
+    const generated = execFileSync(
+      'corepack',
+      ['pnpm', 'exec', 'supabase', 'gen', 'types', 'typescript', '--local', '--schema', 'public'],
+      {
+        encoding: 'utf8',
+        shell: process.platform === 'win32',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    ).trimEnd();
+    return execFileSync('corepack', ['pnpm', 'exec', 'prettier', '--parser', 'typescript'], {
+      encoding: 'utf8',
+      input: `${generated}\n`,
+      shell: process.platform === 'win32',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trimEnd();
+  } catch {
+    throw new Error('Could not generate database types from the local Supabase schema.');
+  }
+}
+
+function localColumnTypeMetadata(): ColumnTypeMetadata[] {
+  const queryFile = `.local-database-types-${process.pid}.sql`;
+  writeFileSync(
+    queryFile,
+    `select table_name, column_name, data_type, is_nullable, is_generated
+from information_schema.columns
+where table_schema = 'public';\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  );
+  try {
+    const output = execFileSync(
+      'corepack',
+      [
+        'pnpm',
+        'exec',
+        'supabase',
+        'db',
+        'query',
+        '--local',
+        '--output',
+        'json',
+        '--file',
+        queryFile,
+      ],
+      {
+        encoding: 'utf8',
+        shell: process.platform === 'win32',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    );
+    const start = output.indexOf('{');
+    const end = output.lastIndexOf('}');
+    if (start < 0 || end < start)
+      throw new Error('Local database metadata query returned no JSON.');
+    const result = z.object({ rows: z.unknown() }).parse(JSON.parse(output.slice(start, end + 1)));
+    return parseColumnTypeMetadata(result.rows);
+  } catch {
+    throw new Error('Could not read public column metadata from the local Supabase database.');
+  } finally {
+    unlinkSync(queryFile);
+  }
+}
+
+export function checkLocalDatabaseTypeParity(): DriftReport {
+  const generatedTypes = generateLocalTypes();
+  const metadata = localColumnTypeMetadata();
+  const checkedInTypes = readFileSync('packages/db/src/database.types.ts', 'utf8');
+  const mismatches = generatedTypesMatch(generatedTypes, checkedInTypes, metadata)
+    ? []
+    : [
+        'repo ↔ local: generated database.types.ts differs from the fully migrated local schema; review `corepack pnpm exec supabase gen types typescript --local --schema public`',
+      ];
+  return {
+    ok: mismatches.length === 0,
+    mismatches,
+    evidence: {
+      mode: 'repo-local',
+      environment: 'local',
+      generatedTypesDigest: valueHash(generatedTypes),
+      publicColumnCount: metadata.length,
+    },
+  };
+}
+
 function localMigrationInventory(): { fileName: string; version: string }[] {
   return migrationInventoryFromFilenames(readdirSync('supabase/migrations'));
 }
@@ -1241,6 +1368,12 @@ function summarize(value: Awaited<ReturnType<typeof inventory>>) {
 
 async function main(): Promise<void> {
   const mode = process.argv[2] === '--' ? process.argv[3] : process.argv[2];
+  if (mode === 'repo-local') {
+    const report = checkLocalDatabaseTypeParity();
+    console.log(JSON.stringify(report, null, 2));
+    if (!report.ok) process.exitCode = 1;
+    return;
+  }
   if (mode === 'attest-source') {
     captureSourceAttestation();
     return;
@@ -1285,7 +1418,7 @@ async function main(): Promise<void> {
   }
   if (mode !== 'repo-staging' && mode !== 'staging-production') {
     throw new Error(
-      'Usage: pnpm environment:drift -- validate-staging|validate-production|repo-staging|staging-production',
+      'Usage: pnpm environment:drift -- validate-staging|validate-production|repo-local|repo-staging|staging-production',
     );
   }
   const report = mode === 'repo-staging' ? await runDriftCheck(mode) : await runPairCheck();
