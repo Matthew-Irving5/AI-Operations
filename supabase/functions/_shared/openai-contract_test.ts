@@ -85,6 +85,48 @@ Deno.test("strict report output accepts the governed empty-sections shape", () =
   assertEquals(validated?.report_sections, []);
 });
 
+Deno.test("provider-valid uppercase section codes normalize to the persisted slug", () => {
+  const sectionProperties = reportOutputSchema.properties as Record<
+    string,
+    { items?: { properties?: Record<string, { pattern?: string }> } }
+  >;
+  assertEquals(
+    sectionProperties.report_sections?.items?.properties?.code?.pattern,
+    "^[a-z0-9-]{1,100}$",
+  );
+
+  const validated = validateReportOutput({
+    ...output,
+    findings: [],
+    evidence: [],
+    uncertainties: ["No supported synthetic records were supplied."],
+    report_sections: [{
+      code: "LIMITATION",
+      title: "Limitation",
+      content: "The synthetic run had no eligible records.",
+    }],
+  }, new Set());
+  assertEquals(validated?.report_sections, [{
+    code: "limitation",
+    title: "Limitation",
+    content: "The synthetic run had no eligible records.",
+  }]);
+
+  for (const code of ["LIMITATION_V1", "\u212a"]) {
+    assertEquals(
+      validateReportOutput({
+        ...output,
+        report_sections: [{
+          code,
+          title: "Invalid section",
+          content: "This synthetic section code must be rejected.",
+        }],
+      }, new Set(["fixture-1"])),
+      null,
+    );
+  }
+});
+
 Deno.test("provider usage strips untrusted provider response fields", () => {
   assertEquals(
     redactedProviderUsage({

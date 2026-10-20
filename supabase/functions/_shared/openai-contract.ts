@@ -161,13 +161,15 @@ export function validateReportOutput(
     return { id: item.id, source: item.source };
   });
   const reportSections = value.report_sections.map((section) => {
+    const code = isRecord(section) && isText(section.code, 100)
+      ? section.code
+      : null;
     if (
-      !isRecord(section) || !isText(section.code, 100) ||
-      !/^[a-z0-9-]{1,100}$/.test(section.code) ||
+      !isRecord(section) || !code || !/^[A-Za-z0-9-]{1,100}$/.test(code) ||
       !isText(section.title, 200) || !isText(section.content)
     ) return null;
     return {
-      code: section.code,
+      code: code.toLowerCase(),
       title: section.title,
       content: section.content,
     };
