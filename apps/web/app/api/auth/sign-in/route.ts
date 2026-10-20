@@ -5,11 +5,11 @@ import { createSupabaseServerClient } from '../../../../lib/supabase-server';
 import { requireSameOrigin } from '../../../../lib/request-security';
 
 export function GET(request: Request) {
-  return NextResponse.redirect(new URL('/login', request.url));
+  return NextResponse.redirect(new URL('/login', process.env.PUBLIC_APP_ORIGIN ?? request.url));
 }
 
 function redirectToLogin(request: Request, error?: 'invalid' | 'security') {
-  const target = new URL('/login', request.url);
+  const target = new URL('/login', process.env.PUBLIC_APP_ORIGIN ?? request.url);
   if (error) target.searchParams.set('error', error);
   return NextResponse.redirect(target, { status: 303 });
 }
@@ -28,5 +28,7 @@ export async function POST(request: Request) {
   const { error } = await supabase.auth.signInWithPassword(parsed.data);
   return error
     ? redirectToLogin(request, 'invalid')
-    : NextResponse.redirect(new URL('/mfa', request.url), { status: 303 });
+    : NextResponse.redirect(new URL('/mfa', process.env.PUBLIC_APP_ORIGIN ?? request.url), {
+        status: 303,
+      });
 }

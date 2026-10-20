@@ -1,7 +1,122 @@
 import { expect, test } from '@playwright/test';
 import { signInLocalTestUser } from './local-auth';
 
+// These tests exercise credential-bearing requests; retain safe assertions, not request traces.
+test.use({ trace: 'off' });
+
 const seededReportId = '00000000-0000-4000-8000-000000000505';
+
+test('server password sign-in route redirects to MFA using local Supabase', async ({
+  request,
+  baseURL,
+}) => {
+  const email = process.env.LOCAL_TEST_EMAIL;
+  const password = process.env.LOCAL_TEST_PASSWORD;
+  if (!email || !password || !baseURL)
+    throw new Error('The local QA runner did not configure test credentials and app origin.');
+
+  const startedAt = Date.now();
+  let response;
+  try {
+    response = await request.post(new URL('/api/auth/sign-in', baseURL).toString(), {
+      headers: { origin: baseURL },
+      form: { email, password },
+      maxRedirects: 0,
+      timeout: 12_000,
+    });
+  } catch {
+    throw new Error(
+      `App password sign-in route produced no response in ${Date.now() - startedAt}ms.`,
+    );
+  }
+
+  const location = response.headers().location ?? 'none';
+  const redirectUrl = new URL(location, baseURL);
+  expect(
+    response.status(),
+    `App password sign-in route returned HTTP ${response.status()} in ${Date.now() - startedAt}ms; redirect=${redirectUrl.origin}${redirectUrl.pathname}`,
+  ).toBe(303);
+  expect(redirectUrl.origin).toBe(new URL(baseURL).origin);
+  expect(redirectUrl.pathname).toBe('/mfa');
+});
+
+test('real password sign-in reaches the MFA challenge', async ({ page, baseURL }) => {
+  test.setTimeout(45_000);
+  const email = process.env.LOCAL_TEST_EMAIL;
+  const password = process.env.LOCAL_TEST_PASSWORD;
+  if (!email || !password || !baseURL)
+    throw new Error('The local QA runner did not configure test credentials and app origin.');
+
+  await page.goto('/login');
+
+  const startedAt = Date.now();
+  const requestEvents: string[] = [];
+  const authFlowPath = (request: import('@playwright/test').Request) => {
+    const pathname = new URL(request.url()).pathname;
+    return pathname === '/api/auth/sign-in' || pathname === '/mfa' ? pathname : undefined;
+  };
+  page.on('request', (request) => {
+    const pathname = authFlowPath(request);
+    if (pathname)
+      requestEvents.push(
+        `${request.method()} ${pathname} started at ${new URL(request.url()).origin}`,
+      );
+  });
+  page.on('response', (response) => {
+    const pathname = authFlowPath(response.request());
+    if (pathname)
+      requestEvents.push(
+        `${response.request().method()} ${pathname} HTTP ${response.status()} location=${response.headers().location ?? 'none'}`,
+      );
+  });
+  page.on('requestfinished', (request) => {
+    const pathname = authFlowPath(request);
+    if (pathname) requestEvents.push(`${request.method()} ${pathname} finished`);
+  });
+  page.on('requestfailed', (request) => {
+    const pathname = authFlowPath(request);
+    if (pathname)
+      requestEvents.push(
+        `${request.method()} ${pathname} failed=${request.failure()?.errorText ?? 'unknown'} at ${new URL(request.url()).origin}`,
+      );
+  });
+
+  try {
+    await page.getByRole('textbox', { name: 'Email' }).fill(email);
+    await page.getByLabel('Password').fill(password);
+
+    const mfaUrlPromise = page.waitForURL(
+      (url) => url.pathname === '/mfa' && url.origin === new URL(baseURL).origin,
+      { timeout: 15_000 },
+    );
+    const mfaResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'GET' && new URL(response.url()).pathname === '/mfa',
+      { timeout: 15_000 },
+    );
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await mfaUrlPromise;
+    const mfaResponse = await mfaResponsePromise;
+    expect(mfaResponse.status(), `GET /mfa completed in ${Date.now() - startedAt}ms.`).toBe(200);
+    expect(new URL(page.url()).origin).toBe(new URL(baseURL).origin);
+    await expect(page.locator('main')).toContainText(/multi-factor|authenticator|verification/i);
+  } catch (error) {
+    if (new URL(page.url()).pathname === '/login') {
+      await page
+        .locator('input[name="password"]')
+        .fill('', { timeout: 1_000 })
+        .catch(() => undefined);
+      await page
+        .locator('input[name="email"]')
+        .fill('', { timeout: 1_000 })
+        .catch(() => undefined);
+    }
+    const details = error instanceof Error ? error.message : 'unknown test failure';
+    throw new Error(
+      `Local password form sign-in failed after ${Date.now() - startedAt}ms; currentPath=${new URL(page.url()).pathname}; requestEvents=${requestEvents.join(',') || 'none'}; origin=${baseURL ?? 'unknown'}; cause=${details}`,
+    );
+  }
+});
 
 test('local test credentials reject invalid sign-in and allow a protected DB journey', async ({
   page,

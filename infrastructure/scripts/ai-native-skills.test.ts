@@ -15,7 +15,7 @@ test('all agent-native skill entrypoints are discoverable and uniquely named', (
   for (const skill of skills) {
     const file = join('.agents', 'skills', skill, 'SKILL.md');
     const source = readFileSync(file, 'utf8');
-    assert.match(source, /^---\nname: [a-z][a-z0-9-]+\ndescription: .+\n---\n/m, file);
+    assert.match(source, /^---\r?\nname: [a-z][a-z0-9-]+\r?\ndescription: .+\r?\n---\r?\n/m, file);
     assert.match(source, new RegExp('^name: ' + skill + '$', 'm'), file);
     assert.ok(source.length > 250, file);
     assert.doesNotMatch(source, /(?:TODO|TBD|PLACEHOLDER|SKIP ALL TESTS)/i, file);
