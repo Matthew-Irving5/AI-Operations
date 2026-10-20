@@ -771,6 +771,7 @@ test('staging live journey proves unauthorised rejection, manual MFA, AAL2 and b
       pullRequestNumber: Number(pullRequestNumber),
       deploymentRunId,
       stagingOrigin: env.LIVE_E2E_BASE_URL,
+      acceptanceProfile: 'targeted',
       completeSuite: 'passed',
       manualMfaChallengeObserved,
       browserChecks: { chromium: 'passed', webkit: 'passed' },

@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { describe, it } from 'node:test';
 import { liveAuthScheduleAction } from './live-auth-schedule-action.js';
 import { writeLiveStagingAcceptanceEvidence } from './live-acceptance-evidence.js';
+import { createStagingAcceptanceStatus } from './release-gate.js';
 
 const runnerPath = resolve('infrastructure/scripts/run-live-e2e.ts');
 const journeyPath = resolve('tests/e2e-live/auth-acceptance.spec.ts');
@@ -150,6 +151,7 @@ describe('live auth acceptance harness', () => {
         pullRequestNumber: 167,
         deploymentRunId: '38595680998',
         stagingOrigin: 'https://ai-operations-staging.ai-operations.workers.dev',
+        acceptanceProfile: 'auth-browser',
         completeSuite: 'passed',
         manualMfaChallengeObserved: true,
         browserChecks: { chromium: 'passed', webkit: 'passed' },
@@ -178,6 +180,115 @@ describe('live auth acceptance harness', () => {
         staleAttemptUsedMfaGate: false,
         freshReauthAccepted: 'passed',
       });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('writes targeted suite evidence through the acceptance status consumer without inventing fresh MFA proof', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'aiops-targeted-evidence-'));
+    const evidencePath = join(directory, 'acceptance.json');
+    const candidateSha = '1'.repeat(40);
+    const candidateTreeSha = '2'.repeat(40);
+    const deploymentRunId = '38595680998';
+    const stagingOrigin = 'https://ai-operations-staging.ai-operations.workers.dev';
+    const workflowRuns = [
+      {
+        workflowCode: 'systems-daily-cost-capacity',
+        executionMode: 'deterministic',
+        runId: 'run-deterministic-1',
+        correlationId: 'trace-deterministic-1',
+        reportId: 'report-deterministic-1',
+        status: 'succeeded',
+        model: 'none',
+        aiCallCount: 0,
+        actualCostUsd: 0,
+        hardCapUsd: 0.01,
+        inputTokens: 0,
+        outputTokens: 0,
+        searchCalls: 0,
+        notificationDelivery: 'not_sent',
+      },
+      {
+        workflowCode: 'systems-weekly-quality-platform',
+        executionMode: 'ai',
+        runId: 'run-ai-1',
+        correlationId: 'trace-ai-1',
+        reportId: 'report-ai-1',
+        status: 'succeeded',
+        model: 'gpt-5.6-luna',
+        aiCallCount: 1,
+        actualCostUsd: 0.02,
+        hardCapUsd: 0.05,
+        inputTokens: 1000,
+        outputTokens: 500,
+        searchCalls: 0,
+        notificationDelivery: 'not_sent',
+      },
+    ] as const;
+    try {
+      await writeLiveStagingAcceptanceEvidence(evidencePath, {
+        candidateSha,
+        candidateTreeSha,
+        pullRequestNumber: 167,
+        deploymentRunId,
+        stagingOrigin,
+        acceptanceProfile: 'targeted',
+        completeSuite: 'passed',
+        manualMfaChallengeObserved: true,
+        browserChecks: { chromium: 'passed', webkit: 'passed' },
+        checks: {
+          authAal2: 'passed',
+          safeRead: 'passed',
+          safeWrite: 'passed',
+          ui: 'passed',
+          edgeFunctions: 'passed',
+          releaseVersion: 'passed',
+        },
+        correlationIds: ['run-deterministic-1', 'trace-deterministic-1', 'run-ai-1', 'trace-ai-1'],
+        workflowRuns,
+        acceptedAt: new Date().toISOString(),
+      });
+
+      const hostedSuite = JSON.parse(await readFile(evidencePath, 'utf8')) as Record<
+        string,
+        unknown
+      >;
+      const status = createStagingAcceptanceStatus({
+        candidateSha,
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 167,
+        state: 'success',
+        deployment: {
+          schemaVersion: 1,
+          state: 'CANDIDATE_STAGING_DEPLOYED',
+          candidateSha,
+          candidateTreeSha,
+          pullRequestNumber: 167,
+          runId: deploymentRunId,
+          runAttempt: '1',
+          origin: stagingOrigin,
+          acceptanceProfile: 'targeted',
+          migrations: 'passed',
+          edgeFunctions: 'passed',
+          sourceDrift: 'passed',
+          readinessSmoke: 'passed',
+        },
+        hostedSuite,
+      });
+
+      assert.equal(status.status.state, 'success');
+      assert.equal(status.acceptance?.acceptanceProfile, 'targeted');
+      assert.equal(status.acceptance?.humanMfa, 'user-completed');
+      assert.equal(Object.hasOwn(status.acceptance ?? {}, 'freshMfaAction'), false);
+      assert.deepEqual(status.acceptance?.workflowRuns, workflowRuns);
+      assert.deepEqual(status.acceptance?.correlationIds, [
+        'run-deterministic-1',
+        'trace-deterministic-1',
+        'run-ai-1',
+        'trace-ai-1',
+      ]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

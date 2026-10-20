@@ -150,9 +150,7 @@ const AcceptanceEvidenceSchema = z
   .strict()
   .superRefine((value, context) => {
     const targeted = value.acceptanceProfile === 'targeted';
-    const validMfa = targeted
-      ? value.humanMfa === 'not-required'
-      : value.humanMfa === 'user-completed';
+    const validMfa = targeted || value.humanMfa === 'user-completed';
     const validChecks = targeted ? Array.isArray(value.checks) : !Array.isArray(value.checks);
     const validFreshMfaAction = targeted
       ? value.freshMfaAction === undefined
@@ -281,9 +279,10 @@ const TargetedStagingSuiteEvidenceSchema = z
     pullRequestNumber: z.number().int().positive(),
     deploymentRunId: RunIdSchema,
     stagingOrigin: StageOrigin,
-    humanMfa: z.literal('not-required'),
+    humanMfa: z.enum(['user-completed', 'not-required']),
     checks: TargetedCapabilityResultsSchema,
     correlationIds: z.array(SafeIdSchema).max(20),
+    workflowRuns: Ai15WorkflowProofsSchema.optional(),
     acceptedAt: z.string().datetime({ offset: true }),
   })
   .strict();
@@ -644,9 +643,7 @@ export function createStagingAcceptanceStatus(input: unknown): StagingAcceptance
       ? { freshMfaAction: parsed.hostedSuite.freshMfaAction }
       : {}),
     correlationIds: parsed.hostedSuite.correlationIds,
-    ...(parsed.hostedSuite.acceptanceProfile === 'auth-browser'
-      ? { workflowRuns: parsed.hostedSuite.workflowRuns }
-      : {}),
+    ...(parsed.hostedSuite.workflowRuns ? { workflowRuns: parsed.hostedSuite.workflowRuns } : {}),
     acceptedAt: parsed.hostedSuite.acceptedAt,
     accepted: true,
   });

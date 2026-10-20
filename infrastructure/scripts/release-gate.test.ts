@@ -611,6 +611,7 @@ test('headed acceptance evidence is written only for the complete MFA and dual-b
     pullRequestNumber: 152,
     deploymentRunId: '36474707377',
     stagingOrigin: origin,
+    acceptanceProfile: 'auth-browser',
     completeSuite: 'passed',
     manualMfaChallengeObserved: true,
     browserChecks: { chromium: 'passed', webkit: 'passed' },
