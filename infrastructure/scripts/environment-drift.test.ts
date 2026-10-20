@@ -23,6 +23,7 @@ import {
   inventoryFromWrangler,
   generatedTypesMatch,
   parseColumnTypeMetadata,
+  parseLocalColumnMetadataOutput,
   safeLocalMetadataCommandFailure,
   type FunctionInventory,
   type WorkerInventory,
@@ -362,6 +363,39 @@ test('local metadata command diagnostics keep useful failures and redact connect
   assert.match(diagnostic, /\[REDACTED_DATABASE_URL\]/);
   assert.match(diagnostic, /Bearer \[REDACTED\]/);
   assert.doesNotMatch(diagnostic, /local-password|eyJheader/);
+});
+
+test('local database metadata parser selects the complete query object around CLI output', () => {
+  const output = [
+    'Connecting to local database...',
+    JSON.stringify({
+      boundary: 'fixture',
+      rows: [
+        {
+          table_name: 'handoffs',
+          column_name: 'id',
+          data_type: 'uuid',
+          is_nullable: 'NO',
+          is_generated: 'NEVER',
+        },
+      ],
+      warning: 'untrusted result text containing } and { characters',
+    }),
+    'Supabase CLI status: {this is trailing non-JSON output}',
+  ].join('\n');
+
+  assert.deepEqual(parseLocalColumnMetadataOutput(output), [
+    {
+      table_name: 'handoffs',
+      column_name: 'id',
+      data_type: 'uuid',
+      is_nullable: 'NO',
+      is_generated: 'NEVER',
+    },
+  ]);
+  assert.throws(() =>
+    parseLocalColumnMetadataOutput('query returned no metadata object {still not JSON}'),
+  );
 });
 
 const functions: FunctionInventory = [

@@ -845,6 +845,61 @@ export function safeLocalMetadataCommandFailure(error: unknown): string {
   return [status ?? code, safeStderr].filter(Boolean).join(': ') || 'Unknown command failure.';
 }
 
+export function parseLocalColumnMetadataOutput(output: string): ColumnTypeMetadata[] {
+  let cursor = 0;
+  let rowValidationError: z.ZodError | undefined;
+  while (cursor < output.length) {
+    const start = output.indexOf('{', cursor);
+    if (start < 0) break;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let end = -1;
+    for (let index = start; index < output.length; index += 1) {
+      const character = output[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (character === '\\') escaped = true;
+        else if (character === '"') inString = false;
+        continue;
+      }
+      if (character === '"') inString = true;
+      else if (character === '{') depth += 1;
+      else if (character === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          end = index;
+          break;
+        }
+      }
+    }
+    cursor = start + 1;
+    if (end < start) continue;
+    let candidate: unknown;
+    try {
+      candidate = JSON.parse(output.slice(start, end + 1));
+    } catch {
+      continue;
+    }
+    const envelope = z.object({ rows: z.unknown() }).safeParse(candidate);
+    if (!envelope.success) continue;
+    try {
+      return parseColumnTypeMetadata(envelope.data.rows);
+    } catch (error) {
+      if (error instanceof z.ZodError) rowValidationError = error;
+      else throw error;
+    }
+  }
+  if (rowValidationError) {
+    const issues = rowValidationError.issues
+      .slice(0, 3)
+      .map((issue) => `${issue.path.join('.') || 'row'}:${issue.code}`)
+      .join(', ');
+    throw new Error(`Local Supabase public-column rows failed validation (${issues}).`);
+  }
+  throw new Error('Local Supabase public-column query returned no complete JSON object with rows.');
+}
+
 function localColumnTypeMetadata(): ColumnTypeMetadata[] {
   const queryFile = `.local-database-types-${process.pid}.sql`;
   writeFileSync(
@@ -882,34 +937,7 @@ where table_schema = 'public';\n`,
         `Could not query public column metadata from local Supabase (${safeLocalMetadataCommandFailure(error)}).`,
       );
     }
-    const start = output.indexOf('{');
-    const end = output.lastIndexOf('}');
-    if (start < 0 || end < start)
-      throw new Error('Local Supabase public-column query returned no JSON object.');
-    let result: unknown;
-    try {
-      result = JSON.parse(output.slice(start, end + 1));
-    } catch {
-      throw new Error('Local Supabase public-column query returned invalid JSON.');
-    }
-    const envelope = z.object({ rows: z.unknown() }).safeParse(result);
-    if (!envelope.success) {
-      const paths = envelope.error.issues
-        .map((issue) => issue.path.join('.') || issue.code)
-        .slice(0, 3)
-        .join(', ');
-      throw new Error(`Local Supabase public-column result is missing its rows field (${paths}).`);
-    }
-    try {
-      return parseColumnTypeMetadata(envelope.data.rows);
-    } catch (error) {
-      if (!(error instanceof z.ZodError)) throw error;
-      const issues = error.issues
-        .slice(0, 3)
-        .map((issue) => `${issue.path.join('.') || 'row'}:${issue.code}`)
-        .join(', ');
-      throw new Error(`Local Supabase public-column rows failed validation (${issues}).`);
-    }
+    return parseLocalColumnMetadataOutput(output);
   } finally {
     unlinkSync(queryFile);
   }
