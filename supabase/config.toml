@@ -22,6 +22,7 @@ verify_jwt = true
 verify_jwt = true
 [functions.feedback-submit]
 verify_jwt = true
+import_map = "./functions/deno.json"
 [functions.approval-decide]
 verify_jwt = true
 
