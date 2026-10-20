@@ -50,7 +50,7 @@ if (process.platform === 'win32') {
 
   process.env.LOCAL_QA_WSL_DISTRO = distro;
   process.env.LOCAL_QA_WSL_BUILD_ROOT = buildRoot;
-  process.env.LOCAL_QA_WSL_NODE_BIN = `${wslHome}/.local/node-v24.18.0-linux-x64/bin`;
+  process.env.LOCAL_QA_WSL_NODE_BIN = `${wslHome}/.local/node-v22.18.0-linux-x64/bin`;
 } else if (process.platform !== 'linux') {
   throw new Error('OpenNext Worker preview supports Windows with WSL or a native Linux host.');
 }
