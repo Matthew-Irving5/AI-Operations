@@ -23,6 +23,7 @@ import {
   inventoryFromWrangler,
   generatedTypesMatch,
   parseColumnTypeMetadata,
+  safeLocalMetadataCommandFailure,
   type FunctionInventory,
   type WorkerInventory,
 } from './environment-drift.js';
@@ -346,6 +347,21 @@ test('column metadata contract rejects incomplete catalog responses without echo
     ],
   );
   assert.throws(() => parseColumnTypeMetadata([{ table_name: 'records', column_name: 'payload' }]));
+});
+
+test('local metadata command diagnostics keep useful failures and redact connection secrets', () => {
+  const diagnostic = safeLocalMetadataCommandFailure({
+    status: 1,
+    stderr: Buffer.from(
+      'connection failed at postgresql://postgres:local-password@127.0.0.1/db Bearer eyJheader.payload.signature',
+    ),
+  });
+
+  assert.match(diagnostic, /exit status 1/);
+  assert.match(diagnostic, /connection failed/);
+  assert.match(diagnostic, /\[REDACTED_DATABASE_URL\]/);
+  assert.match(diagnostic, /Bearer \[REDACTED\]/);
+  assert.doesNotMatch(diagnostic, /local-password|eyJheader/);
 });
 
 const functions: FunctionInventory = [

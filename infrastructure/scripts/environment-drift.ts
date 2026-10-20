@@ -821,6 +821,30 @@ function generateLocalTypes(): string {
   }
 }
 
+export function safeLocalMetadataCommandFailure(error: unknown): string {
+  if (!error || typeof error !== 'object') return 'Unknown command failure.';
+  const childError = error as { code?: unknown; status?: unknown; stderr?: unknown };
+  const status =
+    typeof childError.status === 'number' ? `exit status ${childError.status}` : undefined;
+  const code = typeof childError.code === 'string' ? childError.code : undefined;
+  const stderr =
+    typeof childError.stderr === 'string'
+      ? childError.stderr
+      : Buffer.isBuffer(childError.stderr)
+        ? childError.stderr.toString('utf8')
+        : '';
+  const safeStderr = stderr
+    .replace(/postgres(?:ql)?:\/\/[^\s"'<>]+/gi, '[REDACTED_DATABASE_URL]')
+    .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[REDACTED_JWT]')
+    .replace(/(?:sb_secret_|sb_publishable_)[A-Za-z0-9_-]+/g, '[REDACTED_KEY]')
+    .replace(/Bearer\s+\S+/gi, 'Bearer [REDACTED]')
+    .replace(/(api[_-]?key|token|secret|password)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 1000);
+  return [status ?? code, safeStderr].filter(Boolean).join(': ') || 'Unknown command failure.';
+}
+
 function localColumnTypeMetadata(): ColumnTypeMetadata[] {
   const queryFile = `.local-database-types-${process.pid}.sql`;
   writeFileSync(
@@ -831,34 +855,61 @@ where table_schema = 'public';\n`,
     { encoding: 'utf8', mode: 0o600 },
   );
   try {
-    const output = execFileSync(
-      'corepack',
-      [
-        'pnpm',
-        'exec',
-        'supabase',
-        'db',
-        'query',
-        '--local',
-        '--output',
-        'json',
-        '--file',
-        queryFile,
-      ],
-      {
-        encoding: 'utf8',
-        shell: process.platform === 'win32',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      },
-    );
+    let output: string;
+    try {
+      output = execFileSync(
+        'corepack',
+        [
+          'pnpm',
+          'exec',
+          'supabase',
+          'db',
+          'query',
+          '--local',
+          '--output',
+          'json',
+          '--file',
+          queryFile,
+        ],
+        {
+          encoding: 'utf8',
+          shell: process.platform === 'win32',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      );
+    } catch (error) {
+      throw new Error(
+        `Could not query public column metadata from local Supabase (${safeLocalMetadataCommandFailure(error)}).`,
+      );
+    }
     const start = output.indexOf('{');
     const end = output.lastIndexOf('}');
     if (start < 0 || end < start)
-      throw new Error('Local database metadata query returned no JSON.');
-    const result = z.object({ rows: z.unknown() }).parse(JSON.parse(output.slice(start, end + 1)));
-    return parseColumnTypeMetadata(result.rows);
-  } catch {
-    throw new Error('Could not read public column metadata from the local Supabase database.');
+      throw new Error('Local Supabase public-column query returned no JSON object.');
+    let result: unknown;
+    try {
+      result = JSON.parse(output.slice(start, end + 1));
+    } catch {
+      throw new Error('Local Supabase public-column query returned invalid JSON.');
+    }
+    const envelope = z.object({ rows: z.unknown() }).safeParse(result);
+    if (!envelope.success) {
+      const paths = envelope.error.issues
+        .map((issue) => issue.path.join('.') || issue.code)
+        .slice(0, 3)
+        .join(', ');
+      throw new Error(`Local Supabase public-column result is missing its rows field (${paths}).`);
+    }
+    try {
+      return parseColumnTypeMetadata(envelope.data.rows);
+    } catch (error) {
+      if (!(error instanceof z.ZodError)) throw error;
+      const issues = error.issues
+        .slice(0, 3)
+        .map((issue) => `${issue.path.join('.') || 'row'}:${issue.code}`)
+        .join(', ');
+      throw new Error(`Local Supabase public-column rows failed validation (${issues}).`);
+    }
   } finally {
     unlinkSync(queryFile);
   }
