@@ -24,13 +24,13 @@ for (const name of [
   'LOCAL_QA_WORKER_PREVIEW',
   'E2E_JWT_SECRET',
 ]) {
-  delete webServerEnv[name];
+  webServerEnv[name] = undefined;
 }
-delete webServerEnv.LOCAL_QA_DIST_DIR;
+webServerEnv.LOCAL_QA_DIST_DIR = undefined;
 if (process.platform !== 'win32') {
-  delete webServerEnv.LOCAL_QA_WSL_DISTRO;
-  delete webServerEnv.LOCAL_QA_WSL_BUILD_ROOT;
-  delete webServerEnv.LOCAL_QA_WSL_NODE_BIN;
+  webServerEnv.LOCAL_QA_WSL_DISTRO = undefined;
+  webServerEnv.LOCAL_QA_WSL_BUILD_ROOT = undefined;
+  webServerEnv.LOCAL_QA_WSL_NODE_BIN = undefined;
 }
 webServerEnv.NODE_ENV = 'production';
 webServerEnv.APP_ENV = 'local';
@@ -43,6 +43,7 @@ if (process.platform === 'win32') {
       'APP_ENV',
       'E2E_BASE_URL',
       'E2E_PORT',
+      'LOCAL_QA_DIST_DIR',
       'LOCAL_QA_SOURCE_ROOT/p',
       'LOCAL_QA_WSL_BUILD_ROOT',
       'LOCAL_QA_WSL_NODE_BIN',
