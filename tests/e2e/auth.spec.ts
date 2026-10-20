@@ -37,3 +37,11 @@ test('MFA challenge is available before protected navigation', async ({ page }) 
   await expect(page.getByLabel('Six-digit code')).toHaveAttribute('inputmode', 'numeric');
   await expect(page.getByRole('button', { name: 'Verify' })).toBeDisabled();
 });
+
+test('the app favicon is served on the login page', async ({ page }) => {
+  await page.goto('/login');
+  const response = await page.request.get('/favicon.ico');
+  expect(response.status()).toBe(200);
+  expect(response.headers()['content-type']).toMatch(/image\/x-icon|image\/vnd\.microsoft\.icon/);
+  expect((await response.body()).byteLength).toBeGreaterThan(0);
+});

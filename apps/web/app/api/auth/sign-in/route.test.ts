@@ -11,11 +11,12 @@ function request(
   email: string,
   password = 'long-enough-password',
   origin = 'https://example.test',
+  requestUrl = 'https://example.test/api/auth/sign-in',
 ) {
   const body = new FormData();
   body.set('email', email);
   body.set('password', password);
-  return new Request('https://example.test/api/auth/sign-in', {
+  return new Request(requestUrl, {
     method: 'POST',
     headers: { origin },
     body,
@@ -37,15 +38,22 @@ describe('sign in', () => {
     vi.unstubAllEnvs();
   });
 
-  it('keeps the safe GET endpoint as a redirect to the login shell', () => {
-    const response = GET(new Request('https://operations.example/api/auth/sign-in'));
+  it('uses the configured public origin for the login redirect', () => {
+    const response = GET(new Request('https://internal-worker.example/api/auth/sign-in'));
 
     expect(response.status).toBe(307);
-    expect(response.headers.get('location')).toBe('https://operations.example/login');
+    expect(response.headers.get('location')).toBe('https://example.test/login');
   });
 
-  it('routes an allowlisted password session to mandatory MFA', async () => {
-    const response = await POST(request('matthewirving99@gmail.com'));
+  it('routes an allowlisted password session to mandatory MFA on the configured public origin', async () => {
+    const response = await POST(
+      request(
+        'matthewirving99@gmail.com',
+        'long-enough-password',
+        'https://example.test',
+        'https://internal-worker.example/api/auth/sign-in',
+      ),
+    );
 
     expect(response.status).toBe(303);
     expect(response.headers.get('location')).toBe('https://example.test/mfa');
@@ -55,7 +63,14 @@ describe('sign in', () => {
   it('uses the same public error for unknown identities and invalid credentials', async () => {
     const unknown = await POST(request('someone@example.test'));
     signInWithPassword.mockResolvedValueOnce({ error: new Error('invalid credentials') });
-    const invalid = await POST(request('matthewirving99@gmail.com'));
+    const invalid = await POST(
+      request(
+        'matthewirving99@gmail.com',
+        'long-enough-password',
+        'https://example.test',
+        'https://internal-worker.example/api/auth/sign-in',
+      ),
+    );
 
     expect(unknown.status).toBe(303);
     expect(invalid.status).toBe(303);

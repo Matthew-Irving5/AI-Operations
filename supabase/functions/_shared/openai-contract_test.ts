@@ -1,6 +1,7 @@
 import {
   extractResponseOutputText,
   redactedProviderUsage,
+  reportOutputSchema,
   validateReportOutput,
 } from "./openai-contract.ts";
 
@@ -62,6 +63,26 @@ Deno.test("strict report output accepts empty evidence only with no findings", (
     }, new Set()),
     null,
   );
+});
+
+Deno.test("strict report output accepts the governed empty-sections shape", () => {
+  const properties = reportOutputSchema.properties as Record<
+    string,
+    { minItems?: number }
+  >;
+  assertEquals(properties.report_sections?.minItems, undefined);
+
+  const validated = validateReportOutput({
+    ...output,
+    findings: [],
+    recommendations: [],
+    actions: [],
+    alerts: [],
+    evidence: [],
+    uncertainties: ["The supplied evidence is insufficient."],
+    report_sections: [],
+  }, new Set());
+  assertEquals(validated?.report_sections, []);
 });
 
 Deno.test("provider usage strips untrusted provider response fields", () => {

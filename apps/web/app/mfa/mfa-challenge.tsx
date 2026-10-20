@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useState, useSyncExternalStore } from 'react';
+import React, { FormEvent, useEffect, useState, useSyncExternalStore } from 'react';
 
 const mfaGateStorageKey = 'mfa_job_gate';
 const subscribeToHydration = () => () => undefined;
@@ -168,7 +168,7 @@ export function MfaChallenge({
   }
   return (
     <form className="card" method="post" onSubmit={submit}>
-      {!factorId && !enrolment && <p>Preparing secure authenticator enrolment…</p>}
+      {!activeFactorId && !enrolment && <p>Preparing secure authenticator enrolment…</p>}
       {availableFactors.length > 0 && !factorId && (
         <label>
           Authenticator factor
