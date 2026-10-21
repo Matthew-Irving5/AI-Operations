@@ -189,26 +189,59 @@ export function Tabs({
   );
 }
 
-export type CommandItem = { id: string; label: string; description?: string };
+export type CommandItem = {
+  id: string;
+  label: string;
+  description?: string;
+  group?: string;
+  keywords?: string;
+};
+
+export function matchesCommand(item: CommandItem, query: string): boolean {
+  const searchableTokens = [item.label, item.description, item.group, item.keywords]
+    .filter(Boolean)
+    .flatMap((field) =>
+      field!
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .filter(Boolean),
+    );
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  return terms.every((term) =>
+    searchableTokens.some((token) => {
+      if (token.includes(term)) return true;
+      let position = 0;
+      for (const character of term) {
+        position = token.indexOf(character, position);
+        if (position === -1) return false;
+        position += 1;
+      }
+      return true;
+    }),
+  );
+}
 
 export function Command({
   label = 'Search commands',
   items,
   emptyMessage = 'No matching commands.',
   onSelect,
+  onDismiss,
+  autoFocus = false,
 }: {
   label?: string;
   items: CommandItem[];
   emptyMessage?: string;
   onSelect: (item: CommandItem) => void;
+  onDismiss?: () => void;
+  autoFocus?: boolean;
 }) {
   const id = useId();
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
-  const filteredItems = items.filter((item) =>
-    item.label.toLowerCase().includes(query.toLowerCase()),
-  );
-  const activeItem = filteredItems[activeIndex];
+  const filteredItems = items.filter((item) => matchesCommand(item, query));
+  const selectedIndex = Math.min(activeIndex, Math.max(filteredItems.length - 1, 0));
+  const activeItem = filteredItems[selectedIndex];
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'ArrowDown') {
@@ -216,26 +249,33 @@ export function Command({
       setActiveIndex((index) => (filteredItems.length ? (index + 1) % filteredItems.length : 0));
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      setActiveIndex((index) =>
-        filteredItems.length ? (index - 1 + filteredItems.length) % filteredItems.length : 0,
+      setActiveIndex(() =>
+        filteredItems.length
+          ? (selectedIndex - 1 + filteredItems.length) % filteredItems.length
+          : 0,
       );
     } else if (event.key === 'Enter' && activeItem) {
       event.preventDefault();
       onSelect(activeItem);
     } else if (event.key === 'Escape') {
-      setQuery('');
-      setActiveIndex(0);
+      event.preventDefault();
+      if (onDismiss) onDismiss();
+      else {
+        setQuery('');
+        setActiveIndex(0);
+      }
     }
   }
 
   return (
     <div className="ui-command">
       <input
-        aria-activedescendant={activeItem ? `${id}-option-${activeIndex}` : undefined}
+        aria-activedescendant={activeItem ? `${id}-option-${activeItem.id}` : undefined}
         aria-autocomplete="list"
         aria-controls={`${id}-list`}
         aria-expanded="true"
         aria-label={label}
+        autoFocus={autoFocus}
         className="ui-input ui-command__input"
         onChange={(event) => {
           setQuery(event.currentTarget.value);
@@ -247,17 +287,34 @@ export function Command({
       />
       <ul className="ui-command__list" id={`${id}-list`} role="listbox">
         {filteredItems.length ? (
-          filteredItems.map((item, index) => (
-            <li
-              aria-selected={index === activeIndex}
-              className="ui-command__option"
-              id={`${id}-option-${index}`}
-              key={item.id}
-              onClick={() => onSelect(item)}
-              role="option"
-            >
-              <strong>{item.label}</strong>
-              {item.description ? <span>{item.description}</span> : null}
+          Object.entries(
+            filteredItems.reduce<Record<string, CommandItem[]>>((groups, item) => {
+              const group = item.group ?? 'Commands';
+              (groups[group] ??= []).push(item);
+              return groups;
+            }, {}),
+          ).map(([group, groupItems]) => (
+            <li aria-label={group} className="ui-command__group" key={group} role="group">
+              <span className="ui-command__group-label">{group}</span>
+              <ul className="ui-command__group-options" role="presentation">
+                {groupItems.map((item) => {
+                  const index = filteredItems.findIndex((candidate) => candidate.id === item.id);
+                  return (
+                    <li
+                      aria-selected={index === selectedIndex}
+                      className="ui-command__option"
+                      id={`${id}-option-${item.id}`}
+                      key={item.id}
+                      onClick={() => onSelect(item)}
+                      onMouseMove={() => setActiveIndex(index)}
+                      role="option"
+                    >
+                      <strong>{item.label}</strong>
+                      {item.description ? <span>{item.description}</span> : null}
+                    </li>
+                  );
+                })}
+              </ul>
             </li>
           ))
         ) : (

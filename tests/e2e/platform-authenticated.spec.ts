@@ -48,9 +48,63 @@ test('authenticated platform navigation remains usable at iPhone width', async (
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/operations');
   await expect(page.getByRole('heading', { name: 'Operations Centre' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
   await expect(
     page.evaluate(() => document.documentElement.scrollWidth),
   ).resolves.toBeLessThanOrEqual(390);
+});
+
+test('authenticated shell groups routes, preserves history, and supports the command palette', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/overview');
+
+  const navigation = page.getByRole('navigation', { name: 'Primary navigation' });
+  await expect(navigation.getByRole('region', { name: 'Everyday' })).toBeVisible();
+  await expect(navigation.getByRole('region', { name: 'Managers' })).toBeVisible();
+  await expect(navigation.getByRole('region', { name: 'Attention & work' })).toBeVisible();
+  await expect(navigation.getByRole('region', { name: 'System' })).toBeVisible();
+  await expect(navigation.locator('.app-nav__link')).toHaveCount(19);
+
+  await navigation.getByRole('link', { name: 'Operations', exact: true }).click();
+  await expect(page).toHaveURL(/\/operations$/);
+  await expect(navigation.getByRole('link', { name: 'Operations', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  await page.goBack();
+  await expect(page).toHaveURL(/\/overview$/);
+  await page.goForward();
+  await expect(page).toHaveURL(/\/operations$/);
+
+  await page.getByRole('link', { name: 'Reports', exact: true }).focus();
+  await page.keyboard.press('Control+k');
+  const palette = page.getByRole('dialog', { name: 'Jump to' });
+  await expect(palette).toBeVisible();
+  const search = page.getByRole('combobox', { name: 'Search destinations and commands' });
+  await expect(search).toBeFocused();
+  await search.fill('trcs');
+  await expect(search).toHaveValue('trcs');
+  const filteredOptions = page.getByRole('option');
+  await expect(filteredOptions).toHaveCount(1);
+  await expect(filteredOptions).toHaveAttribute('aria-selected', 'true');
+  await expect(filteredOptions).toContainText('AI Traces & Audit');
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/ai-traces-audit$/);
+
+  await page.getByRole('link', { name: 'Reports', exact: true }).focus();
+  await page.keyboard.press('Control+k');
+  await expect(palette).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(palette).toBeHidden();
+  await expect(page.getByRole('link', { name: 'Reports', exact: true })).toBeFocused();
+
+  await page.getByRole('button', { name: 'Collapse navigation' }).click();
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-navigation-collapsed', 'true');
+  await page.reload();
+  await expect(page.locator('.app-shell')).toHaveAttribute('data-navigation-collapsed', 'true');
+  await expect(navigation.getByRole('link', { name: 'Reports', exact: true })).toBeVisible();
 });
 
 test('Personal Operations and connection empty states remain available to an AAL2 user', async ({
@@ -73,9 +127,27 @@ test('Personal Operations and connection empty states remain available to an AAL
   await expect(page.getByText('No Apple Shortcut bridge device is registered.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Connect personal Google data' })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(
-    page.evaluate(() => document.documentElement.scrollWidth),
-  ).resolves.toBeLessThanOrEqual(390);
+  const overflowingElements = await page.evaluate(() =>
+    Array.from(document.querySelectorAll<HTMLElement>('body *'))
+      .map((element) => {
+        const bounds = element.getBoundingClientRect();
+        return {
+          tag: element.tagName.toLowerCase(),
+          className: typeof element.className === 'string' ? element.className : '',
+          id: element.id,
+          right: Math.round(bounds.right),
+          width: Math.round(bounds.width),
+        };
+      })
+      .filter((element) => element.right > window.innerWidth + 1)
+      .sort((left, right) => right.right - left.right)
+      .slice(0, 12),
+  );
+  const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+  expect(
+    documentWidth,
+    `Overflowing elements: ${JSON.stringify(overflowingElements)}`,
+  ).toBeLessThanOrEqual(390);
 });
 
 test('Health and Finance AAL2 surfaces make safe empty states explicit', async ({ page }) => {
