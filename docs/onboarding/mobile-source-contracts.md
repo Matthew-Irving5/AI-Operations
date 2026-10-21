@@ -14,13 +14,13 @@ hashes canonical payloads. The Shortcut must not calculate hashes.
 
 ## Supported record contracts
 
-| Logical adapter  | Source        | Kind                   | Payload fields                                                                                               |
-| ---------------- | ------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Logical adapter  | Source        | Kind                   | Payload fields                                                                                                                              |
+| ---------------- | ------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `reminders:v2`   | `reminders`   | `reminder`             | `contract_version: 2`, `list`, `title`, `notes`, `priority`, `is_completed`, `is_flagged`, `due_at`, `completion_at`, `url`, `has_subtasks` |
-| `calendar:v1`    | `calendar`    | `calendar_event`       | `title`, `start_at`, `end_at`, `all_day`, `calendar`, `location`, `notes`, `url`                             |
-| `health:v1`      | `health`      | `health_sample`        | `type`, `value`, `unit`, `start_at`, `end_at`, `duration`, `source_name`, `name`                             |
-| `location:v1`    | `location`    | `location_observation` | `latitude`, `longitude`, `altitude`, `name`, `street`, `city`, `state`, `postcode`, `region`                 |
-| `screen_time:v1` | `screen_time` | `app_website_activity` | `raw_text`                                                                                                   |
+| `calendar:v1`    | `calendar`    | `calendar_event`       | `title`, `start_at`, `end_at`, `all_day`, `calendar`, `location`, `notes`, `url`                                                            |
+| `health:v1`      | `health`      | `health_sample`        | `type`, `value`, `unit`, `start_at`, `end_at`, `duration`, `source_name`, `name`                                                            |
+| `location:v1`    | `location`    | `location_observation` | `latitude`, `longitude`, `altitude`, `name`, `street`, `city`, `state`, `postcode`, `region`                                                |
+| `screen_time:v1` | `screen_time` | `app_website_activity` | `raw_text`                                                                                                                                  |
 
 All listed payload fields are required so a missing Shortcuts mapping is visible
 as a per-record adapter rejection. Empty strings are valid for optional Apple
