@@ -1,7 +1,10 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { consumeRateLimit } from "../_shared/rate-limit.ts";
 import { getAal2Identity } from "../_shared/auth-assurance.ts";
-import { isProcurementRevisionReference, isWorkflowLaunchRequest } from "./request-contract.ts";
+import {
+  isProcurementRevisionReference,
+  isWorkflowLaunchRequest,
+} from "./request-contract.ts";
 import {
   acceptCreatedWorkflowRun,
   createWorkflowRunDispatcher,
@@ -57,11 +60,18 @@ Deno.serve(async (request) => {
     !/^[0-9a-f-]{36}$/i.test(body.idempotencyKey) ||
     typeof body.hardCapUsd !== "number" || !Number.isFinite(body.hardCapUsd) ||
     body.hardCapUsd <= 0 || body.hardCapUsd > 1000 ||
-    !["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"].includes(String(body.modelCeiling)) ||
-    typeof body.searchCeiling !== "number" || !Number.isInteger(body.searchCeiling) ||
+    !["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"].includes(
+      String(body.modelCeiling),
+    ) ||
+    typeof body.searchCeiling !== "number" ||
+    !Number.isInteger(body.searchCeiling) ||
     body.searchCeiling < 0 || body.searchCeiling > 20 ||
-    (body.workflowCode === "procurement-on-demand-research" && body.searchCeiling < 1) ||
-    !isProcurementRevisionReference(body.managerCode, body.revisionOfResearchRunId) ||
+    (body.workflowCode === "procurement-on-demand-research" &&
+      body.searchCeiling < 1) ||
+    !isProcurementRevisionReference(
+      body.managerCode,
+      body.revisionOfResearchRunId,
+    ) ||
     !isWorkflowLaunchRequest(body.workflowCode, body.managerCode, body.request)
   ) {
     return json({ code: "invalid_request" }, 400);
@@ -76,11 +86,14 @@ Deno.serve(async (request) => {
   if (definition.error || !definition.data) {
     return json({ code: "workflow_unavailable" }, 404);
   }
-  const revisionOfResearchRunId = typeof body.revisionOfResearchRunId === "string"
-    ? body.revisionOfResearchRunId
-    : null;
+  const revisionOfResearchRunId =
+    typeof body.revisionOfResearchRunId === "string"
+      ? body.revisionOfResearchRunId
+      : null;
   const { data: runId, error } = await service.rpc(
-    revisionOfResearchRunId ? "create_procurement_revision_request" : "create_on_demand_run_request",
+    revisionOfResearchRunId
+      ? "create_procurement_revision_request"
+      : "create_on_demand_run_request",
     {
       p_user_id: user.user.id,
       p_workflow_id: definition.data.id,
@@ -90,7 +103,9 @@ Deno.serve(async (request) => {
       p_search_ceiling: body.searchCeiling,
       p_idempotency_key: body.idempotencyKey,
       p_request: body.request,
-      ...(revisionOfResearchRunId ? { p_revises_research_run_id: revisionOfResearchRunId } : {}),
+      ...(revisionOfResearchRunId
+        ? { p_revises_research_run_id: revisionOfResearchRunId }
+        : {}),
     },
   );
   if (error) return json({ code: "launch_rejected" }, 422);

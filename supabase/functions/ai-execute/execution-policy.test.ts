@@ -17,7 +17,8 @@ Deno.test("workflow mode is allowlisted and manager-bound", () => {
     throw new Error("expected_deterministic_workflow");
   }
   if (
-    resolveWorkflowMode("procurement", "procurement-on-demand-research") !== "ai"
+    resolveWorkflowMode("procurement", "procurement-on-demand-research") !==
+      "ai"
   ) {
     throw new Error("procurement_must_use_governed_live_research");
   }
