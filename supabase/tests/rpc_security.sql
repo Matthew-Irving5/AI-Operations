@@ -40,6 +40,11 @@ insert into rpc_security_expected values
   ('public.create_on_demand_run_request(uuid,uuid,text,numeric,text,integer,text,jsonb)', false, false, true),
   ('public.consume_edge_request_quota(uuid,text,integer)', false, false, true),
   ('public.complete_deterministic_workflow_run(uuid)', false, false, true),
+  -- AI-39 Procurement lifecycle RPCs are server-only; the trigger helper is never directly callable.
+  ('public.sync_procurement_research_run_status()', false, false, false),
+  ('public.create_procurement_revision_request(uuid,uuid,text,numeric,text,integer,text,jsonb,uuid)', false, false, true),
+  ('public.commit_procurement_decision(uuid,uuid,integer,jsonb,jsonb)', false, false, true),
+  ('public.commit_instrumented_ai_procurement_report_with_queue(uuid,text,uuid,uuid,integer,jsonb,jsonb,text,text,text,text,text,jsonb,jsonb,jsonb,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)', false, false, true),
   ('public.reserve_instrumented_ai_call(uuid,uuid,uuid,uuid,numeric,text,jsonb)', false, false, true),
   ('public.settle_instrumented_ai_call(uuid,numeric,bigint,bigint,bigint,bigint,integer,jsonb,jsonb,boolean)', false, false, true),
   ('public.mark_instrumented_ai_call_submitted(uuid,text)', false, false, true),
@@ -136,7 +141,9 @@ select ok(
   has_function_privilege('anon', 'public.ingest_mobile_snapshot(text,integer,uuid,uuid,text,text,timestamptz,text,jsonb,jsonb)', 'EXECUTE')
   and has_function_privilege('anon', 'public.adapt_mobile_snapshot(text,uuid)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.consume_mfa_action_gate(uuid,text)', 'EXECUTE')
-  and has_function_privilege('service_role', 'public.complete_deterministic_workflow_run(uuid)', 'EXECUTE'),
+  and has_function_privilege('service_role', 'public.complete_deterministic_workflow_run(uuid)', 'EXECUTE')
+  and has_function_privilege('service_role', 'public.commit_procurement_decision(uuid,uuid,integer,jsonb,jsonb)', 'EXECUTE')
+  and has_function_privilege('service_role', 'public.commit_instrumented_ai_procurement_report_with_queue(uuid,text,uuid,uuid,integer,jsonb,jsonb,text,text,text,text,text,jsonb,jsonb,jsonb,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)', 'EXECUTE'),
   'token ingestion, user MFA gating, and server workflow completion retain their intended roles'
 );
 

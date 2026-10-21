@@ -63,6 +63,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@ai-operations/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@ai-operations/ui':
         specifier: workspace:*
         version: link:../../packages/ui

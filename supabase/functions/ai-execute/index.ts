@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
+import { procurementLaunchRequestSchema } from "@ai-operations/contracts";
 import { createWorkflowExecutionHandler } from "./handler.ts";
 import { AI15_WORKFLOW_RUN_SELECT } from "./read-contract.ts";
 import { submitProviderResponse as submitProviderResponseWithRetry } from "./provider-submission.ts";
@@ -9,6 +10,7 @@ import {
 } from "./execution-policy.ts";
 import {
   validatePromptGovernance,
+  validateProcurementResearchOutputSchema,
   validateReportOutputSchema,
 } from "../../../packages/ai-runtime/src/governance.ts";
 import {
@@ -279,6 +281,13 @@ async function executeAiWorkflow(
   execution: Awaited<ReturnType<typeof loadTrustedWorkflowExecution>>,
 ): Promise<ExecuteWorkflowOutcome> {
   const { run, definition, input } = execution;
+  const isProcurement = definition.code === "procurement-on-demand-research";
+  const procurementRequest = isProcurement
+    ? procurementLaunchRequestSchema.safeParse(input)
+    : null;
+  if (isProcurement && !procurementRequest?.success) {
+    return outcomeFor(run.id, "terminal_failure", "procurement_request_invalid");
+  }
   const mode = resolveWorkflowMode(run.managerCode, definition.code);
   if (!mode) {
     return outcomeFor(
@@ -348,6 +357,9 @@ async function executeAiWorkflow(
     return outcomeFor(run.id, "terminal_failure", "execution_budget_missing");
   }
   const budget = budgetResult.data;
+  if (isProcurement && (!budget || !Number.isInteger(budget.search_ceiling) || budget.search_ceiling < 1)) {
+    return outcomeFor(run.id, "terminal_failure", "procurement_search_budget_missing");
+  }
   if (
     budget &&
     (budget.status !== "active" || Date.parse(budget.expires_at) <= Date.now())
@@ -420,7 +432,7 @@ async function executeAiWorkflow(
     .from("prompt_templates")
     .select("id,active_version")
     .eq("manager_id", definitionConfig.manager_id)
-    .eq("code", "controlled-agent-report")
+    .eq("code", isProcurement ? "procurement-research-comparison" : "controlled-agent-report")
     .maybeSingle();
   if (promptResult.error || !promptResult.data?.active_version) {
     return outcomeFor(
@@ -463,50 +475,50 @@ async function executeAiWorkflow(
   };
   if (
     !validatePromptGovernance(promptGovernance) ||
-    !validateReportOutputSchema(selectedPromptVersion.data.json_schema) ||
+    !(isProcurement
+      ? validateProcurementResearchOutputSchema(selectedPromptVersion.data.json_schema)
+      : validateReportOutputSchema(selectedPromptVersion.data.json_schema)) ||
     selectModelUnderCeiling(promptGovernance.modelRoute, selectedModel) !==
       selectedModel
   ) {
     return outcomeFor(run.id, "terminal_failure", "prompt_governance_invalid");
   }
 
-  const feedbackResult = await service
-    .from("feedback")
-    .select("id,categories,created_at")
-    .eq("user_id", run.userId)
-    .eq("positive", false)
-    .gte(
-      "created_at",
-      new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    )
-    .order("created_at", { ascending: false })
-    .limit(50);
-  if (feedbackResult.error) {
-    return outcomeFor(
-      run.id,
-      "retryable_failure",
-      "required_sources_unavailable",
-    );
+  let evidence: Array<{ id: string; source: string }> = [];
+  if (!isProcurement) {
+    const feedbackResult = await service
+      .from("feedback")
+      .select("id,categories,created_at")
+      .eq("user_id", run.userId)
+      .eq("positive", false)
+      .gte(
+        "created_at",
+        new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      )
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (feedbackResult.error) {
+      return outcomeFor(run.id, "retryable_failure", "required_sources_unavailable");
+    }
+    evidence = (feedbackResult.data ?? []).flatMap((feedback) => {
+      if (!Array.isArray(feedback.categories)) return [];
+      return feedback.categories.flatMap((category) =>
+        typeof category === "string"
+          ? [{ id: feedback.id, source: `Recent quality feedback category: ${category}` }]
+          : []
+      );
+    });
   }
-  const evidence = (feedbackResult.data ?? []).flatMap((feedback) => {
-    if (!Array.isArray(feedback.categories)) return [];
-    return feedback.categories.flatMap((category) =>
-      typeof category === "string"
-        ? [{
-          id: feedback.id,
-          source: `Recent quality feedback category: ${category}`,
-        }]
-        : []
-    );
-  });
   const evidenceIds = [...new Set(evidence.map((item) => item.id))];
+  const searchCeiling = isProcurement ? Number(budget?.search_ceiling ?? 0) : 0;
   const workflowInput = JSON.stringify({
     workflow: definition.code,
     request: input,
     evidence,
     constraints: {
       model: selectedModel,
-      searchCalls: 0,
+      searchCalls: searchCeiling,
+      asOf: new Date().toISOString(),
       approvalPolicy: definitionConfig.approval_policy,
     },
   });
@@ -534,12 +546,13 @@ async function executeAiWorkflow(
   if (pricing.error || !pricing.data) {
     return outcomeFor(run.id, "terminal_failure", "model_pricing_unavailable");
   }
+  const estimatedOutputTokens = isProcurement ? 6_000 : 2_000;
   const estimatedCost = Math.ceil(
     ((8_000 * pricing.data.input_per_million +
-      2_000 * pricing.data.output_per_million) /
+      estimatedOutputTokens * pricing.data.output_per_million) /
       1_000_000) *
       1_000_000,
-  ) / 1_000_000;
+  ) / 1_000_000 + searchCeiling * Number(pricing.data.web_search_per_call);
   if (
     budget &&
     estimatedCost > Number(budget.hard_cap) - Number(budget.reserved_amount)
@@ -660,6 +673,7 @@ async function executeAiWorkflow(
         notification_policy: definitionConfig.notification_policy,
         allowed_action_types: allowedActionTypes,
         execution_mode: "ai",
+        search_ceiling: searchCeiling,
       },
     });
     if (reservation.error || typeof reservation.data !== "string") {
@@ -695,9 +709,12 @@ async function executeAiWorkflow(
             `${selectedPromptVersion.data.system_text}\n\n${selectedPromptVersion.data.developer_text}`,
           input: workflowInput,
           background: true,
-          max_output_tokens: 2_000,
+          max_output_tokens: estimatedOutputTokens,
           store: false,
-          tools: promptGovernance.toolPolicy.tools,
+          tools: promptGovernance.toolPolicy.tools.map((tool) =>
+            tool.type === "web_search" ? { type: "web_search" } : tool
+          ),
+          ...(isProcurement ? { tool_choice: "required", max_tool_calls: searchCeiling } : {}),
           text: {
             format: {
               type: "json_schema",

@@ -1,5 +1,6 @@
 import type { ActionProposal, ManagerCode } from '@ai-operations/contracts';
 export * from './orchestrator';
+export * from './procurement';
 export * from './registry';
 
 export type { ActionProposal, ManagerCode } from '@ai-operations/contracts';

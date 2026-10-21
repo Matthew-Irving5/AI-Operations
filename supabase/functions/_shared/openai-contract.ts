@@ -252,3 +252,41 @@ export function extractResponseOutputText(
   }).join("");
   return isText(text, 60_000) ? text : null;
 }
+
+export type WebSearchCitation = Readonly<{ title: string; url: string }>;
+
+export function extractWebSearchCalls(response: Record<string, unknown>): number {
+  if (!Array.isArray(response.output)) return 0;
+  return response.output.filter((item) =>
+    isRecord(item) && item.type === 'web_search_call'
+  ).length;
+}
+
+export function extractWebSearchCitations(
+  response: Record<string, unknown>,
+): WebSearchCitation[] {
+  if (!Array.isArray(response.output)) return [];
+  const citations = new Map<string, WebSearchCitation>();
+  for (const item of response.output) {
+    if (!isRecord(item) || item.type !== 'message' || !Array.isArray(item.content)) continue;
+    for (const content of item.content) {
+      if (!isRecord(content) || !Array.isArray(content.annotations)) continue;
+      for (const annotation of content.annotations) {
+        if (
+          !isRecord(annotation) || annotation.type !== 'url_citation' ||
+          typeof annotation.url !== 'string' || !annotation.url.startsWith('https://')
+        ) continue;
+        try {
+          const url = new URL(annotation.url).toString();
+          const title = typeof annotation.title === 'string' && annotation.title.trim()
+            ? annotation.title.trim().slice(0, 300)
+            : new URL(url).hostname;
+          citations.set(url, { title, url });
+        } catch {
+          // Invalid provider citations are omitted and later cause referenced URLs to fail validation.
+        }
+      }
+    }
+  }
+  return [...citations.values()];
+}
