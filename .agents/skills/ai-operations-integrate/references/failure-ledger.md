@@ -24,6 +24,8 @@ This file records **confirmed** errors (not generic best practices). One row per
 | AI35-01  | Career GitHub Edge Function ignored an injected owner and still synced its configured account; token identity was not verified before repository reads | GITHUB-01; validate request owner before MFA/provider work, verify `/user`, and gate every repository request | AI-35 Deno owner callback fixture (7/7), strict web route regression (1/1), connector tests (2/2)                                                                                      |
 | AI35-02  | Proxy hid owner denials from the Edge audit handler                                                                                                    | GITHUB-02; forward owner-denial variants to authenticated Edge; reject unknown fields                         | AI-35 run `39639201782`; owner probes returned 400; route regression (3/3)                                                                                                             |
 
+| AI41-01  | Worker poll lacked version and capability gates                                                                  | WORKER-01; reject incompatible workers before queue claims; unit regression               | Deno `worker-protocol_test.ts`: old-version and missing-inventory rejection cases
+
 ## Update rule
 
 At each integration/infra fix: correct the existing domain rule or add a new stable ID, append a _verified_ incident row here, and commit alongside the code/regression. Before moving the Linear ticket to Done, review the entire ticket's integration incidents and record any missing knowledge. Don't expand this file with speculative causes or feature bugs that have no reusable integration lesson.

@@ -2,15 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import type { WorkerDevice } from '../../../lib/platform-data';
 
-type Device = {
-  id: string;
-  label: string;
-  state: string;
-  paired_at: string | null;
-  revoked_at: string | null;
-  last_heartbeat_at: string | null;
-};
+type Device = WorkerDevice;
 type Scan = {
   id: string;
   device_id: string;
@@ -313,6 +307,41 @@ export function DeviceManager({
           Date.parse(device.last_heartbeat_at) >= currentTimeMs - 30 * 60_000 ? (
             <p role="status">Heartbeat received within the last 30 minutes.</p>
           ) : null}
+          {device.health_error ? (
+            <p role="alert">Worker version and capability status could not be loaded.</p>
+          ) : !device.health ? (
+            <p role="status">
+              Worker version and capabilities will appear after its next heartbeat.
+            </p>
+          ) : (
+            <>
+              <p>
+                Worker version: <code>{device.health.worker_version ?? 'not reported'}</code>.
+              </p>
+              <p>
+                Compatibility:{' '}
+                {device.health.status.compatibility?.compatible
+                  ? 'supported'
+                  : device.health.status.compatibility?.code === 'worker_upgrade_required'
+                    ? `upgrade required; minimum ${device.health.status.compatibility.minimumVersion}, reported ${device.health.status.compatibility.actualVersion ?? 'unknown'}`
+                    : device.health.status.compatibility?.code === 'worker_capability_missing'
+                      ? 'required inventory capability missing; polling is blocked'
+                      : device.health.status.compatibility?.code === 'worker_capability_unsupported'
+                        ? 'worker reports an unsupported capability; polling is blocked'
+                        : device.health.status.compatibility?.code === 'worker_version_required'
+                          ? 'version reporting required; polling is blocked'
+                          : 'compatibility has not been reported'}
+                .
+              </p>
+              <p>
+                Capabilities:{' '}
+                {device.health.status.capabilities?.length
+                  ? device.health.status.capabilities.join(', ')
+                  : 'none reported'}
+                .
+              </p>
+            </>
+          )}
           {scans.some(
             (scan) =>
               scan.device_id === device.id &&

@@ -214,6 +214,30 @@ const digitalScanSchema = z.object({
   completed_at: z.string().nullable(),
   created_at: z.string(),
 });
+const workerHealthSchema = z.object({
+  worker_version: z.string().nullable(),
+  received_at: z.string(),
+  status: z.object({
+    capabilities: z.array(z.string()).default([]),
+    compatibility: z
+      .object({
+        compatible: z.boolean(),
+        code: z
+          .enum([
+            'worker_version_required',
+            'worker_upgrade_required',
+            'worker_capability_missing',
+            'worker_capability_unsupported',
+          ])
+          .optional(),
+        minimumVersion: z.string(),
+        actualVersion: z.string().nullable().optional(),
+        requiredCapabilities: z.array(z.string()),
+        actualCapabilities: z.array(z.string()),
+      })
+      .optional(),
+  }),
+});
 const workerDeviceSchema = z.object({
   id: z.string().uuid(),
   label: z.string(),
@@ -222,7 +246,11 @@ const workerDeviceSchema = z.object({
   paired_at: z.string().nullable(),
   revoked_at: z.string().nullable(),
   last_heartbeat_at: z.string().nullable(),
+  health: workerHealthSchema.nullable(),
+  health_error: z.boolean(),
 });
+export type WorkerDevice = z.infer<typeof workerDeviceSchema>;
+
 const onboardingItemSchema = z.object({
   code: z.string(),
   completed_at: z.string().nullable(),
@@ -690,13 +718,50 @@ export async function digitalEstateData(): Promise<
       .order('created_at', { ascending: false })
       .limit(25),
   ]);
+  if (devices.error) {
+    return {
+      scans: scans.error
+        ? { data: [], error: 'Digital scans could not be loaded.' }
+        : parsedRows(scans.data, z.array(digitalScanSchema)),
+      devices: { data: [], error: 'Worker devices could not be loaded.' },
+    };
+  }
+
+  const healthResults = await Promise.all(
+    devices.data.map(async (device) => {
+      const result = await client
+        .from('worker_heartbeats')
+        .select('worker_version,received_at,status')
+        .eq('device_id', device.id)
+        .order('received_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const parsedHealth =
+        result.error || !result.data ? null : workerHealthSchema.safeParse(result.data);
+      return {
+        deviceId: device.id,
+        health: parsedHealth?.success ? parsedHealth.data : null,
+        healthError: Boolean(result.error || (parsedHealth && !parsedHealth.success)),
+      };
+    }),
+  );
+  const healthByDevice = new Map(healthResults.map((result) => [result.deviceId, result]));
+  const rows = devices.data.map((device) => {
+    const health = healthByDevice.get(device.id);
+    return {
+      ...device,
+      health: health?.health ?? null,
+      health_error: health?.healthError ?? false,
+    };
+  });
+  const parsedDevices = workerDeviceSchema.array().safeParse(rows);
   return {
     scans: scans.error
       ? { data: [], error: 'Digital scans could not be loaded.' }
       : parsedRows(scans.data, z.array(digitalScanSchema)),
-    devices: devices.error
-      ? { data: [], error: 'Worker devices could not be loaded.' }
-      : parsedRows(devices.data, z.array(workerDeviceSchema)),
+    devices: parsedDevices.success
+      ? { data: parsedDevices.data, error: null }
+      : { data: [], error: 'Worker device health could not be loaded.' },
   };
 }
 
