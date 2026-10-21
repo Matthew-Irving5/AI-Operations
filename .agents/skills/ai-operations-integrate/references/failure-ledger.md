@@ -24,8 +24,9 @@ This file records **confirmed** errors (not generic best practices). One row per
 | AI35-01  | Career GitHub Edge Function ignored an injected owner and still synced its configured account; token identity was not verified before repository reads | GITHUB-01; validate request owner before MFA/provider work, verify `/user`, and gate every repository request | AI-35 Deno owner callback fixture (7/7), strict web route regression (1/1), connector tests (2/2)                                                                                      |
 | AI35-02  | Proxy hid owner denials from the Edge audit handler                                                                                                    | GITHUB-02; forward owner-denial variants to authenticated Edge; reject unknown fields                         | AI-35 run `39639201782`; owner probes returned 400; route regression (3/3)                                                                                                             |
 
-| AI20-01  | Provider actual cost above estimate was clamped in the webhook and rejected by settlement, understating spend | DB-09; record full actual, cap/release the reservation, and test over-cap settlement plus replay | Local regression pending; PR evidence pending |
-| AI20-02  | Cache-write usage and the effective price version were not carried from reservation through webhook settlement | DB-12; persist the exact price ID and complete provider usage, then calculate against that immutable version | AI-20 empty local reset + full DB suite 500/500, verify:changed passed; exact-head CI pending |
+
+| AI20-01  | Provider actual cost above estimate was clamped in the webhook and rejected by settlement, understating spend    | DB-09; record full actual, cap/release the reservation, and test over-cap settlement plus replay             | [PR #178](https://github.com/Matthew-Irving5/AI-Operations/pull/178), empty local reset + full DB suite 500/500 |
+| AI20-02  | Cache-write usage and the effective price version were not carried from reservation through webhook settlement   | DB-12; persist the exact price ID and complete provider usage, then calculate against that immutable version | AI-20 empty local reset + full DB suite 500/500, verify:changed passed; exact-head CI pending                  |
 
 ## Update rule
 
