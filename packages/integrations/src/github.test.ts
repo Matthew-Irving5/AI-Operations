@@ -21,6 +21,7 @@ it('accepts only Matthew-Irving5 GitHub repository evidence', () => {
 
 it('hard-denies BrightSG before any content processing', async () => {
   expect(() => requirePersonalGithubOwner('BrightSG')).toThrow('github_owner_hard_denied');
+  expect(() => requirePersonalGithubOwner('brightsG')).toThrow('github_owner_hard_denied');
   await expect(
     listPersonalGithubRepositories(async () => ({
       ok: true,

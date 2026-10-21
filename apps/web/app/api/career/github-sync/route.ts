@@ -3,7 +3,34 @@ import { z } from 'zod';
 import { requireSameOrigin } from '../../../../lib/request-security';
 import { getAuthenticatedServerAccessToken } from '../../../../lib/supabase-server';
 
-const bodySchema = z.object({ mfaGateId: z.string().uuid() }).strict();
+const syncBodySchema = z.object({ mfaGateId: z.string().uuid() }).strict();
+const ownerProbeBodySchema = z
+  .object({
+    mfaGateId: z.string().uuid().optional(),
+    owner: z.string().optional(),
+    repositoryOwner: z.string().optional(),
+    repository_owner: z.string().optional(),
+    repository: z
+      .union([
+        z.string(),
+        z
+          .object({
+            owner: z.union([z.string(), z.object({ login: z.string() }).strict()]),
+          })
+          .strict(),
+      ])
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (body) =>
+      body.owner !== undefined ||
+      body.repositoryOwner !== undefined ||
+      body.repository_owner !== undefined ||
+      body.repository !== undefined,
+    { message: 'An owner target is required.' },
+  );
+const bodySchema = z.union([syncBodySchema, ownerProbeBodySchema]);
 
 function diagnostic(
   requestId: string,

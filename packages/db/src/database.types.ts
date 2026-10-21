@@ -759,6 +759,7 @@ export type Database = {
           repository_external_id: number;
           repository_name: string;
           retrieved_at: string;
+          source_date: string | null;
           source_url: string;
           user_id: string;
         };
@@ -771,6 +772,7 @@ export type Database = {
           repository_external_id: number;
           repository_name: string;
           retrieved_at: string;
+          source_date?: string | null;
           source_url: string;
           user_id: string;
         };
@@ -783,6 +785,7 @@ export type Database = {
           repository_external_id?: number;
           repository_name?: string;
           retrieved_at?: string;
+          source_date?: string | null;
           source_url?: string;
           user_id?: string;
         };

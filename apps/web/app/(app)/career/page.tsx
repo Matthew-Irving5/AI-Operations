@@ -34,12 +34,25 @@ export default async function CareerPage() {
       {evidence.data.length ? (
         <section className="stack">
           {evidence.data.map((item) => (
-            <article className="card" key={`${item.repository_name}:${item.evidence_kind}`}>
+            <article
+              className="card"
+              key={`${item.repository_name}:${item.evidence_kind}:${item.source_url}`}
+            >
               <h3>{item.repository_name}</h3>
               <p>
-                {item.evidence_kind}; retrieved{' '}
-                {new Date(item.retrieved_at).toLocaleString('en-GB')}.
+                {item.evidence_kind}; source dated{' '}
+                {item.source_date
+                  ? new Date(item.source_date).toLocaleString('en-GB', {
+                      timeZone: 'Europe/London',
+                    })
+                  : 'date unavailable'}
+                ; retrieved{' '}
+                {new Date(item.retrieved_at).toLocaleString('en-GB', { timeZone: 'Europe/London' })}
+                .
               </p>
+              <a href={item.source_url} target="_blank" rel="noreferrer">
+                View personal GitHub evidence
+              </a>
             </article>
           ))}
         </section>

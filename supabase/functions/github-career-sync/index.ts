@@ -2,7 +2,16 @@ import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { consumeRateLimit } from "../_shared/rate-limit.ts";
 import {
   githubAllowedOwner,
+  type GithubEvidenceRecord,
+  type GithubRepository,
+  parseGithubCommitEvidence,
+  parseGithubDocumentationEvidence,
+  parseGithubPullRequestEvidence,
+  parseGithubReadme,
+  parseGithubReleaseEvidence,
   parseGithubRepositories,
+  parseGithubSyncRequest,
+  requestGithubRepositoriesForAuthenticatedUser,
 } from "../_shared/github-contract.ts";
 
 const url = Deno.env.get("SUPABASE_URL") ?? "";
@@ -47,6 +56,73 @@ function failure(
     status,
     requestId,
   );
+}
+
+type CareerGithubRow = {
+  user_id: string;
+  repository_external_id: number;
+  repository_name: string;
+  owner_login: string;
+  evidence_kind: string;
+  source_url: string;
+  source_date: string | null;
+  retrieved_at: string;
+  payload: Record<string, unknown>;
+};
+
+function sourceRows(
+  userId: string,
+  repository: GithubRepository,
+  evidence: GithubEvidenceRecord[],
+  retrievedAt: string,
+): CareerGithubRow[] {
+  return evidence.map((record) => ({
+    user_id: userId,
+    repository_external_id: repository.id,
+    repository_name: repository.name,
+    owner_login: githubAllowedOwner,
+    evidence_kind: record.evidenceKind,
+    source_url: record.sourceUrl,
+    source_date: record.sourceDate,
+    retrieved_at: retrievedAt,
+    payload: { ...record.payload },
+  }));
+}
+
+async function githubJson(
+  targetUrl: string,
+  token: string,
+): Promise<{ response: Response; payload: unknown }> {
+  const response = await fetch(targetUrl, {
+    headers: {
+      authorization: `Bearer ${token}`,
+      accept: "application/vnd.github+json",
+      "x-github-api-version": "2022-11-28",
+      "user-agent": "AI-Operations-career-sync",
+    },
+  });
+  return { response, payload: await response.json().catch(() => null) };
+}
+
+function repositoryEndpoint(
+  repository: GithubRepository,
+  resource: string,
+): URL {
+  return new URL(
+    `/repos/${githubAllowedOwner}/${
+      encodeURIComponent(repository.name)
+    }/${resource}`,
+    "https://api.github.com",
+  );
+}
+
+function githubHeaders(token: string): HeadersInit {
+  return {
+    authorization: `Bearer ${token}`,
+    accept: "application/vnd.github+json",
+    "x-github-api-version": "2022-11-28",
+    "user-agent": "AI-Operations-career-sync",
+  };
 }
 
 Deno.serve(async (request) => {
@@ -96,7 +172,59 @@ Deno.serve(async (request) => {
       "Use the allowlisted production account; no GitHub request was made.",
     );
   }
-  if (!await consumeRateLimit(identity.user.id, "github_career_sync", 3)) {
+  const parsedRequest = parseGithubSyncRequest(
+    await request.json().catch(() => null),
+  );
+  if ("error" in parsedRequest) {
+    if (parsedRequest.error !== "invalid_request") {
+      const deniedOwner = parsedRequest.error === "owner_hard_denied";
+      const audit = await service.from("audit_events").insert({
+        user_id: identity.user.id,
+        actor_type: "user",
+        action_type: "github_career_sync_owner_denied",
+        target_type: "github_owner",
+        target_id: deniedOwner ? "hard_denied" : "not_allowlisted",
+        result: "denied",
+        redacted_after: {
+          reason: parsedRequest.error,
+          provider_request_made: false,
+        },
+      });
+      if (audit.error) {
+        return failure(
+          requestId,
+          "github_owner_denial_audit_failed",
+          500,
+          "persistence.owner_denial_audit",
+          `The owner policy denied the GitHub sync, but its security event could not be recorded (${
+            audit.error.code ?? "database_error"
+          }). No provider request was made.`,
+          "Do not retry with another owner. Provide the request ID so the security audit boundary can be repaired.",
+        );
+      }
+      return failure(
+        requestId,
+        deniedOwner
+          ? "github_owner_hard_denied"
+          : "github_owner_not_allowlisted",
+        403,
+        "authorization.owner_allowlist",
+        deniedOwner
+          ? "The requested GitHub owner is explicitly blocked; no provider request was made."
+          : "The requested GitHub owner is not allowlisted; no provider request was made.",
+        "Use the configured personal GitHub owner. The denied target was not fetched or retained.",
+      );
+    }
+    return failure(
+      requestId,
+      "invalid_request",
+      400,
+      "request.validation",
+      "The GitHub sync request must contain only the UUID of its one-time fresh-MFA gate.",
+      "Start the sync again from Career and complete the in-page Microsoft Authenticator challenge.",
+    );
+  }
+  if (!(await consumeRateLimit(identity.user.id, "github_career_sync", 3))) {
     return failure(
       requestId,
       "rate_limited",
@@ -106,27 +234,13 @@ Deno.serve(async (request) => {
       "Wait before starting another sync; the previous evidence remains unchanged.",
     );
   }
-  const body = await request.json().catch(() => null) as
-    | { mfaGateId?: unknown }
-    | null;
-  const mfaGateId = body?.mfaGateId;
-  if (
-    typeof mfaGateId !== "string" ||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      .test(mfaGateId)
-  ) {
-    return failure(
-      requestId,
-      "mfa_handoff_missing",
-      400,
-      "mfa_gate.validation",
-      "The GitHub sync request did not contain the UUID of its one-time fresh-MFA gate.",
-      "Start the sync again from Career and complete the in-page Microsoft Authenticator challenge.",
-    );
-  }
+  const { mfaGateId } = parsedRequest.request;
   const { data: gateConsumed, error: gateError } = await caller.rpc(
     "consume_mfa_action_gate",
-    { p_gate_id: mfaGateId, p_action_key: "github_sync" },
+    {
+      p_gate_id: mfaGateId,
+      p_action_key: "github_sync",
+    },
   );
   if (gateError || gateConsumed !== true) {
     return failure(
@@ -151,18 +265,43 @@ Deno.serve(async (request) => {
       "Add the protected PERSONAL_READ_TOKEN secret to the matching GitHub Actions environment (staging or production), redeploy so it is copied to the runtime, then retry.",
     );
   }
-  let response: Response;
+  let authenticatedUserResponse: Response;
+  let authenticatedUserPayload: unknown;
   try {
-    response = await fetch(
-      `https://api.github.com/users/${githubAllowedOwner}/repos?per_page=100&sort=updated`,
-      {
-        headers: {
-          authorization: `Bearer ${token}`,
-          accept: "application/vnd.github+json",
-          "x-github-api-version": "2022-11-28",
-          "user-agent": "AI-Operations-career-sync",
-        },
-      },
+    const authenticatedUser = await githubJson(
+      "https://api.github.com/user",
+      token,
+    );
+    authenticatedUserResponse = authenticatedUser.response;
+    authenticatedUserPayload = authenticatedUser.payload;
+  } catch {
+    return failure(
+      requestId,
+      "github_provider_unreachable",
+      502,
+      "provider.github.identity",
+      "The Edge Function could not verify the configured GitHub token owner; no repository request was made.",
+      "Retry once after checking provider availability. If it repeats, provide the request ID.",
+    );
+  }
+  if (!authenticatedUserResponse.ok) {
+    return failure(
+      requestId,
+      "github_provider_identity_failed",
+      502,
+      "provider.github.identity",
+      `GitHub rejected the token identity request with HTTP ${authenticatedUserResponse.status}; no repository request was made.`,
+      "Verify the read-only token is valid for the configured personal GitHub account.",
+      { providerStatus: authenticatedUserResponse.status },
+    );
+  }
+  let repositoryRequest: Awaited<
+    ReturnType<typeof requestGithubRepositoriesForAuthenticatedUser>
+  >;
+  try {
+    repositoryRequest = await requestGithubRepositoriesForAuthenticatedUser(
+      authenticatedUserPayload,
+      (targetUrl) => fetch(targetUrl, { headers: githubHeaders(token) }),
     );
   } catch {
     return failure(
@@ -170,10 +309,56 @@ Deno.serve(async (request) => {
       "github_provider_unreachable",
       502,
       "provider.github.request",
-      "The Edge Function could not reach the GitHub API; no repository evidence was changed.",
+      "The Edge Function could not reach the allowlisted GitHub repository endpoint; no repository evidence was changed.",
       "Retry once after checking provider availability. If it repeats, provide the request ID.",
     );
   }
+  if ("error" in repositoryRequest) {
+    if (repositoryRequest.error === "invalid_response") {
+      return failure(
+        requestId,
+        "github_sync_invalid_identity",
+        502,
+        "provider.github.identity_validation",
+        "GitHub returned an identity response that did not match the configured account contract; no repository request was made.",
+        "Verify the read-only token identity response and retry after correcting the provider configuration.",
+      );
+    }
+    const deniedOwner = repositoryRequest.error === "owner_hard_denied";
+    const audit = await service.from("audit_events").insert({
+      user_id: identity.user.id,
+      actor_type: "user",
+      action_type: "github_career_sync_owner_denied",
+      target_type: "github_owner",
+      target_id: deniedOwner ? "hard_denied" : "not_allowlisted",
+      result: "denied",
+      redacted_after: {
+        reason: repositoryRequest.error,
+        provider_request_made: false,
+      },
+    });
+    if (audit.error) {
+      return failure(
+        requestId,
+        "github_owner_denial_audit_failed",
+        500,
+        "persistence.owner_denial_audit",
+        `The owner policy denied the GitHub sync, but its security event could not be recorded (${
+          audit.error.code ?? "database_error"
+        }). No repository request was made.`,
+        "Do not retry with another owner. Provide the request ID so the security audit boundary can be repaired.",
+      );
+    }
+    return failure(
+      requestId,
+      deniedOwner ? "github_owner_hard_denied" : "github_owner_not_allowlisted",
+      403,
+      "authorization.owner_allowlist",
+      "The configured GitHub token identity is not the allowlisted personal account; no repository request was made.",
+      "Configure a read-only token for the approved personal GitHub account.",
+    );
+  }
+  const response = repositoryRequest.response;
   if (!response.ok) {
     const providerStatus = response.status;
     const providerCode = providerStatus === 401 || providerStatus === 403
@@ -213,15 +398,20 @@ Deno.serve(async (request) => {
     );
   }
   const retrievedAt = new Date().toISOString();
-  const rows = parsed.repositories.map((repository) => ({
+  const rows: CareerGithubRow[] = parsed.repositories.map((repository) => ({
     user_id: identity.user.id,
     repository_external_id: repository.id,
     repository_name: repository.name,
     owner_login: repository.ownerLogin,
     evidence_kind: "repository",
     source_url: repository.htmlUrl,
+    source_date: repository.updatedAt,
     retrieved_at: retrievedAt,
-    payload: { id: repository.id, name: repository.name },
+    payload: {
+      id: repository.id,
+      name: repository.name,
+      language: repository.language,
+    },
   }));
   if (rows.length === 0) {
     return failure(
@@ -232,6 +422,159 @@ Deno.serve(async (request) => {
       "GitHub returned no repositories for Matthew-Irving5, so no repository evidence can satisfy the Career checklist.",
       "Confirm the token targets the intended Matthew-Irving5 account and has repository metadata read access.",
     );
+  }
+  let detailCount = 0;
+  for (const repository of parsed.repositories.slice(0, 5)) {
+    const commitsUrl = repositoryEndpoint(repository, "commits");
+    commitsUrl.searchParams.set("per_page", "20");
+    const pullsUrl = repositoryEndpoint(repository, "pulls");
+    pullsUrl.searchParams.set("state", "closed");
+    pullsUrl.searchParams.set("sort", "updated");
+    pullsUrl.searchParams.set("direction", "desc");
+    pullsUrl.searchParams.set("per_page", "20");
+    const releasesUrl = repositoryEndpoint(repository, "releases");
+    releasesUrl.searchParams.set("per_page", "20");
+    const readmeUrl = repositoryEndpoint(repository, "readme");
+    let details: Awaited<ReturnType<typeof githubJson>>[];
+    try {
+      details = await Promise.all([
+        githubJson(commitsUrl.toString(), token),
+        githubJson(pullsUrl.toString(), token),
+        githubJson(releasesUrl.toString(), token),
+        githubJson(readmeUrl.toString(), token),
+      ]);
+    } catch {
+      return failure(
+        requestId,
+        "github_provider_unreachable",
+        502,
+        "provider.github.evidence",
+        "GitHub evidence retrieval failed before any Career evidence was changed.",
+        "Retry once after checking provider availability. If it repeats, provide the request ID.",
+      );
+    }
+    const [commits, pulls, releases, readme] = details;
+    const requiredResponses = [commits, pulls, releases];
+    const failedResponse = requiredResponses.find((result) =>
+      !result.response.ok
+    );
+    if (failedResponse) {
+      return failure(
+        requestId,
+        "github_provider_evidence_failed",
+        failedResponse.response.status === 429 ? 429 : 502,
+        "provider.github.evidence",
+        `GitHub rejected bounded evidence retrieval with HTTP ${failedResponse.response.status}; no Career evidence was changed.`,
+        failedResponse.response.status === 429
+          ? "Wait for the GitHub rate limit to reset before retrying."
+          : "Verify read-only repository metadata access and retry once.",
+        { providerStatus: failedResponse.response.status },
+      );
+    }
+    const commitEvidence = parseGithubCommitEvidence(
+      commits.payload,
+      repository.name,
+    );
+    const pullEvidence = parseGithubPullRequestEvidence(
+      pulls.payload,
+      repository.name,
+    );
+    const releaseEvidence = parseGithubReleaseEvidence(
+      releases.payload,
+      repository.name,
+    );
+    if (!commitEvidence || !pullEvidence || !releaseEvidence) {
+      return failure(
+        requestId,
+        "github_sync_invalid_evidence",
+        502,
+        "provider.github.evidence_validation",
+        "GitHub returned evidence that did not match the normalized provenance contract; no Career evidence was changed.",
+        "Retry after verifying the provider response contract; no raw provider content was retained.",
+      );
+    }
+    const repositoryEvidence = [
+      ...commitEvidence,
+      ...pullEvidence,
+      ...releaseEvidence,
+    ];
+    if (readme.response.ok) {
+      const parsedReadme = parseGithubReadme(readme.payload, repository.name);
+      if (!parsedReadme) {
+        return failure(
+          requestId,
+          "github_sync_invalid_documentation",
+          502,
+          "provider.github.documentation_validation",
+          "GitHub returned a documentation reference outside the normalized repository contract; no Career evidence was changed.",
+          "Retry after verifying the provider response contract; no raw provider content was retained.",
+        );
+      }
+      const documentationCommitsUrl = repositoryEndpoint(repository, "commits");
+      documentationCommitsUrl.searchParams.set("path", parsedReadme.path);
+      documentationCommitsUrl.searchParams.set("per_page", "1");
+      let documentationCommits: Awaited<ReturnType<typeof githubJson>>;
+      try {
+        documentationCommits = await githubJson(
+          documentationCommitsUrl.toString(),
+          token,
+        );
+      } catch {
+        return failure(
+          requestId,
+          "github_provider_unreachable",
+          502,
+          "provider.github.documentation",
+          "GitHub documentation provenance could not be retrieved; no Career evidence was changed.",
+          "Retry once after checking provider availability. If it repeats, provide the request ID.",
+        );
+      }
+      if (!documentationCommits.response.ok) {
+        return failure(
+          requestId,
+          "github_provider_documentation_failed",
+          documentationCommits.response.status === 429 ? 429 : 502,
+          "provider.github.documentation",
+          `GitHub rejected documentation provenance retrieval with HTTP ${documentationCommits.response.status}; no Career evidence was changed.`,
+          "Verify read-only repository metadata access and retry once.",
+          { providerStatus: documentationCommits.response.status },
+        );
+      }
+      const documentation = parseGithubDocumentationEvidence(
+        readme.payload,
+        documentationCommits.payload,
+        repository.name,
+      );
+      if (!documentation) {
+        return failure(
+          requestId,
+          "github_sync_invalid_documentation",
+          502,
+          "provider.github.documentation_validation",
+          "GitHub documentation provenance did not match the normalized contract; no Career evidence was changed.",
+          "Retry after verifying the provider response contract; no raw provider content was retained.",
+        );
+      }
+      repositoryEvidence.push(...documentation);
+    } else if (readme.response.status !== 404) {
+      return failure(
+        requestId,
+        "github_provider_documentation_failed",
+        readme.response.status === 429 ? 429 : 502,
+        "provider.github.documentation",
+        `GitHub rejected documentation reference retrieval with HTTP ${readme.response.status}; no Career evidence was changed.`,
+        "Verify read-only repository metadata access and retry once.",
+        { providerStatus: readme.response.status },
+      );
+    }
+    const normalizedRows = sourceRows(
+      identity.user.id,
+      repository,
+      repositoryEvidence,
+      retrievedAt,
+    );
+    rows.push(...normalizedRows);
+    detailCount += normalizedRows.length;
   }
   const { error: persistenceError } = await service.from(
     "career_github_evidence",
@@ -265,7 +608,9 @@ Deno.serve(async (request) => {
     result: "success",
     redacted_after: {
       owner: githubAllowedOwner,
-      repository_count: rows.length,
+      repository_count: parsed.repositories.length,
+      evidence_count: rows.length,
+      detail_evidence_count: detailCount,
       retrieved_at: retrievedAt,
     },
   });
@@ -286,7 +631,9 @@ Deno.serve(async (request) => {
       code: "github_sync_complete",
       requestId,
       owner: githubAllowedOwner,
-      repositories: rows.length,
+      repositories: parsed.repositories.length,
+      evidenceRecords: rows.length,
+      detailedEvidenceRecords: detailCount,
       retrievedAt,
     },
     200,
