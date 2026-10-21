@@ -85,7 +85,7 @@ Deno.test("strict report output accepts the governed empty-sections shape", () =
   assertEquals(validated?.report_sections, []);
 });
 
-Deno.test("provider-valid uppercase section codes normalize to the persisted slug", () => {
+Deno.test("provider section codes normalize to the persisted slug", () => {
   const sectionProperties = reportOutputSchema.properties as Record<
     string,
     { items?: { properties?: Record<string, { pattern?: string }> } }
@@ -112,7 +112,24 @@ Deno.test("provider-valid uppercase section codes normalize to the persisted slu
     content: "The synthetic run had no eligible records.",
   }]);
 
-  for (const code of ["LIMITATION_V1", "\u212a"]) {
+  const snakeCase = validateReportOutput({
+    ...output,
+    findings: [],
+    evidence: [],
+    uncertainties: ["No supported synthetic records were supplied."],
+    report_sections: [{
+      code: "LIMITATION_CHECK",
+      title: "Limitation check",
+      content: "The synthetic run had no eligible records.",
+    }],
+  }, new Set());
+  assertEquals(snakeCase?.report_sections, [{
+    code: "limitation-check",
+    title: "Limitation check",
+    content: "The synthetic run had no eligible records.",
+  }]);
+
+  for (const code of ["LIMITATION CHECK", "\u212a"]) {
     assertEquals(
       validateReportOutput({
         ...output,
@@ -125,6 +142,21 @@ Deno.test("provider-valid uppercase section codes normalize to the persisted slu
       null,
     );
   }
+
+  assertEquals(
+    validateReportOutput({
+      ...output,
+      report_sections: [
+        { code: "LIMITATION_CHECK", title: "First", content: "First section." },
+        {
+          code: "limitation-check",
+          title: "Second",
+          content: "Second section.",
+        },
+      ],
+    }, new Set(["fixture-1"])),
+    null,
+  );
 });
 
 Deno.test("provider usage strips untrusted provider response fields", () => {

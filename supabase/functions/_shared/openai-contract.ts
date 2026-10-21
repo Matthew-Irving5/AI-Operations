@@ -160,16 +160,20 @@ export function validateReportOutput(
     ) return null;
     return { id: item.id, source: item.source };
   });
+  const reportSectionCodes = new Set<string>();
   const reportSections = value.report_sections.map((section) => {
     const code = isRecord(section) && isText(section.code, 100)
       ? section.code
       : null;
     if (
-      !isRecord(section) || !code || !/^[A-Za-z0-9-]{1,100}$/.test(code) ||
+      !isRecord(section) || !code || !/^[A-Za-z0-9_-]{1,100}$/.test(code) ||
       !isText(section.title, 200) || !isText(section.content)
     ) return null;
+    const canonicalCode = code.toLowerCase().replaceAll("_", "-");
+    if (reportSectionCodes.has(canonicalCode)) return null;
+    reportSectionCodes.add(canonicalCode);
     return {
-      code: code.toLowerCase(),
+      code: canonicalCode,
       title: section.title,
       content: section.content,
     };
