@@ -11,7 +11,9 @@ export type GithubRepository = Readonly<{
 
 /** Validates the returned owner before repository content is used or retained. */
 export function requirePersonalGithubOwner(owner: string): typeof ALLOWED_GITHUB_OWNER {
-  if (owner === DENIED_GITHUB_OWNER) throw new Error('github_owner_hard_denied');
+  if (owner.toLowerCase() === DENIED_GITHUB_OWNER.toLowerCase()) {
+    throw new Error('github_owner_hard_denied');
+  }
   if (owner !== ALLOWED_GITHUB_OWNER) throw new Error('github_owner_not_allowlisted');
   return ALLOWED_GITHUB_OWNER;
 }

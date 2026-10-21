@@ -175,6 +175,18 @@ const financeAdapterSchema = z.object({
 const careerEvidenceSchema = z.object({
   repository_name: z.string(),
   evidence_kind: z.string(),
+  source_url: z
+    .string()
+    .url()
+    .refine((value) => {
+      const url = new URL(value);
+      return (
+        url.protocol === 'https:' &&
+        url.hostname === 'github.com' &&
+        url.pathname.startsWith('/Matthew-Irving5/')
+      );
+    }),
+  source_date: z.string().datetime({ offset: true }).nullable(),
   retrieved_at: z.string(),
 });
 const researchRunSchema = z.object({
@@ -609,7 +621,7 @@ export async function careerData(): Promise<
   const [evidence, sources] = await Promise.all([
     client
       .from('career_github_evidence')
-      .select('repository_name,evidence_kind,retrieved_at')
+      .select('repository_name,evidence_kind,source_url,source_date,retrieved_at')
       .order('retrieved_at', { ascending: false })
       .limit(50),
     client
