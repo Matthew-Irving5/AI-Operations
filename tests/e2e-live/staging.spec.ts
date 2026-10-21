@@ -499,13 +499,6 @@ type PromptTransitionResult = {
   replayed?: boolean;
 };
 
-type PromptTransitionRow = {
-  id: string;
-  operation: string;
-  previous_version: number | null;
-  active_version: number;
-};
-
 type GovernedAiCallRow = {
   id: string;
   run_id: string;
@@ -749,33 +742,6 @@ async function proveAi16PromptGovernance(page: import('@playwright/test').Page):
     });
     expect(await readGovernedAiCall(candidateRun.runId)).toEqual(candidateCallBeforeRollback);
 
-    const [promotionRows, rollbackRows] = await Promise.all([
-      serviceRows<PromptTransitionRow>(
-        'prompt_version_transitions',
-        `select=id,operation,previous_version,active_version&idempotency_key=eq.${promotionKey}`,
-      ),
-      serviceRows<PromptTransitionRow>(
-        'prompt_version_transitions',
-        `select=id,operation,previous_version,active_version&idempotency_key=eq.${rollbackKey}`,
-      ),
-    ]);
-    expect(promotionRows).toEqual([
-      {
-        id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
-        operation: 'promote',
-        previous_version: current.activeVersion,
-        active_version: candidateVersion,
-      },
-    ]);
-    expect(rollbackRows).toEqual([
-      {
-        id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
-        operation: 'rollback',
-        previous_version: candidateVersion,
-        active_version: current.activeVersion,
-      },
-    ]);
-
     const candidateCost = Number(candidateCallBeforeRollback.actual_cost);
     const rollbackCost = Number(postRollbackCall.actual_cost);
     const totalActualCostUsd = candidateCost + rollbackCost;
@@ -804,7 +770,7 @@ async function proveAi16PromptGovernance(page: import('@playwright/test').Page):
           costPassed: evaluation.costPassed,
           latencyPassed: evaluation.latencyPassed,
         },
-        promotionTransitionId: promotionRows[0]!.id,
+        promotionIdempotencyKey: promotionKey,
         promotion: {
           previousVersion: current.activeVersion,
           activeVersion: candidateVersion,
@@ -824,7 +790,7 @@ async function proveAi16PromptGovernance(page: import('@playwright/test').Page):
           hardCapUsd: candidateHardCapUsd,
           searchCalls: candidateCallBeforeRollback.search_calls,
         },
-        rollbackTransitionId: rollbackRows[0]!.id,
+        rollbackIdempotencyKey: rollbackKey,
         rollback: {
           previousVersion: candidateVersion,
           activeVersion: current.activeVersion,

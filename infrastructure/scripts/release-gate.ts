@@ -116,7 +116,7 @@ export const Ai16PromptGovernanceProofSchema = z
         latencyPassed: z.literal(true),
       })
       .strict(),
-    promotionTransitionId: z.string().uuid(),
+    promotionIdempotencyKey: z.string().uuid(),
     promotion: z
       .object({
         previousVersion: z.number().int().positive(),
@@ -125,7 +125,7 @@ export const Ai16PromptGovernanceProofSchema = z
       })
       .strict(),
     candidateRun: Ai16ProviderCallProofSchema,
-    rollbackTransitionId: z.string().uuid(),
+    rollbackIdempotencyKey: z.string().uuid(),
     rollback: z
       .object({
         previousVersion: z.number().int().positive(),

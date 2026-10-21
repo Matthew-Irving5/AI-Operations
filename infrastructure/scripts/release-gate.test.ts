@@ -88,7 +88,7 @@ const ai16PromptGovernanceProof = {
     costPassed: true,
     latencyPassed: true,
   },
-  promotionTransitionId: '00000000-0000-4000-8000-000000000004',
+  promotionIdempotencyKey: '00000000-0000-4000-8000-000000000004',
   promotion: { previousVersion: 7, activeVersion: 8, replayed: false },
   candidateRun: {
     runId: 'candidate-run-1',
@@ -104,7 +104,7 @@ const ai16PromptGovernanceProof = {
     hardCapUsd: 0.05,
     searchCalls: 0,
   },
-  rollbackTransitionId: '00000000-0000-4000-8000-000000000006',
+  rollbackIdempotencyKey: '00000000-0000-4000-8000-000000000006',
   rollback: { previousVersion: 8, activeVersion: 7, replayed: false },
   postRollbackRun: {
     runId: 'rollback-run-1',
@@ -1267,7 +1267,11 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(hostedSuite, /operation: 'create_candidate'/);
   assert.match(hostedSuite, /operation: 'evaluate'/);
   assert.match(hostedSuite, /await proveAi16PromptGovernance\(page\)/);
-  assert.match(hostedSuite, /operation: 'rollback'/);
+  assert.match(
+    hostedSuite,
+    /const rollback = await transitionSystemsPrompt\(\s*page,\s*'rollback'/,
+  );
+  assert.match(hostedSuite, /rollbackIdempotencyKey: rollbackKey/);
   assert.match(
     hostedSuite,
     /systemsLaunchRequest\(\{ workflowCode, hardCapUsd, modelCeiling, idempotencyKey \}\)/,

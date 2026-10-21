@@ -32,7 +32,7 @@ const promptGovernanceProof = {
     costPassed: true,
     latencyPassed: true,
   },
-  promotionTransitionId: '00000000-0000-4000-8000-000000000004',
+  promotionIdempotencyKey: '00000000-0000-4000-8000-000000000004',
   promotion: { previousVersion: 1, activeVersion: 2, replayed: false },
   candidateRun: {
     runId: 'candidate-run-1',
@@ -48,7 +48,7 @@ const promptGovernanceProof = {
     hardCapUsd: 0.05,
     searchCalls: 0,
   },
-  rollbackTransitionId: '00000000-0000-4000-8000-000000000006',
+  rollbackIdempotencyKey: '00000000-0000-4000-8000-000000000006',
   rollback: { previousVersion: 2, activeVersion: 1, replayed: false },
   postRollbackRun: {
     runId: 'rollback-run-1',
@@ -99,6 +99,9 @@ describe('live auth acceptance harness', () => {
     assert.equal([...journey.matchAll(/await signInWithFreshMfa\(page\)/g)].length, 1);
     assert.match(journey, /acceptanceProfile: 'auth-browser'/);
     assert.match(journey, /promptGovernanceProof: governanceProof\.evidence/);
+    assert.doesNotMatch(journey, /serviceRows(?:<[^>]+>)?\(\s*['"]prompt_version_transitions['"]/);
+    assert.match(journey, /promotionIdempotencyKey: promotionKey/);
+    assert.match(journey, /rollbackIdempotencyKey: rollbackKey/);
   });
 
   it('never uses the service role to read user-owned schedules', async () => {
