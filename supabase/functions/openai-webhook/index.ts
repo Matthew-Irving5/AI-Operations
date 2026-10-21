@@ -273,20 +273,26 @@ Deno.serve(async (request) => {
     : null;
   const actionsAllowed = isProcurement
     ? true
-    : validated?.actions.every((action) => allowedActionTypes.includes(action.type)) ?? false;
+    : validated?.actions.every((action) =>
+      allowedActionTypes.includes(action.type)
+    ) ?? false;
   const searchCalls = extractWebSearchCalls(responseResult);
   const usage: Record<string, number> = {
     ...redactedProviderUsage(responseResult),
     web_search_calls: searchCalls,
   };
-  let procurementResearch: { request: unknown; searchLimit: number } | null = null;
+  let procurementResearch: { request: unknown; searchLimit: number } | null =
+    null;
   let procurementDecision: ReturnType<typeof prepareProcurementDecision> = null;
   if (isProcurement) {
     const research = await service.from("on_demand_research_runs")
       .select("user_id,request,search_limit")
       .eq("workflow_run_id", callData.run_id)
       .maybeSingle();
-    if (research.error || !research.data || research.data.user_id !== callData.user_id) {
+    if (
+      research.error || !research.data ||
+      research.data.user_id !== callData.user_id
+    ) {
       await markEvent(eventId, "retrying");
       return json({ code: "procurement_request_lookup_retry_required" }, 500);
     }
@@ -319,9 +325,11 @@ Deno.serve(async (request) => {
     await markEvent(eventId, "retrying");
     return json({ code: "reconciliation_retry_required" }, 500);
   }
-  if (isProcurement && (
-    searchCalls < 1 || searchCalls > (procurementResearch?.searchLimit ?? 0)
-  )) {
+  if (
+    isProcurement && (
+      searchCalls < 1 || searchCalls > (procurementResearch?.searchLimit ?? 0)
+    )
+  ) {
     const settled = await failProviderResult(
       providerJob.id,
       responseId,
@@ -340,7 +348,10 @@ Deno.serve(async (request) => {
     );
     if (!settled) {
       await markEvent(eventId, "retrying");
-      return json({ code: "search_ceiling_failure_settlement_retry_required" }, 500);
+      return json(
+        { code: "search_ceiling_failure_settlement_retry_required" },
+        500,
+      );
     }
     await markEvent(eventId, "processed");
     return json({ accepted: true, reconciliation: "failed" });
@@ -369,7 +380,10 @@ Deno.serve(async (request) => {
     await markEvent(eventId, "processed");
     return json({ accepted: true, reconciliation: "failed" });
   }
-  if ((!isProcurement && !validated) || (isProcurement && !procurementDecision) || !actionsAllowed) {
+  if (
+    (!isProcurement && !validated) || (isProcurement && !procurementDecision) ||
+    !actionsAllowed
+  ) {
     const validationErrorCode = isProcurement
       ? "procurement_output_or_citation_invalid"
       : validated
@@ -431,11 +445,17 @@ Deno.serve(async (request) => {
     : {};
   const reportType = isProcurement
     ? "procurement-on-demand-research"
-    : typeof trace.workflow === "string" ? trace.workflow : "background-ai-report";
+    : typeof trace.workflow === "string"
+    ? trace.workflow
+    : "background-ai-report";
   const reportTitle = isProcurement
-    ? `Procurement comparison: ${String(requestRecord.item ?? "requested item").slice(0, 160)}`
+    ? `Procurement comparison: ${
+      String(requestRecord.item ?? "requested item").slice(0, 160)
+    }`
     : "Validated AI Operations report";
-  const reportSummary = isProcurement ? procurementDecision!.summary : validated!.summary;
+  const reportSummary = isProcurement
+    ? procurementDecision!.summary
+    : validated!.summary;
   const reportMarkdown = isProcurement
     ? procurementDecision!.markdown
     : `## Validated AI Operations report\n\n${validated!.summary}`;
@@ -466,12 +486,14 @@ Deno.serve(async (request) => {
     p_job_id: providerJob.id,
     p_response_id: responseId,
     p_call_id: callData.id,
-    ...(isProcurement ? {
-      p_run_id: callData.run_id,
-      p_search_calls: searchCalls,
-      p_decision: procurementDecision!.decision,
-      p_sources: procurementDecision!.sources,
-    } : {}),
+    ...(isProcurement
+      ? {
+        p_run_id: callData.run_id,
+        p_search_calls: searchCalls,
+        p_decision: procurementDecision!.decision,
+        p_sources: procurementDecision!.sources,
+      }
+      : {}),
     p_report_type: reportType,
     p_notification_policy: trace.notification_policy,
     p_title: reportTitle,

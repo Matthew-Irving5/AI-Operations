@@ -9,8 +9,8 @@ import {
   selectModelUnderCeiling,
 } from "./execution-policy.ts";
 import {
-  validatePromptGovernance,
   validateProcurementResearchOutputSchema,
+  validatePromptGovernance,
   validateReportOutputSchema,
 } from "../../../packages/ai-runtime/src/governance.ts";
 import {
@@ -286,7 +286,11 @@ async function executeAiWorkflow(
     ? procurementLaunchRequestSchema.safeParse(input)
     : null;
   if (isProcurement && !procurementRequest?.success) {
-    return outcomeFor(run.id, "terminal_failure", "procurement_request_invalid");
+    return outcomeFor(
+      run.id,
+      "terminal_failure",
+      "procurement_request_invalid",
+    );
   }
   const mode = resolveWorkflowMode(run.managerCode, definition.code);
   if (!mode) {
@@ -357,8 +361,16 @@ async function executeAiWorkflow(
     return outcomeFor(run.id, "terminal_failure", "execution_budget_missing");
   }
   const budget = budgetResult.data;
-  if (isProcurement && (!budget || !Number.isInteger(budget.search_ceiling) || budget.search_ceiling < 1)) {
-    return outcomeFor(run.id, "terminal_failure", "procurement_search_budget_missing");
+  if (
+    isProcurement &&
+    (!budget || !Number.isInteger(budget.search_ceiling) ||
+      budget.search_ceiling < 1)
+  ) {
+    return outcomeFor(
+      run.id,
+      "terminal_failure",
+      "procurement_search_budget_missing",
+    );
   }
   if (
     budget &&
@@ -432,7 +444,12 @@ async function executeAiWorkflow(
     .from("prompt_templates")
     .select("id,active_version")
     .eq("manager_id", definitionConfig.manager_id)
-    .eq("code", isProcurement ? "procurement-research-comparison" : "controlled-agent-report")
+    .eq(
+      "code",
+      isProcurement
+        ? "procurement-research-comparison"
+        : "controlled-agent-report",
+    )
     .maybeSingle();
   if (promptResult.error || !promptResult.data?.active_version) {
     return outcomeFor(
@@ -476,7 +493,9 @@ async function executeAiWorkflow(
   if (
     !validatePromptGovernance(promptGovernance) ||
     !(isProcurement
-      ? validateProcurementResearchOutputSchema(selectedPromptVersion.data.json_schema)
+      ? validateProcurementResearchOutputSchema(
+        selectedPromptVersion.data.json_schema,
+      )
       : validateReportOutputSchema(selectedPromptVersion.data.json_schema)) ||
     selectModelUnderCeiling(promptGovernance.modelRoute, selectedModel) !==
       selectedModel
@@ -498,13 +517,20 @@ async function executeAiWorkflow(
       .order("created_at", { ascending: false })
       .limit(50);
     if (feedbackResult.error) {
-      return outcomeFor(run.id, "retryable_failure", "required_sources_unavailable");
+      return outcomeFor(
+        run.id,
+        "retryable_failure",
+        "required_sources_unavailable",
+      );
     }
     evidence = (feedbackResult.data ?? []).flatMap((feedback) => {
       if (!Array.isArray(feedback.categories)) return [];
       return feedback.categories.flatMap((category) =>
         typeof category === "string"
-          ? [{ id: feedback.id, source: `Recent quality feedback category: ${category}` }]
+          ? [{
+            id: feedback.id,
+            source: `Recent quality feedback category: ${category}`,
+          }]
           : []
       );
     });
@@ -548,11 +574,11 @@ async function executeAiWorkflow(
   }
   const estimatedOutputTokens = isProcurement ? 6_000 : 2_000;
   const estimatedCost = Math.ceil(
-    ((8_000 * pricing.data.input_per_million +
-      estimatedOutputTokens * pricing.data.output_per_million) /
-      1_000_000) *
-      1_000_000,
-  ) / 1_000_000 + searchCeiling * Number(pricing.data.web_search_per_call);
+        ((8_000 * pricing.data.input_per_million +
+          estimatedOutputTokens * pricing.data.output_per_million) /
+          1_000_000) *
+          1_000_000,
+      ) / 1_000_000 + searchCeiling * Number(pricing.data.web_search_per_call);
   if (
     budget &&
     estimatedCost > Number(budget.hard_cap) - Number(budget.reserved_amount)
@@ -714,7 +740,9 @@ async function executeAiWorkflow(
           tools: promptGovernance.toolPolicy.tools.map((tool) =>
             tool.type === "web_search" ? { type: "web_search" } : tool
           ),
-          ...(isProcurement ? { tool_choice: "required", max_tool_calls: searchCeiling } : {}),
+          ...(isProcurement
+            ? { tool_choice: "required", max_tool_calls: searchCeiling }
+            : {}),
           text: {
             format: {
               type: "json_schema",

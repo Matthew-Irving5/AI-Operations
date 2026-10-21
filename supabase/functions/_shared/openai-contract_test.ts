@@ -203,9 +203,21 @@ Deno.test("web-search usage and cited URLs are extracted from the provider respo
           type: "output_text",
           text: "One source.",
           annotations: [
-            { type: "url_citation", title: "Retailer", url: "https://shop.example/item" },
-            { type: "url_citation", title: "Unsafe", url: "http://unsafe.example/item" },
-            { type: "url_citation", title: "Retailer", url: "https://shop.example/item" },
+            {
+              type: "url_citation",
+              title: "Retailer",
+              url: "https://shop.example/item",
+            },
+            {
+              type: "url_citation",
+              title: "Unsafe",
+              url: "http://unsafe.example/item",
+            },
+            {
+              type: "url_citation",
+              title: "Retailer",
+              url: "https://shop.example/item",
+            },
           ],
         }],
       },

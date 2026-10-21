@@ -1,8 +1,8 @@
 import {
+  type ProcurementCandidate,
   procurementDecisionInputSchema,
   procurementLaunchRequestSchema,
   procurementResearchOutputSchema,
-  type ProcurementCandidate,
 } from "@ai-operations/contracts";
 import { compareProcurementCandidates } from "@ai-operations/manager-core";
 import type { WebSearchCitation } from "../_shared/openai-contract.ts";
@@ -33,22 +33,39 @@ export function prepareProcurementDecision(
   const request = procurementLaunchRequestSchema.safeParse(requestValue);
   const output = procurementResearchOutputSchema.safeParse(outputValue);
   const nowMs = Date.parse(now);
-  if (!request.success || !output.success || !Number.isFinite(nowMs) || citations.length > 100) {
+  if (
+    !request.success || !output.success || !Number.isFinite(nowMs) ||
+    citations.length > 100
+  ) {
     return null;
   }
 
-  const citationByUrl = new Map(citations.map((citation) => [citation.url, citation]));
-  const candidates: ProcurementCandidate[] = output.data.candidates.map((candidate) => ({
+  const citationByUrl = new Map(
+    citations.map((citation) => [citation.url, citation]),
+  );
+  const candidates: ProcurementCandidate[] = output.data.candidates.map((
+    candidate,
+  ) => ({
     ...candidate,
     offer: {
       ...candidate.offer,
       observedAt: candidate.offer.priceType === "current_offer" ? now : null,
     },
-    reviews: candidate.reviews.map((review) => ({ ...review, retrievedAt: now })),
+    reviews: candidate.reviews.map((review) => ({
+      ...review,
+      retrievedAt: now,
+    })),
   }));
   for (const candidate of candidates) {
-    if (candidateSourceUrls(candidate).some((url) => !citationByUrl.has(canonicalUrl(url)))) return null;
-    if (candidate.offer.priceType === "current_offer" && candidate.offer.sourceUrls.length === 0) {
+    if (
+      candidateSourceUrls(candidate).some((url) =>
+        !citationByUrl.has(canonicalUrl(url))
+      )
+    ) return null;
+    if (
+      candidate.offer.priceType === "current_offer" &&
+      candidate.offer.sourceUrls.length === 0
+    ) {
       return null;
     }
   }
@@ -62,25 +79,39 @@ export function prepareProcurementDecision(
   });
   if (!parsedDecision.success) return null;
   const comparison = compareProcurementCandidates(parsedDecision.data, now);
-  const eligible = comparison.candidates.filter((candidate) => candidate.status === "eligible");
-  const bestValueId = [...eligible].sort((left, right) =>
-    (left.totalCostMinor ?? Number.MAX_SAFE_INTEGER) - (right.totalCostMinor ?? Number.MAX_SAFE_INTEGER) ||
-    Number(right.priceConfidence === "current_verified") - Number(left.priceConfidence === "current_verified") ||
-    left.candidateId.localeCompare(right.candidateId)
-  )[0]?.candidateId ?? null;
+  const eligible = comparison.candidates.filter((candidate) =>
+    candidate.status === "eligible"
+  );
+  const bestValueId =
+    [...eligible].sort((left, right) =>
+      (left.totalCostMinor ?? Number.MAX_SAFE_INTEGER) -
+        (right.totalCostMinor ?? Number.MAX_SAFE_INTEGER) ||
+      Number(right.priceConfidence === "current_verified") -
+        Number(left.priceConfidence === "current_verified") ||
+      left.candidateId.localeCompare(right.candidateId)
+    )[0]?.candidateId ?? null;
   const premiumId = eligible.length > 1
     ? [...eligible].sort((left, right) =>
-      (right.totalCostMinor ?? 0) - (left.totalCostMinor ?? 0) || left.candidateId.localeCompare(right.candidateId)
+      (right.totalCostMinor ?? 0) - (left.totalCostMinor ?? 0) ||
+      left.candidateId.localeCompare(right.candidateId)
     )[0]?.candidateId ?? null
     : null;
-  const candidateById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+  const candidateById = new Map(
+    candidates.map((candidate) => [candidate.id, candidate]),
+  );
   const recommendations = comparison.candidates.map((result) => {
     const candidate = candidateById.get(result.candidateId);
-    if (!candidate) throw new Error("procurement_candidate_missing_after_validation");
+    if (!candidate) {
+      throw new Error("procurement_candidate_missing_after_validation");
+    }
     const badges = [
-      ...(result.candidateId === comparison.selectedCandidateId ? ["best_overall"] : []),
+      ...(result.candidateId === comparison.selectedCandidateId
+        ? ["best_overall"]
+        : []),
       ...(result.candidateId === bestValueId ? ["best_value"] : []),
-      ...(result.candidateId === premiumId && result.candidateId !== bestValueId ? ["premium"] : []),
+      ...(result.candidateId === premiumId && result.candidateId !== bestValueId
+        ? ["premium"]
+        : []),
     ];
     const recommendationKind = result.status === "excluded"
       ? "excluded"
@@ -96,12 +127,22 @@ export function prepareProcurementDecision(
       .map((assessment) => assessment.requirementId);
     const uncertainty = [
       ...result.exclusionReasons,
-      ...(result.priceConfidence !== "current_verified" ? [`price_${result.priceConfidence}`] : []),
-      ...(result.independentReviewSources < 2 ? ["limited_independent_review_sources"] : []),
-      ...(assessmentUnknown.length ? [`unknown_assessments:${assessmentUnknown.join(",")}`] : []),
+      ...(result.priceConfidence !== "current_verified"
+        ? [`price_${result.priceConfidence}`]
+        : []),
+      ...(result.independentReviewSources < 2
+        ? ["limited_independent_review_sources"]
+        : []),
+      ...(assessmentUnknown.length
+        ? [`unknown_assessments:${assessmentUnknown.join(",")}`]
+        : []),
     ].join("; ") || "Verify merchant availability and terms before purchase.";
     const candidateCitations = [...new Set(candidateSourceUrls(candidate))]
-      .flatMap((url) => citationByUrl.has(canonicalUrl(url)) ? [citationByUrl.get(canonicalUrl(url))!] : []);
+      .flatMap((url) =>
+        citationByUrl.has(canonicalUrl(url))
+          ? [citationByUrl.get(canonicalUrl(url))!]
+          : []
+      );
     return {
       recommendation_kind: recommendationKind,
       candidate_id: candidate.id,
@@ -123,7 +164,10 @@ export function prepareProcurementDecision(
     source_quality: "unreviewed",
     citation_text: `${citation.title} — ${citation.url}`,
   }));
-  const evidenceReferences = sources.map(({ title, source_url }) => ({ title, url: source_url }));
+  const evidenceReferences = sources.map(({ title, source_url }) => ({
+    title,
+    url: source_url,
+  }));
   const decision = {
     version: 1,
     item: request.data.item,
@@ -142,29 +186,43 @@ export function prepareProcurementDecision(
     recommendations,
   };
   const ranked = [...comparison.candidates].sort((left, right) =>
-    (left.rank ?? Number.MAX_SAFE_INTEGER) - (right.rank ?? Number.MAX_SAFE_INTEGER)
+    (left.rank ?? Number.MAX_SAFE_INTEGER) -
+    (right.rank ?? Number.MAX_SAFE_INTEGER)
   );
   const markdownLines = [
     `## Requirement-first procurement comparison: ${request.data.item}`,
     "",
     output.data.summary,
     "",
-    `**Maximum all-in cost:** ${request.data.currency} ${(request.data.maxTotalCostMinor / 100).toFixed(2)}`,
-    `**Selected option:** ${comparison.selectedCandidateId ?? "No candidate satisfies the hard requirements and complete-cost checks."}`,
+    `**Maximum all-in cost:** ${request.data.currency} ${
+      (request.data.maxTotalCostMinor / 100).toFixed(2)
+    }`,
+    `**Selected option:** ${
+      comparison.selectedCandidateId ??
+        "No candidate satisfies the hard requirements and complete-cost checks."
+    }`,
     "",
     "### Requirements",
-    ...request.data.requirements.map((requirement) => `- ${requirement.kind === "hard" ? "Hard" : "Preference"}: ${requirement.label}`),
+    ...request.data.requirements.map((requirement) =>
+      `- ${
+        requirement.kind === "hard" ? "Hard" : "Preference"
+      }: ${requirement.label}`
+    ),
     "",
     "### Comparison",
     ...ranked.map((result) => {
       const candidate = candidateById.get(result.candidateId);
       const total = result.totalCostMinor === null
         ? "all-in cost unknown"
-        : `${request.data.currency} ${(result.totalCostMinor / 100).toFixed(2)}`;
+        : `${request.data.currency} ${
+          (result.totalCostMinor / 100).toFixed(2)
+        }`;
       const status = result.status === "excluded"
         ? `Excluded: ${result.exclusionReasons.join(", ")}`
         : `Rank ${result.rank}; ${result.priceConfidence}; ${result.independentReviewSources} independent review sources`;
-      return `- ${candidate?.title ?? result.candidateId} (${candidate?.merchant ?? "merchant unknown"}) — ${total}. ${status}.`;
+      return `- ${candidate?.title ?? result.candidateId} (${
+        candidate?.merchant ?? "merchant unknown"
+      }) — ${total}. ${status}.`;
     }),
     "",
     "### Decision rationale",
