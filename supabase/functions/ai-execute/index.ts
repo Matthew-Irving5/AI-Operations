@@ -1,5 +1,17 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { createWorkflowExecutionHandler } from "./handler.ts";
+import { createCanonicalActionDispatcher } from "./canonical-action-dispatcher.ts";
+import { buildCanonicalActionDispatchEnvelope } from "./canonical-action-request.ts";
+import {
+  type CanonicalActionRpcClient,
+  createSupabaseCanonicalActionExecutionStore,
+} from "./canonical-action-store.ts";
+import {
+  createPromptPromotionAdapter,
+  type PromptPromotionSource,
+  promptPromotionTargetSchema,
+  promptTransitionResultSchema,
+} from "./prompt-promotion-adapter.ts";
 import { AI15_WORKFLOW_RUN_SELECT } from "./read-contract.ts";
 import { submitProviderResponse as submitProviderResponseWithRetry } from "./provider-submission.ts";
 import {
@@ -172,10 +184,11 @@ async function persistStage(
 async function executeDeterministic(
   runId: string,
 ): Promise<ExecuteWorkflowOutcome> {
-  const run = await service.from("workflow_runs").select("correlation_id").eq(
-    "id",
-    runId,
-  ).maybeSingle();
+  const run = await service
+    .from("workflow_runs")
+    .select("correlation_id")
+    .eq("id", runId)
+    .maybeSingle();
   if (run.error || !run.data) {
     return outcomeFor(
       runId,
@@ -324,10 +337,11 @@ async function executeAiWorkflow(
     ? existingReport.structured_metrics.ai_call_id
     : null;
   if (existingReport?.id && existingCallId) {
-    const callState = await service.from("ai_calls").select("status").eq(
-      "id",
-      existingCallId,
-    ).maybeSingle();
+    const callState = await service
+      .from("ai_calls")
+      .select("status")
+      .eq("id", existingCallId)
+      .maybeSingle();
     if (callState.data?.status === "succeeded") {
       return {
         runId: run.id,
@@ -381,7 +395,8 @@ async function executeAiWorkflow(
     );
   }
   const definitionConfig = definitionResult.data;
-  const pendingReservation = await service.from("ai_calls")
+  const pendingReservation = await service
+    .from("ai_calls")
     .select("id,status,response_id,request_id,prompt_version_id,model_id")
     .eq("run_id", run.id)
     .eq("status", "reserved")
@@ -404,13 +419,16 @@ async function executeAiWorkflow(
   if (!pendingReservation.data && !defaultSelectedModel) {
     return outcomeFor(run.id, "terminal_failure", "model_route_unavailable");
   }
-  const modelQuery = service.from("ai_model_catalog")
-    .select("id,model_id,enabled");
+  const modelQuery = service.from("ai_model_catalog").select(
+    "id,model_id,enabled",
+  );
   const modelResult = pendingReservation.data
-    ? await modelQuery.eq("id", pendingReservation.data.model_id)
-      .eq("enabled", true).maybeSingle()
-    : await modelQuery.eq("model_id", defaultSelectedModel!)
-      .eq("enabled", true).maybeSingle();
+    ? await modelQuery.eq("id", pendingReservation.data.model_id).eq(
+      "enabled",
+      true,
+    ).maybeSingle()
+    : await modelQuery.eq("model_id", defaultSelectedModel!).eq("enabled", true)
+      .maybeSingle();
   if (modelResult.error || !modelResult.data) {
     return outcomeFor(run.id, "terminal_failure", "model_unavailable");
   }
@@ -438,10 +456,11 @@ async function executeAiWorkflow(
     ? await promptVersionQuery.eq(
       "id",
       pendingReservation.data.prompt_version_id,
-    )
-      .maybeSingle()
-    : await promptVersionQuery.eq("template_id", promptResult.data.id)
-      .eq("version", promptResult.data.active_version).maybeSingle();
+    ).maybeSingle()
+    : await promptVersionQuery
+      .eq("template_id", promptResult.data.id)
+      .eq("version", promptResult.data.active_version)
+      .maybeSingle();
   if (
     selectedPromptVersion.error ||
     !selectedPromptVersion.data ||
@@ -492,10 +511,12 @@ async function executeAiWorkflow(
     if (!Array.isArray(feedback.categories)) return [];
     return feedback.categories.flatMap((category) =>
       typeof category === "string"
-        ? [{
-          id: feedback.id,
-          source: `Recent quality feedback category: ${category}`,
-        }]
+        ? [
+          {
+            id: feedback.id,
+            source: `Recent quality feedback category: ${category}`,
+          },
+        ]
         : []
     );
   });
@@ -546,7 +567,8 @@ async function executeAiWorkflow(
   ) {
     return outcomeFor(run.id, "terminal_failure", "execution_budget_exceeded");
   }
-  const unresolvedCall = await service.from("ai_calls")
+  const unresolvedCall = await service
+    .from("ai_calls")
     .select("id,status,response_id,request_id")
     .eq("run_id", run.id)
     .in("status", [
@@ -608,7 +630,8 @@ async function executeAiWorkflow(
       responseId: unresolvedCall.data.response_id,
     };
   }
-  const attemptResult = await service.from("job_queue")
+  const attemptResult = await service
+    .from("job_queue")
     .select("attempt_count")
     .eq("run_id", run.id)
     .eq("job_type", "workflow_execute")
@@ -622,8 +645,11 @@ async function executeAiWorkflow(
     `ai15:${run.id}:attempt:${Math.max(1, attemptResult.data.attempt_count)}`;
   const priorCallResult = pendingReservation.data
     ? { data: pendingReservation.data, error: null }
-    : await service.from("ai_calls").select("id,status,response_id,request_id")
-      .eq("request_id", requestId).maybeSingle();
+    : await service
+      .from("ai_calls")
+      .select("id,status,response_id,request_id")
+      .eq("request_id", requestId)
+      .maybeSingle();
   if (priorCallResult.error) {
     return outcomeFor(
       run.id,
@@ -808,11 +834,76 @@ async function executeCanonicalRun(
   }
 }
 
+const canonicalActionRpcClient = service as unknown as CanonicalActionRpcClient;
+const canonicalActionExecutionStore =
+  createSupabaseCanonicalActionExecutionStore(canonicalActionRpcClient);
+
+function promptPromotionSource(): PromptPromotionSource {
+  return {
+    async loadTarget(templateId, targetVersion) {
+      const result = await canonicalActionRpcClient.rpc(
+        "load_prompt_promotion_target",
+        {
+          p_template_id: templateId,
+          p_target_version: targetVersion,
+        },
+      );
+      if (result.error) {
+        throw new Error("prompt_promotion_target_lookup_failed");
+      }
+      return result.data === null
+        ? null
+        : promptPromotionTargetSchema.parse(result.data);
+    },
+    async transition(input) {
+      const result = await canonicalActionRpcClient.rpc(
+        "transition_prompt_version",
+        {
+          p_template_id: input.templateId,
+          p_target_version: input.targetVersion,
+          p_expected_active_version: input.expectedActiveVersion,
+          p_actor_user_id: input.actorUserId,
+          p_operation: input.operation,
+          p_idempotency_key: input.idempotencyKey,
+        },
+      );
+      if (result.error || !isRecord(result.data)) {
+        throw new Error("prompt_version_transition_failed");
+      }
+      return promptTransitionResultSchema.parse({
+        activeVersion: result.data.active_version,
+        previousVersion: result.data.previous_version,
+        replayed: result.data.replayed,
+      });
+    },
+  };
+}
+
+const executeCanonicalActionRequest = createCanonicalActionDispatcher({
+  source: {
+    async loadExecution(executionRequestId) {
+      const result = await canonicalActionRpcClient.rpc(
+        "load_canonical_action_execution_request",
+        {
+          p_execution_request_id: executionRequestId,
+        },
+      );
+      if (result.error || result.data === null) {
+        throw new Error("canonical_action_execution_request_unavailable");
+      }
+      return await buildCanonicalActionDispatchEnvelope(result.data);
+    },
+  },
+  store: canonicalActionExecutionStore,
+  adapters: [createPromptPromotionAdapter(promptPromotionSource())],
+});
+
 Deno.serve(
   createWorkflowExecutionHandler({
     workerSecret: Deno.env.get("WORKER_SECRET") ?? "",
     serviceRoleKey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
     execute: executeCanonicalRun,
+    executeAction: executeCanonicalActionRequest,
     timingSafeEqual,
   }),
 );

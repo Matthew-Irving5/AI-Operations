@@ -10,6 +10,7 @@ import {
 } from '@ai-operations/contracts';
 import {
   executeCanonicalAction,
+  executeCanonicalActionReversal,
   type CanonicalActionCompletion,
   type CanonicalActionExecutionClaim,
   type CanonicalActionExecutionInput,
@@ -141,6 +142,18 @@ function calendarAdapter(overrides: Partial<CanonicalActionAdapter<typeof payloa
       resultReference: 'provider-event-1',
       changedReferences: ['provider-event-1'],
       reversalToken: 'delete-event-1',
+    })),
+    checkReversalPreconditions: vi.fn(async () => ({
+      ready: true as const,
+      currentStateToken: 'calendar-version-10',
+      checkedAt: createdAt,
+    })),
+    reverse: vi.fn(async () => ({
+      kind: 'succeeded' as const,
+      summary: 'Calendar event restored to its prior state.',
+      resultReference: 'provider-event-1',
+      changedReferences: ['provider-event-1'],
+      reversalToken: null,
     })),
     ...overrides,
   } satisfies CanonicalActionAdapter<typeof payloadSchema>;
@@ -328,5 +341,70 @@ describe('canonical action execution', () => {
 
     expect(conflict).toEqual({ kind: 'conflict' });
     expect(adapter.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes a linked reversal receipt and replays it without a second reversal', async () => {
+    const originalAdapter = calendarAdapter();
+    const originalStore = new MemoryExecutionStore();
+    const original = await executeCanonicalAction(baseInput(), originalAdapter, originalStore);
+    if (original.kind !== 'completed') throw new Error('expected_original_receipt');
+
+    const reversalAdapter = calendarAdapter();
+    const reversalStore = new MemoryExecutionStore();
+    const reversalInput = {
+      ...baseInput({
+        identity: {
+          ...baseInput().identity,
+          executionRequestId: '00000000-0000-4000-8000-000000000006',
+          idempotencyKey: 'calendar-action-reverse-001',
+        },
+      }),
+      originalReceipt: original.receipt,
+    };
+    const reversed = await executeCanonicalActionReversal(
+      reversalInput,
+      reversalAdapter,
+      reversalStore,
+    );
+    const replay = await executeCanonicalActionReversal(
+      reversalInput,
+      reversalAdapter,
+      reversalStore,
+    );
+
+    expect(reversed.kind).toBe('completed');
+    if (reversed.kind !== 'completed' || replay.kind !== 'replay') {
+      throw new Error('expected_reversal_receipts');
+    }
+    expect(reversed.receipt).toMatchObject({
+      kind: 'reversed',
+      reversesReceiptId: original.receipt.id,
+      actionId,
+    });
+    expect(replay.receipt).toEqual(reversed.receipt);
+    expect(reversalAdapter.execute).not.toHaveBeenCalled();
+    expect(reversalAdapter.reverse).toHaveBeenCalledTimes(1);
+    expect(reversalStore.completeCount).toBe(1);
+  });
+
+  it('requires a supported original receipt before claiming a reversal', async () => {
+    const adapter = calendarAdapter();
+    const original = await executeCanonicalAction(baseInput(), adapter, store);
+    if (original.kind !== 'completed') throw new Error('expected_original_receipt');
+    const input = {
+      ...baseInput({
+        identity: {
+          ...baseInput().identity,
+          executionRequestId: '00000000-0000-4000-8000-000000000007',
+          idempotencyKey: 'calendar-action-reverse-002',
+        },
+      }),
+      originalReceipt: { ...original.receipt, reversalToken: null },
+    };
+
+    await expect(
+      executeCanonicalActionReversal(input, adapter, new MemoryExecutionStore()),
+    ).rejects.toThrow();
+    expect(adapter.reverse).not.toHaveBeenCalled();
   });
 });

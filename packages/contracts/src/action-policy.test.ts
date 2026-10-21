@@ -84,6 +84,28 @@ describe('canonical action policy', () => {
     expect(evaluateCanonicalActionPolicy({ ...input, freshWebAal2: true }).decision).toBe('allow');
   });
 
+  it('requires fresh web AAL2 after approval before prompt promotion executes', () => {
+    const input = baseInput({
+      actionType: 'review_prompt_promotion',
+      managerCode: 'systems',
+      authority: 'agent_proposal',
+      approvalState: 'approved',
+      capabilities: ['prompt_model_config'],
+      permissions: ['write', 'execute'],
+      freshWebAal2: false,
+    });
+
+    expect(evaluateCanonicalActionPolicy(input)).toMatchObject({
+      decision: 'reauth_required',
+      reason: 'web_action_requires_fresh_aal2',
+      freshWebAal2Required: true,
+    });
+    expect(evaluateCanonicalActionPolicy({ ...input, freshWebAal2: true })).toMatchObject({
+      decision: 'allow',
+      reason: 'approved_agent_proposal',
+    });
+  });
+
   it('allows only explicitly preauthorized low-risk standing-policy actions', () => {
     const input = baseInput({
       actionType: 'google_task_create',

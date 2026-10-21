@@ -4,9 +4,16 @@ import {
   workflowRunStateSchema,
 } from "@ai-operations/contracts";
 
-export const executeWorkflowRequestSchema = z.object({
-  runId: z.string().uuid(),
-}).strict();
+export const executeWorkflowRequestSchema = z
+  .object({
+    runId: z.string().uuid(),
+  })
+  .strict();
+
+export const executeAiRequestSchema = z.union([
+  executeWorkflowRequestSchema,
+  z.object({ executionRequestId: z.string().uuid() }).strict(),
+]);
 
 const safeErrorCodeSchema = z.string().regex(/^[a-z][a-z0-9_]{2,99}$/);
 export const executeWorkflowOutcomeSchema = z.discriminatedUnion("outcome", [
@@ -88,6 +95,7 @@ const workflowInputSchema = z.record(z.string(), z.unknown()).superRefine(
 export type ExecuteWorkflowRequest = z.infer<
   typeof executeWorkflowRequestSchema
 >;
+export type ExecuteAiRequest = z.infer<typeof executeAiRequestSchema>;
 export type ExecuteWorkflowOutcome = z.infer<
   typeof executeWorkflowOutcomeSchema
 >;

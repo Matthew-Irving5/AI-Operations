@@ -71,7 +71,15 @@ insert into rpc_security_expected values
   ('public.revoke_apple_bridge_device(uuid,uuid)', false, true, false),
   ('public.update_google_source_selection(uuid,text[],text[],uuid)', false, true, false),
   ('public.create_worker_device_from_mfa_gate(uuid,text,text,text,timestamptz)', false, true, false),
-  ('public.revoke_worker_device_from_mfa_gate(uuid,uuid)', false, true, false);
+  ('public.revoke_worker_device_from_mfa_gate(uuid,uuid)', false, true, false),
+  -- AI-44 canonical action RPCs have explicit service-role or authenticated grants.
+  ('public.lookup_canonical_action_execution(uuid,uuid,text,text)', false, false, true),
+  ('public.record_canonical_action_policy_decision(uuid,uuid,text,text,jsonb)', false, false, true),
+  ('public.claim_canonical_action_execution(uuid,uuid,text,text)', false, false, true),
+  ('public.complete_canonical_action_execution(uuid,uuid,text,text,uuid,jsonb)', false, false, true),
+  ('public.load_canonical_action_execution_request(uuid)', false, false, true),
+  ('public.load_prompt_promotion_target(uuid,integer)', false, false, true),
+  ('public.request_canonical_action_reversal(uuid,text)', false, true, false);
 
 select ok(
   not exists (

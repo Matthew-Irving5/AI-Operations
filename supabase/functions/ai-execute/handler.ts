@@ -1,12 +1,14 @@
 import {
+  executeAiRequestSchema,
   executeWorkflowOutcomeSchema,
-  executeWorkflowRequestSchema,
 } from "./orchestration-contract.ts";
+import { canonicalActionExecutionResultSchema } from "@ai-operations/manager-core/action-execution";
 
 export interface WorkflowExecutionHandlerDependencies {
   workerSecret: string;
   serviceRoleKey: string;
   execute(runId: string): Promise<unknown>;
+  executeAction?(executionRequestId: string): Promise<unknown>;
   timingSafeEqual(left: string, right: string): boolean;
 }
 
@@ -36,10 +38,30 @@ export function createWorkflowExecutionHandler(
     if (!workerAuthorized && !serviceAuthorized) {
       return json({ code: "unauthorised" }, 401);
     }
-    const parsedRequest = executeWorkflowRequestSchema.safeParse(
+    const parsedRequest = executeAiRequestSchema.safeParse(
       await request.json().catch(() => null),
     );
     if (!parsedRequest.success) return json({ code: "invalid_request" }, 400);
+    if ("executionRequestId" in parsedRequest.data) {
+      if (!dependencies.executeAction) {
+        return json({ code: "action_executor_unavailable" }, 503);
+      }
+      let result: unknown;
+      try {
+        result = await dependencies.executeAction(
+          parsedRequest.data.executionRequestId,
+        );
+      } catch {
+        return json({ code: "canonical_action_execution_failed" }, 500);
+      }
+      const parsedResult = canonicalActionExecutionResultSchema.safeParse(
+        result,
+      );
+      if (!parsedResult.success) {
+        return json({ code: "invalid_action_execution_result" }, 500);
+      }
+      return json(parsedResult.data);
+    }
     let result: unknown;
     try {
       result = await dependencies.execute(parsedRequest.data.runId);

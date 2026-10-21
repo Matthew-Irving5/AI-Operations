@@ -1,17 +1,17 @@
-import { z } from 'npm:zod@4.1.5';
+import { z } from "npm:zod@4.1.5";
 import {
-  canonicalActionPolicyResultSchema,
-  canonicalActionReceiptSchema,
   type CanonicalActionExecutionIdentity,
   type CanonicalActionPolicyResult,
+  canonicalActionPolicyResultSchema,
   type CanonicalActionReceipt,
-} from '@ai-operations/contracts';
+  canonicalActionReceiptSchema,
+} from "@ai-operations/contracts";
 import type {
   CanonicalActionCompletion,
   CanonicalActionExecutionClaim,
   CanonicalActionExecutionLookup,
   CanonicalActionExecutionStore,
-} from '@ai-operations/manager-core/action-execution';
+} from "@ai-operations/manager-core/action-execution";
 
 export interface CanonicalActionRpcClient {
   rpc(
@@ -23,30 +23,36 @@ export interface CanonicalActionRpcClient {
   }>;
 }
 
-const lookupSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('missing') }).strict(),
-  z.object({ kind: z.literal('in_progress') }).strict(),
-  z.object({ kind: z.literal('conflict') }).strict(),
-  z.object({ kind: z.literal('replay'), receipt: canonicalActionReceiptSchema }).strict(),
+const lookupSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("missing") }).strict(),
+  z.object({ kind: z.literal("in_progress") }).strict(),
+  z.object({ kind: z.literal("conflict") }).strict(),
+  z.object({ kind: z.literal("replay"), receipt: canonicalActionReceiptSchema })
+    .strict(),
 ]);
 
-const claimSchema = z.discriminatedUnion('kind', [
+const claimSchema = z.discriminatedUnion("kind", [
   z
     .object({
-      kind: z.literal('claimed'),
+      kind: z.literal("claimed"),
       claimToken: z.string().uuid(),
       attempt: z.number().int().positive(),
     })
     .strict(),
-  z.object({ kind: z.literal('in_progress') }).strict(),
-  z.object({ kind: z.literal('conflict') }).strict(),
-  z.object({ kind: z.literal('replay'), receipt: canonicalActionReceiptSchema }).strict(),
+  z.object({ kind: z.literal("in_progress") }).strict(),
+  z.object({ kind: z.literal("conflict") }).strict(),
+  z.object({ kind: z.literal("replay"), receipt: canonicalActionReceiptSchema })
+    .strict(),
 ]);
 
-const completionSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('persisted'), receipt: canonicalActionReceiptSchema }).strict(),
-  z.object({ kind: z.literal('replay'), receipt: canonicalActionReceiptSchema }).strict(),
-  z.object({ kind: z.literal('conflict') }).strict(),
+const completionSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("persisted"),
+    receipt: canonicalActionReceiptSchema,
+  }).strict(),
+  z.object({ kind: z.literal("replay"), receipt: canonicalActionReceiptSchema })
+    .strict(),
+  z.object({ kind: z.literal("conflict") }).strict(),
 ]);
 
 async function callRpc<T>(
@@ -56,7 +62,9 @@ async function callRpc<T>(
   schema: z.ZodType<T>,
 ): Promise<T> {
   const { data, error } = await client.rpc(name, args);
-  if (error !== null) throw new Error('canonical_action_persistence_unavailable');
+  if (error !== null) {
+    throw new Error("canonical_action_persistence_unavailable");
+  }
   return schema.parse(data);
 }
 
@@ -76,36 +84,45 @@ export function createSupabaseCanonicalActionExecutionStore(
     async lookup(identity): Promise<CanonicalActionExecutionLookup> {
       return await callRpc(
         client,
-        'lookup_canonical_action_execution',
+        "lookup_canonical_action_execution",
         identityArgs(identity),
         lookupSchema,
       );
     },
-    async recordPolicyDecision(identity, decision: CanonicalActionPolicyResult): Promise<void> {
+    async recordPolicyDecision(
+      identity,
+      decision: CanonicalActionPolicyResult,
+    ): Promise<void> {
       const validDecision = canonicalActionPolicyResultSchema.parse(decision);
       const recorded = await callRpc(
         client,
-        'record_canonical_action_policy_decision',
+        "record_canonical_action_policy_decision",
         {
           ...identityArgs(identity),
           p_policy_decision: validDecision,
         },
         z.boolean(),
       );
-      if (!recorded) throw new Error('canonical_action_policy_binding_conflict');
+      if (!recorded) {
+        throw new Error("canonical_action_policy_binding_conflict");
+      }
     },
     async claim(identity): Promise<CanonicalActionExecutionClaim> {
       return await callRpc(
         client,
-        'claim_canonical_action_execution',
+        "claim_canonical_action_execution",
         identityArgs(identity),
         claimSchema,
       );
     },
-    async complete(identity, claimToken, receipt): Promise<CanonicalActionCompletion> {
+    async complete(
+      identity,
+      claimToken,
+      receipt,
+    ): Promise<CanonicalActionCompletion> {
       return await callRpc(
         client,
-        'complete_canonical_action_execution',
+        "complete_canonical_action_execution",
         {
           ...identityArgs(identity),
           p_claim_token: claimToken,
@@ -117,6 +134,8 @@ export function createSupabaseCanonicalActionExecutionStore(
   };
 }
 
-export function assertCanonicalActionReceipt(receipt: unknown): CanonicalActionReceipt {
+export function assertCanonicalActionReceipt(
+  receipt: unknown,
+): CanonicalActionReceipt {
   return canonicalActionReceiptSchema.parse(receipt);
 }

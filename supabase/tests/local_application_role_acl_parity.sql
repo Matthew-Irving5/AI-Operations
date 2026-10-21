@@ -44,8 +44,8 @@ WITH grants AS (
   LEFT JOIN pg_roles r ON r.oid=a.grantee
   WHERE n.nspname='public'
     AND (a.grantee=0 OR r.rolname IN ('anon','authenticated','service_role'))
-    -- These AI-18 routines are validated against their exact service_role
-    -- grants by rpc_security.sql; the captured staging fingerprint predates them.
+    -- Newer routines are validated against their exact grants by rpc_security.sql;
+    -- the captured staging fingerprint predates these routines.
     AND p.oid NOT IN (
       -- AI-19's transition RPC is separately checked in rpc_security.sql.
       to_regprocedure('public.transition_ai14_contract_handoff(uuid,uuid,public.handoff_status,boolean)'),
@@ -58,7 +58,15 @@ WITH grants AS (
       -- grants by rpc_security.sql; the captured staging fingerprint predates them.
       to_regprocedure('public.record_prompt_evaluation(uuid,jsonb)'),
       to_regprocedure('public.transition_prompt_version(uuid,integer,integer,uuid,text,text)'),
-      to_regprocedure('public.create_prompt_candidate(uuid,text,text,jsonb,text,integer,integer,jsonb)')
+      to_regprocedure('public.create_prompt_candidate(uuid,text,text,jsonb,text,integer,integer,jsonb)'),
+      -- AI-44 canonical action RPCs are checked against their exact grants.
+      to_regprocedure('public.lookup_canonical_action_execution(uuid,uuid,text,text)'),
+      to_regprocedure('public.record_canonical_action_policy_decision(uuid,uuid,text,text,jsonb)'),
+      to_regprocedure('public.claim_canonical_action_execution(uuid,uuid,text,text)'),
+      to_regprocedure('public.complete_canonical_action_execution(uuid,uuid,text,text,uuid,jsonb)'),
+      to_regprocedure('public.load_canonical_action_execution_request(uuid)'),
+      to_regprocedure('public.load_prompt_promotion_target(uuid,integer)'),
+      to_regprocedure('public.request_canonical_action_reversal(uuid,text)')
     )
 )
 SELECT is(
@@ -67,7 +75,7 @@ SELECT is(
   -- record_conversation_handoff_event(); rpc_security.sql enforces its exact
   -- anon/authenticated/service_role false/false/false matrix.
   '5b5f2cad2b94fac077c2a94e3b2fa014',
-  'local routine ACL tuples match staging plus AI15 execution RPCs'
+  'local routine ACL tuples match staging plus individually verified newer RPCs'
 );
 
 SELECT is(

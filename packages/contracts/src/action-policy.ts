@@ -99,13 +99,20 @@ export const canonicalActionReceiptSchema = z
       'standing_policy_not_authorized',
       'authority_channel_mismatch',
     ]),
-    kind: z.enum(['waiting_for_dependency', 'succeeded', 'partially_succeeded', 'failed']),
+    kind: z.enum([
+      'waiting_for_dependency',
+      'succeeded',
+      'partially_succeeded',
+      'failed',
+      'reversed',
+    ]),
     summary: z.string().trim().min(1).max(2000),
     resultReference: z.string().trim().min(1).max(512).nullable(),
     changedReferences: z.array(z.string().trim().min(1).max(512)),
     errorCode: z.string().trim().min(1).max(100).nullable(),
     redactedError: z.string().trim().min(1).max(2000).nullable(),
     reversalToken: z.string().trim().min(1).max(512).nullable(),
+    reversesReceiptId: actionUuidSchema.nullable(),
     idempotencyKey: actionIdempotencyKeySchema,
     requestFingerprint: actionFingerprintSchema,
     correlationId: actionUuidSchema,
@@ -133,6 +140,13 @@ export const canonicalActionReceiptSchema = z
         code: 'custom',
         message: 'failed_action_receipt_cannot_claim_changes',
         path: ['changedReferences'],
+      });
+    }
+    if (receipt.kind === 'reversed' && receipt.reversesReceiptId === null) {
+      context.addIssue({
+        code: 'custom',
+        message: 'reversed_receipt_must_link_an_original_receipt',
+        path: ['reversesReceiptId'],
       });
     }
   });
@@ -273,7 +287,7 @@ const actionDefinitions: Readonly<
     requiredPermissions: ['write', 'execute'],
     minimumRisk: 'high',
     allowsStandingPolicy: false,
-    requiresFreshWebAal2: false,
+    requiresFreshWebAal2: true,
     reversible: true,
   },
 };
@@ -285,6 +299,13 @@ const prohibitedActionTypes = new Set<CanonicalActionType>([
   'product_purchase_execute',
   'unsupported_professional_outreach',
 ]);
+
+export function canonicalActionPolicyDefinitionFor(
+  actionType: string,
+): CanonicalActionPolicyDefinition | null {
+  const parsed = canonicalActionTypeSchema.safeParse(actionType);
+  return parsed.success ? (actionDefinitions[parsed.data] ?? null) : null;
+}
 
 export const canonicalActionPolicyInputSchema = z
   .object({
@@ -454,6 +475,9 @@ export function evaluateCanonicalActionPolicy(
     if (input.approvalState !== 'approved') {
       return result(input, definition, 'approval_required', 'agent_proposal_requires_approval');
     }
+    if (input.channel === 'web_chat' && definition.requiresFreshWebAal2 && !input.freshWebAal2) {
+      return result(input, definition, 'reauth_required', 'web_action_requires_fresh_aal2');
+    }
     return result(input, definition, 'allow', 'approved_agent_proposal');
   }
 
@@ -526,6 +550,7 @@ export const canonicalActionAdapterOutcomeSchema = z.discriminatedUnion('kind', 
 export type CanonicalActionAdapterOutcome = z.infer<typeof canonicalActionAdapterOutcomeSchema>;
 
 export type CanonicalActionAdapterContext = Readonly<{
+  userId: string;
   actionId: string | null;
   executionRequestId: string;
   idempotencyKey: string;
@@ -538,6 +563,7 @@ export type CanonicalActionAdapterExecutionContext = CanonicalActionAdapterConte
 
 export const canonicalActionAdapterContextSchema = z
   .object({
+    userId: actionUuidSchema,
     actionId: actionUuidSchema.nullable(),
     executionRequestId: actionUuidSchema,
     idempotencyKey: actionIdempotencyKeySchema,
