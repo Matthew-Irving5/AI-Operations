@@ -54,7 +54,8 @@ export function MfaChallenge({
     | 'finance_configure'
     | 'finance_import'
     | 'github_sync'
-    | 'schedule_update';
+    | 'schedule_update'
+    | 'archive_read';
   onVerified?: (mfaGateId: string) => void;
 }) {
   const [message, setMessage] = useState('');

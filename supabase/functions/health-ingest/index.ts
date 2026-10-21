@@ -115,6 +115,13 @@ Deno.serve(async (request) => {
     size_bytes: archive.bytes,
     mime_type: "application/json",
     data_classification: "highly_sensitive",
+    encryption_metadata: {
+      provider: "cloudflare-r2",
+      mode: "server-side-managed",
+      algorithm: "AES-256-GCM",
+    },
+    provenance: { producer: "health-ingest", source: "apple_health" },
+    retention_class: "permanent",
     source: "apple_health",
     captured_at: new Date().toISOString(),
   }).select("id").single();

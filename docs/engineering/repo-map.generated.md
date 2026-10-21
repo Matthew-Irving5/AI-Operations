@@ -29,9 +29,9 @@
 - Delivery/QA/release: `infrastructure/scripts`, `.github/workflows`
 - Browser acceptance: `tests/e2e`, `tests/e2e-live`
 
-## Edge functions (40)
+## Edge functions (41)
 
-`agent-runtime-contracts`, `ai-execute`, `apple-bridge-actions`, `apple-bridge-device`, `apple-bridge-ingest`, `approval-decide`, `device-register`, `device-revoke`, `digital-plan-approve`, `digital-scan-create`, `feedback-submit`, `finance-control`, `finance-import`, `github-career-sync`, `google-connection-revoke`, `google-connection-sources`, `google-connection-sync`, `google-oauth-callback`, `google-oauth-start`, `google-sync`, `health-ingest`, `job-complete`, `job-worker`, `manager-list`, `mobile-snapshot-ingest`, `notification-dispatch`, `notification-test`, `onboarding-accept`, `onboarding-update`, `openai-webhook`, `personal-profile`, `schedule-update`, `scheduler-dispatch`, `worker-heartbeat`, `worker-pair`, `worker-poll`, `worker-submit-action-result`, `worker-submit-result`, `workflow-cancel`, `workflow-launch`
+`agent-runtime-contracts`, `ai-execute`, `apple-bridge-actions`, `apple-bridge-device`, `apple-bridge-ingest`, `approval-decide`, `device-register`, `device-revoke`, `digital-plan-approve`, `digital-scan-create`, `feedback-submit`, `finance-control`, `finance-import`, `github-career-sync`, `google-connection-revoke`, `google-connection-sources`, `google-connection-sync`, `google-oauth-callback`, `google-oauth-start`, `google-sync`, `health-ingest`, `job-complete`, `job-worker`, `manager-list`, `mobile-snapshot-ingest`, `notification-dispatch`, `notification-test`, `onboarding-accept`, `onboarding-update`, `openai-webhook`, `personal-profile`, `prompt-governance`, `schedule-update`, `scheduler-dispatch`, `worker-heartbeat`, `worker-pair`, `worker-poll`, `worker-submit-action-result`, `worker-submit-result`, `workflow-cancel`, `workflow-launch`
 
 ## Delivery workflows (13)
 
@@ -49,14 +49,20 @@
 - `.github/workflows/windows-worker-release.yml`
 - `.github/workflows/windows-worker.yml`
 
-## Infrastructure scripts (30)
+## Infrastructure scripts (37)
 
 - `infrastructure/scripts/acceptance-profile.ts`
+- `infrastructure/scripts/ai-native-skills.test.ts`
+- `infrastructure/scripts/edge-function-import-maps.test.ts`
 - `infrastructure/scripts/edge-function-inventory.ts`
 - `infrastructure/scripts/environment-drift.test.ts`
 - `infrastructure/scripts/environment-drift.ts`
 - `infrastructure/scripts/hosted-local-auth-guard.ts`
 - `infrastructure/scripts/live-acceptance-evidence.ts`
+- `infrastructure/scripts/live-auth-acceptance-harness.test.ts`
+- `infrastructure/scripts/live-auth-schedule-action.ts`
+- `infrastructure/scripts/local-auth-config.test.ts`
+- `infrastructure/scripts/local-auth-config.ts`
 - `infrastructure/scripts/local-qa-preflight.test.ts`
 - `infrastructure/scripts/local-qa-preflight.ts`
 - `infrastructure/scripts/pass-finish.ts`
@@ -77,6 +83,7 @@
 - `infrastructure/scripts/required-specs.ts`
 - `infrastructure/scripts/run-e2e.ts`
 - `infrastructure/scripts/run-live-e2e.ts`
+- `infrastructure/scripts/run-worker-preview-e2e.ts`
 - `infrastructure/scripts/test-agent-runtime-backfill.ts`
 - `infrastructure/scripts/verify-changed.test.ts`
 - `infrastructure/scripts/verify-changed.ts`

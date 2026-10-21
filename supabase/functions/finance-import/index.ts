@@ -343,6 +343,13 @@ Deno.serve(async (request) => {
       size_bytes: archive.bytes,
       mime_type: "text/csv",
       data_classification: "highly_sensitive",
+      encryption_metadata: {
+        provider: "cloudflare-r2",
+        mode: "server-side-managed",
+        algorithm: "AES-256-GCM",
+      },
+      provenance: { producer: "finance-import", request_id: requestId },
+      retention_class: "permanent",
       source: "finance_upload",
       captured_at: new Date().toISOString(),
     })
