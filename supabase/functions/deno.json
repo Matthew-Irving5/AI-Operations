@@ -2,6 +2,7 @@
   "nodeModulesDir": "auto",
   "imports": {
     "@ai-operations/contracts": "../../packages/contracts/src/index.ts",
+    "@ai-operations/manager-core": "../../packages/manager-core/src/procurement.ts",
     "@ai-operations/observability": "../../packages/observability/src/index.ts",
     "zod": "npm:zod@4.6.6"
   }

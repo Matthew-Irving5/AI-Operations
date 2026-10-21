@@ -101,7 +101,7 @@ describe('workflow launch route', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('retains the existing travel and procurement launch contract', async () => {
+  it('retains the existing travel launch contract', async () => {
     const input = {
       workflowCode: 'travel-on-demand-plan',
       managerCode: 'travel',
@@ -113,6 +113,70 @@ describe('workflow launch route', () => {
     };
     const response = await POST(sameOriginRequest(input));
     expect(response.status).toBe(201);
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+  });
+
+  it('requires an explicit bounded procurement request', async () => {
+    const input = {
+      workflowCode: 'procurement-on-demand-research',
+      managerCode: 'procurement',
+      hardCapUsd: 2,
+      modelCeiling: 'gpt-5.6-terra',
+      searchCeiling: 10,
+      idempotencyKey: '00000000-0000-4000-8000-000000000104',
+      request: {
+        item: 'Cordless drill',
+        purpose: 'Assemble furniture at home',
+        market: 'United Kingdom',
+        currency: 'GBP',
+        maxTotalCostMinor: 50000,
+        requiredBy: null,
+        requirements: [
+          { id: 'hard-1', label: 'Battery included', kind: 'hard' },
+          { id: 'preference-1', label: 'Low noise', kind: 'preference', weight: 50 },
+        ],
+        existingProducts: [],
+      },
+    };
+    const response = await POST(sameOriginRequest(input));
+    expect(response.status).toBe(201);
+    expect(JSON.parse(String(vi.mocked(globalThis.fetch).mock.calls[0]?.[1]?.body))).toEqual(input);
+
+    const invalid = await POST(
+      sameOriginRequest({ ...input, request: { ...input.request, requirements: [] } }),
+    );
+    expect(invalid.status).toBe(400);
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+  });
+
+  it('forwards a validated reference when revising a saved procurement request', async () => {
+    const input = {
+      workflowCode: 'procurement-on-demand-research',
+      managerCode: 'procurement',
+      hardCapUsd: 2,
+      modelCeiling: 'gpt-5.6-terra',
+      searchCeiling: 10,
+      idempotencyKey: '00000000-0000-4000-8000-000000000105',
+      revisionOfResearchRunId: '00000000-0000-4000-8000-000000000106',
+      request: {
+        item: 'Cordless drill',
+        purpose: 'Assemble furniture at home',
+        market: 'United Kingdom',
+        currency: 'GBP',
+        maxTotalCostMinor: 50000,
+        requiredBy: null,
+        requirements: [{ id: 'hard-1', label: 'Brushless motor', kind: 'hard' }],
+        existingProducts: [],
+      },
+    };
+    const response = await POST(sameOriginRequest(input));
+    expect(response.status).toBe(201);
+    expect(JSON.parse(String(vi.mocked(globalThis.fetch).mock.calls[0]?.[1]?.body))).toEqual(input);
+
+    const invalid = await POST(
+      sameOriginRequest({ ...input, revisionOfResearchRunId: 'not-a-uuid' }),
+    );
+    expect(invalid.status).toBe(400);
     expect(globalThis.fetch).toHaveBeenCalledOnce();
   });
 });

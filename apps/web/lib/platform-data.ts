@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { buildCareerEvidenceSnapshot, type CareerEvidenceSnapshot } from './career-summary';
+import { procurementDecisionRecordSchema } from '@ai-operations/contracts';
 import { createSupabaseServerClient } from './supabase-server';
 
 const reportSchema = z.object({
@@ -192,12 +193,16 @@ const careerEvidenceSchema = z.object({
 });
 const researchRunSchema = z.object({
   id: z.string().uuid(),
+  revises_research_run_id: z.string().uuid().nullable(),
   manager_code: z.string(),
+  model_ceiling: z.enum(['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol']),
   status: z.string(),
   hard_cap_minor: z.number(),
   search_limit: z.number(),
   searches_used: z.number(),
   created_at: z.string(),
+  request: z.unknown(),
+  decision_record: procurementDecisionRecordSchema.nullable(),
 });
 const watchSchema = z.object({
   id: z.string().uuid(),
@@ -662,7 +667,9 @@ export async function onDemandData(manager: 'travel' | 'procurement'): Promise<
   const [runs, watches] = await Promise.all([
     client
       .from('on_demand_research_runs')
-      .select('id,manager_code,status,hard_cap_minor,search_limit,searches_used,created_at')
+      .select(
+        'id,revises_research_run_id,manager_code,model_ceiling,status,hard_cap_minor,search_limit,searches_used,created_at,request,decision_record',
+      )
       .eq('manager_code', manager)
       .order('created_at', { ascending: false })
       .limit(25),
