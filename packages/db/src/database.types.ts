@@ -4899,47 +4899,56 @@ export type Database = {
         Row: {
           completed_at: string | null;
           created_at: string;
+          decision_record: Json | null;
           hard_cap_minor: number;
           id: string;
           manager_code: string;
           model_ceiling: string;
           report_id: string | null;
+          revises_research_run_id: string | null;
           request: NonNullable<Json>;
           reserved_minor: number;
           search_limit: number;
           searches_used: number;
           status: string;
           user_id: string;
+          workflow_run_id: string | null;
         };
         Insert: {
           completed_at?: string | null;
           created_at?: string;
+          decision_record?: Json | null;
           hard_cap_minor: number;
           id?: string;
           manager_code: string;
           model_ceiling: string;
           report_id?: string | null;
+          revises_research_run_id?: string | null;
           request: NonNullable<Json>;
           reserved_minor?: number;
           search_limit: number;
           searches_used?: number;
           status?: string;
           user_id: string;
+          workflow_run_id?: string | null;
         };
         Update: {
           completed_at?: string | null;
           created_at?: string;
+          decision_record?: Json | null;
           hard_cap_minor?: number;
           id?: string;
           manager_code?: string;
           model_ceiling?: string;
           report_id?: string | null;
+          revises_research_run_id?: string | null;
           request?: NonNullable<Json>;
           reserved_minor?: number;
           search_limit?: number;
           searches_used?: number;
           status?: string;
           user_id?: string;
+          workflow_run_id?: string | null;
         };
         Relationships: [
           {
@@ -4947,6 +4956,27 @@ export type Database = {
             columns: ['report_id'];
             isOneToOne: false;
             referencedRelation: 'reports';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'on_demand_research_runs_workflow_run_id_fkey';
+            columns: ['workflow_run_id'];
+            isOneToOne: true;
+            referencedRelation: 'workflow_runs';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'on_demand_research_runs_workflow_run_id_fkey';
+            columns: ['workflow_run_id'];
+            isOneToOne: true;
+            referencedRelation: 'workflow_runs';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'on_demand_research_runs_revises_research_run_id_fkey';
+            columns: ['revises_research_run_id'];
+            isOneToOne: false;
+            referencedRelation: 'on_demand_research_runs';
             referencedColumns: ['id'];
           },
           {
@@ -5241,10 +5271,13 @@ export type Database = {
       };
       procurement_recommendations: {
         Row: {
+          candidate_id: string | null;
           citations: NonNullable<Json>;
           compliance_passed: boolean;
           created_at: string;
           currency: string | null;
+          decision_rank: number | null;
+          details: NonNullable<Json>;
           id: string;
           recommendation_kind: string;
           research_run_id: string;
@@ -5256,10 +5289,13 @@ export type Database = {
           warranty_summary: string | null;
         };
         Insert: {
+          candidate_id?: string | null;
           citations: NonNullable<Json>;
           compliance_passed: boolean;
           created_at?: string;
           currency?: string | null;
+          decision_rank?: number | null;
+          details?: NonNullable<Json>;
           id?: string;
           recommendation_kind: string;
           research_run_id: string;
@@ -5271,10 +5307,13 @@ export type Database = {
           warranty_summary?: string | null;
         };
         Update: {
+          candidate_id?: string | null;
           citations?: NonNullable<Json>;
           compliance_passed?: boolean;
           created_at?: string;
           currency?: string | null;
+          decision_rank?: number | null;
+          details?: NonNullable<Json>;
           id?: string;
           recommendation_kind?: string;
           research_run_id?: string;
@@ -7170,6 +7209,19 @@ export type Database = {
           id: string;
           version: number;
         }[];
+      create_procurement_revision_request: {
+        Args: {
+          p_hard_cap: number;
+          p_idempotency_key: string;
+          p_manager_code: string;
+          p_model_ceiling: string;
+          p_request: Json;
+          p_revises_research_run_id: string;
+          p_search_ceiling: number;
+          p_user_id: string;
+          p_workflow_id: string;
+        };
+        Returns: string;
       };
       create_worker_device_from_mfa_gate: {
         Args: {
