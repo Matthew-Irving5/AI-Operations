@@ -29,6 +29,14 @@ export type GoogleSourceResources = {
   selectionSaved: boolean;
 };
 
+export type GoogleDrivePickerConfiguration = Readonly<{
+  oauthClientId: string;
+  apiKey: string;
+  cloudProjectNumber: string;
+}>;
+
+export const GOOGLE_DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+
 export type GoogleSourceDiscoveryDiagnostic = Readonly<{
   code: string;
   stage: string | null;
@@ -143,6 +151,47 @@ export function parseGoogleSourceDiscoveryDiagnostic(
       128,
     ),
   };
+}
+
+export function parseGoogleDrivePickerConfiguration(
+  value: unknown,
+): GoogleDrivePickerConfiguration | null {
+  const root = recordValue(value);
+  const picker = recordValue(root?.picker);
+  const oauthClientId = picker ? boundedDiagnosticString(picker.oauthClientId, 256) : null;
+  const apiKey = picker ? boundedDiagnosticString(picker.apiKey, 256) : null;
+  const cloudProjectNumber = picker ? boundedDiagnosticString(picker.cloudProjectNumber, 32) : null;
+  if (!oauthClientId || !apiKey || !cloudProjectNumber) return null;
+  return { oauthClientId, apiKey, cloudProjectNumber };
+}
+
+export function hasOnlyGoogleDriveFileScope(scope: unknown): boolean {
+  return scope === GOOGLE_DRIVE_FILE_SCOPE;
+}
+
+export function parseGooglePickerFiles(
+  value: unknown,
+  pickedAction: string,
+): GoogleDriveResource[] {
+  const root = recordValue(value);
+  if (root?.action !== pickedAction || !Array.isArray(root.docs)) return [];
+  const seen = new Set<string>();
+  const files: GoogleDriveResource[] = [];
+  for (const item of root.docs) {
+    const row = recordValue(item);
+    const id = row ? boundedDiagnosticString(row.id, 320) : null;
+    const name = row ? boundedDiagnosticString(row.name, 1024) : null;
+    const mimeType = row ? boundedDiagnosticString(row.mimeType, 256) : null;
+    if (!id || !name || !mimeType || seen.has(id)) continue;
+    seen.add(id);
+    files.push({
+      id,
+      name,
+      mimeType,
+      modifiedTime: null,
+    });
+  }
+  return files;
 }
 
 export function googleFreshnessLabel(
@@ -267,7 +316,7 @@ export const GOOGLE_SCOPE_DETAILS: Readonly<
 };
 
 export const GOOGLE_DRIVE_EMPTY_STATE =
-  'Your Google connection is healthy, but no Drive files have been shared with or selected for AI Operations yet. File selection depends on the Drive Picker, which is not available yet. Keep the limited Drive permission; you do not need to reconnect or grant broader access just because this list is empty.';
+  'Your Google connection is healthy, but no Drive files are selected yet. Choose individual files from Google Drive with the limited Drive permission; you do not need to reconnect or grant broader access.';
 
 export function googleScopeDetail(scope: string) {
   return (

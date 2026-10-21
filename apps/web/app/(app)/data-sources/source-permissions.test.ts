@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
   GOOGLE_DRIVE_EMPTY_STATE,
+  GOOGLE_DRIVE_FILE_SCOPE,
   actionMessage,
   cadenceLabel,
   consumeSourceRevokeResume,
   googleFreshnessLabel,
   freshnessLabel,
   googleScopeDetail,
+  hasOnlyGoogleDriveFileScope,
   latestFreshness,
+  parseGoogleDrivePickerConfiguration,
+  parseGooglePickerFiles,
   parseGoogleSourceResources,
   parseGoogleSourceDiscoveryDiagnostic,
 } from './source-permissions';
@@ -36,8 +40,61 @@ describe('source permission explanations', () => {
 
   it('explains an empty Drive list without implying a broken connection or broader access need', () => {
     expect(GOOGLE_DRIVE_EMPTY_STATE).toMatch(/connection is healthy/i);
-    expect(GOOGLE_DRIVE_EMPTY_STATE).toMatch(/Drive Picker/i);
+    expect(GOOGLE_DRIVE_EMPTY_STATE).toMatch(/Choose individual files/i);
     expect(GOOGLE_DRIVE_EMPTY_STATE).toMatch(/do not need to reconnect or grant broader access/i);
+  });
+
+  it('accepts only bounded public Picker configuration and rejects missing staging config', () => {
+    expect(
+      parseGoogleDrivePickerConfiguration({
+        picker: {
+          oauthClientId: 'web-client.apps.googleusercontent.com',
+          apiKey: 'restricted-public-key',
+          cloudProjectNumber: '1234567890',
+        },
+      }),
+    ).toEqual({
+      oauthClientId: 'web-client.apps.googleusercontent.com',
+      apiKey: 'restricted-public-key',
+      cloudProjectNumber: '1234567890',
+    });
+    expect(
+      parseGoogleDrivePickerConfiguration({ code: 'google_picker_not_configured' }),
+    ).toBeNull();
+    expect(
+      parseGoogleDrivePickerConfiguration({
+        picker: {
+          oauthClientId: 'client',
+          apiKey: 'key\nnot-safe',
+          cloudProjectNumber: '123',
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it('accepts only the Drive-file-only GIS token and valid Picker-selected file metadata', () => {
+    expect(hasOnlyGoogleDriveFileScope(GOOGLE_DRIVE_FILE_SCOPE)).toBe(true);
+    expect(
+      hasOnlyGoogleDriveFileScope(
+        `${GOOGLE_DRIVE_FILE_SCOPE} https://www.googleapis.com/auth/calendar.events.owned`,
+      ),
+    ).toBe(false);
+    expect(
+      parseGooglePickerFiles(
+        {
+          action: 'picked',
+          docs: [
+            { id: 'file-1', name: 'Profile', mimeType: 'text/plain' },
+            { id: 'file-1', name: 'Duplicate', mimeType: 'text/plain' },
+            { id: 'file-2', name: 'Invalid', mimeType: '' },
+          ],
+        },
+        'picked',
+      ),
+    ).toEqual([{ id: 'file-1', name: 'Profile', mimeType: 'text/plain', modifiedTime: null }]);
+    expect(
+      parseGooglePickerFiles({ action: 'cancel', docs: [{ id: 'file-1' }] }, 'picked'),
+    ).toEqual([]);
   });
 
   it('keeps Gmail send scoped to communication mailboxes', () => {

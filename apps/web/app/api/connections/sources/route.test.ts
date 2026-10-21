@@ -48,6 +48,31 @@ describe('Google connection sources route', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
+  it('forwards only the supported Picker configuration operation without caching', async () => {
+    const response = await GET(
+      new Request(
+        `https://operations.example/api/connections/sources?connectionId=${connectionId}&operation=picker_config`,
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    const upstream = vi.mocked(globalThis.fetch).mock.calls.at(0)?.[0];
+    expect(upstream).toBeDefined();
+    expect(new URL(String(upstream)).searchParams.get('operation')).toBe('picker_config');
+  });
+
+  it('rejects unknown source read operations before calling the Edge Function', async () => {
+    const response = await GET(
+      new Request(
+        `https://operations.example/api/connections/sources?connectionId=${connectionId}&operation=all_drive_files`,
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
   it('retains the same-origin guard for POST', async () => {
     const response = await POST(
       new Request('https://operations.example/api/connections/sources', {

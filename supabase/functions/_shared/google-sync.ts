@@ -90,6 +90,7 @@ type DriveFile = {
   mimeType?: string;
   modifiedTime?: string;
   md5Checksum?: string;
+  trashed?: boolean;
 };
 type GmailMessage = { id: string; threadId?: string };
 type GmailHistory = {
@@ -118,7 +119,6 @@ type DrivePage = {
   nextPageTokenForItems?: string;
   newStartPageToken?: string;
   changes?: Array<{
-    file?: DriveFile & { trashed?: boolean };
     fileId?: string;
     removed?: boolean;
   }>;
@@ -142,6 +142,68 @@ export type GoogleSourceDiscovery = {
 };
 
 const MAX_PROVIDER_PAGES = 100;
+
+const DRIVE_FILE_FIELDS = "id,name,mimeType,modifiedTime,md5Checksum,trashed";
+
+export type SelectedDriveChange = Readonly<{
+  fileId: string;
+  removed: boolean;
+}>;
+
+export function selectedDriveChanges(
+  changes: readonly { fileId?: string; removed?: boolean }[],
+  selectedFileIds: ReadonlySet<string>,
+): SelectedDriveChange[] {
+  return changes.flatMap((change) => {
+    const fileId = change.fileId;
+    return fileId && selectedFileIds.has(fileId)
+      ? [{ fileId, removed: change.removed === true }]
+      : [];
+  });
+}
+
+export async function fetchSelectedDriveFile(
+  fileId: string,
+  headers: HeadersInit,
+  fetchImpl: typeof fetch = fetch,
+): Promise<DriveFile> {
+  const params = new URLSearchParams({ fields: DRIVE_FILE_FIELDS });
+  const response = await fetchImpl(
+    `https://www.googleapis.com/drive/v3/files/${
+      encodeURIComponent(fileId)
+    }?${params}`,
+    { headers },
+  );
+  const payload = await readJson(response) as DriveFile | null;
+  if (!response.ok || !payload || payload.id !== fileId) {
+    throw new GoogleSyncError(
+      "provider_request_failed",
+      response.status,
+      "drive_file",
+      providerErrorCode(payload),
+    );
+  }
+  return payload;
+}
+
+export async function fetchSelectedDriveFiles(
+  fileIds: Iterable<string>,
+  headers: HeadersInit,
+  fetchImpl: typeof fetch = fetch,
+): Promise<GoogleSourceDiscovery["driveFiles"]> {
+  const files: GoogleSourceDiscovery["driveFiles"] = [];
+  for (const fileId of fileIds) {
+    const file = await fetchSelectedDriveFile(fileId, headers, fetchImpl);
+    if (!file.name || !file.mimeType) continue;
+    files.push({
+      id: file.id,
+      name: file.name,
+      mimeType: file.mimeType,
+      modifiedTime: file.modifiedTime ?? null,
+    });
+  }
+  return files;
+}
 
 function selectedIds(configuration: Record<string, unknown>, key: string) {
   const value = configuration[key];
@@ -395,6 +457,10 @@ export async function discoverGoogleSources(
     fetchImpl,
   );
   const headers = { authorization: `Bearer ${accessToken}` };
+  const configuredFiles = selectedIds(
+    result.data.configuration ?? {},
+    "selected_drive_file_ids",
+  );
   const calendars: GoogleSourceDiscovery["calendars"] = [];
   let calendarPageToken: string | undefined;
   let calendarPageCount = 0;
@@ -431,44 +497,11 @@ export async function discoverGoogleSources(
       throw new GoogleSyncError("provider_page_limit");
     }
   } while (calendarPageToken);
-  const driveFiles: GoogleSourceDiscovery["driveFiles"] = [];
-  let drivePageToken: string | undefined;
-  let drivePageCount = 0;
-  do {
-    const params = new URLSearchParams({
-      pageSize: "100",
-      q: "trashed = false",
-      fields: "files(id,name,mimeType,modifiedTime),nextPageToken",
-    });
-    if (drivePageToken) params.set("pageToken", drivePageToken);
-    const response = await fetchImpl(
-      `https://www.googleapis.com/drive/v3/files?${params}`,
-      { headers },
-    );
-    const payload = await readJson(response) as DrivePage | null;
-    if (!response.ok || !payload) {
-      throw new GoogleSyncError(
-        "provider_request_failed",
-        response.status,
-        "drive_files",
-        providerErrorCode(payload),
-      );
-    }
-    for (const file of payload.files ?? []) {
-      if (file.id && file.name && file.mimeType) {
-        driveFiles.push({
-          id: file.id,
-          name: file.name,
-          mimeType: file.mimeType,
-          modifiedTime: file.modifiedTime ?? null,
-        });
-      }
-    }
-    drivePageToken = payload.nextPageToken;
-    if (++drivePageCount > MAX_PROVIDER_PAGES) {
-      throw new GoogleSyncError("provider_page_limit");
-    }
-  } while (drivePageToken);
+  const driveFiles = await fetchSelectedDriveFiles(
+    configuredFiles.ids,
+    headers,
+    fetchImpl,
+  );
   return { calendars, driveFiles };
 }
 
@@ -990,13 +1023,12 @@ export async function syncGoogleConnection({
     let driveStatus = 200;
     let count = 0;
     const persistFiles = async (
-      files: Array<DriveFile & { trashed?: boolean }>,
+      files: DriveFile[],
     ) => {
       for (const file of files) {
         if (!file.id) continue;
-        const selected = !configuredFiles.enabled ||
-          configuredFiles.ids.has(file.id);
-        if (configuredFiles.enabled && !selected) continue;
+        const selected = configuredFiles.ids.has(file.id);
+        if (!selected) continue;
         if (!file.name || !file.mimeType) continue;
         const stored = await database.from("google_drive_files").upsert({
           user_id: connection.user_id,
@@ -1037,33 +1069,11 @@ export async function syncGoogleConnection({
       if (!tokenResponse.ok || !tokenPayload?.startPageToken) {
         throw new GoogleSyncError("provider_request_failed");
       }
-      const files: DriveFile[] = [];
-      let pageToken: string | undefined;
-      let pageCount = 0;
-      do {
-        const params = new URLSearchParams({
-          pageSize: "100",
-          fields:
-            "files(id,name,mimeType,modifiedTime,md5Checksum,trashed),nextPageToken",
-        });
-        if (pageToken) params.set("pageToken", pageToken);
-        const response = await fetchImpl(
-          `https://www.googleapis.com/drive/v3/files?${params}`,
-          { headers },
-        );
-        const payload = await readJson(response) as DrivePage | null;
-        driveStatus = response.status;
-        if (!response.ok || !payload) {
-          throw new GoogleSyncError("provider_request_failed");
-        }
-        files.push(...(payload.files ?? []));
-        pageToken = payload.nextPageToken;
-        pageCount += 1;
-        if (pageCount > MAX_PROVIDER_PAGES) {
-          throw new GoogleSyncError("provider_page_limit");
-        }
-      } while (pageToken);
-      await persistFiles(files);
+      for (const fileId of configuredFiles.ids) {
+        const file = await fetchSelectedDriveFile(fileId, headers, fetchImpl);
+        driveStatus = 200;
+        await persistFiles([file]);
+      }
       driveCursor = tokenPayload.startPageToken;
     }
     let changesPageToken = driveCursor ?? "";
@@ -1074,9 +1084,9 @@ export async function syncGoogleConnection({
         pageToken: changesPageToken,
         pageSize: "100",
         includeRemoved: "true",
-        fields:
-          "changes(file(id,name,mimeType,modifiedTime,md5Checksum,trashed),fileId,removed),nextPageToken,newStartPageToken",
+        fields: "changes(fileId,removed),nextPageToken,newStartPageToken",
       });
+      if (configuredFiles.ids.size === 0) break;
       const response = await fetchImpl(
         `https://www.googleapis.com/drive/v3/changes?${params}`,
         { headers },
@@ -1086,11 +1096,21 @@ export async function syncGoogleConnection({
       if (!response.ok || !payload) {
         throw new GoogleSyncError("provider_request_failed");
       }
-      for (const change of payload.changes ?? []) {
-        if (change.removed || !change.file) {
-          if (change.fileId) await markRemoved(change.fileId);
+      for (
+        const change of selectedDriveChanges(
+          payload.changes ?? [],
+          configuredFiles.ids,
+        )
+      ) {
+        if (change.removed) {
+          await markRemoved(change.fileId);
         } else {
-          await persistFiles([change.file]);
+          const file = await fetchSelectedDriveFile(
+            change.fileId,
+            headers,
+            fetchImpl,
+          );
+          await persistFiles([file]);
         }
       }
       changesPageToken = payload.nextPageToken ?? "";
