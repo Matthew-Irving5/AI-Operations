@@ -206,7 +206,7 @@ select is(
    from public.on_demand_research_runs revised
    join public.workflow_runs run on run.id = revised.workflow_run_id
    where run.idempotency_key = 'ai39-procurement-revision-01'),
-  (select id::text from public.on_demand_research_runs previous
+  (select previous.id::text from public.on_demand_research_runs previous
    join public.workflow_runs run on run.id = previous.workflow_run_id
    where run.idempotency_key = 'ai39-procurement-decision-commit'),
   'the revised run points to the immutable prior request'
