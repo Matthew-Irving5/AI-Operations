@@ -3,8 +3,8 @@ import json
 import tomllib
 from pathlib import Path
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from ai_operations_worker.client import ControlPlaneClient, WorkerConfiguration
 from ai_operations_worker.config import WorkerEndpoint
