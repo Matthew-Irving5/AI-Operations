@@ -1,4 +1,10 @@
 import { authenticateWorker, workerService } from "../_shared/worker-auth.ts";
+import {
+  assessWorkerCompatibility,
+  MINIMUM_WORKER_VERSION,
+  WORKER_CAPABILITIES,
+  workerHeartbeatSchema,
+} from "../_shared/worker-protocol.ts";
 
 const json = (
   body: unknown,
@@ -25,19 +31,27 @@ Deno.serve(async (request) => {
       requestId,
     );
   }
-  const body = await request.json().catch(() => null) as {
-    deviceId?: string;
-    workerVersion?: string;
-    status?: Record<string, unknown>;
-  } | null;
-  if (!body?.deviceId) {
+  const parsed = workerHeartbeatSchema.safeParse(
+    await request.json().catch(() => null),
+  );
+  if (!parsed.success) {
     return json(
-      { code: "device_required", stage: "heartbeat" },
+      {
+        code: "worker_protocol_invalid",
+        stage: "heartbeat",
+        expectedVersion: MINIMUM_WORKER_VERSION,
+        expectedCapabilities: [WORKER_CAPABILITIES.inventory],
+      },
       400,
       requestId,
     );
   }
-  const auth = await authenticateWorker(request, body.deviceId);
+  const report = parsed.data;
+  const compatibility = assessWorkerCompatibility(
+    report.workerVersion,
+    report.capabilities,
+  );
+  const auth = await authenticateWorker(request, report.deviceId);
   if ("code" in auth) {
     return json(
       { code: auth.code, stage: "heartbeat" },
@@ -62,8 +76,12 @@ Deno.serve(async (request) => {
     "worker_heartbeats",
   ).insert({
     device_id: auth.device.id,
-    worker_version: body.workerVersion ?? null,
-    status: body.status ?? {},
+    worker_version: report.workerVersion ?? null,
+    status: {
+      ...report.status,
+      capabilities: report.capabilities,
+      compatibility,
+    },
   });
   if (heartbeatError) {
     return json(
@@ -79,7 +97,7 @@ Deno.serve(async (request) => {
   return queuedError
     ? json({ code: "scan_queue_failed", stage: "heartbeat" }, 500, requestId)
     : json(
-      { ok: true, lastHeartbeatAt: now, stage: "heartbeat" },
+      { ok: true, lastHeartbeatAt: now, compatibility, stage: "heartbeat" },
       200,
       requestId,
     );

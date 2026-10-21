@@ -1,4 +1,10 @@
 import { authenticateWorker, workerService } from "../_shared/worker-auth.ts";
+import {
+  assessWorkerCompatibility,
+  MINIMUM_WORKER_VERSION,
+  WORKER_CAPABILITIES,
+  workerPollSchema,
+} from "../_shared/worker-protocol.ts";
 
 const json = (
   body: unknown,
@@ -21,17 +27,45 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") {
     return json({ code: "method_not_allowed", stage: "poll" }, 405, requestId);
   }
-  const body = await request.json().catch(() => null) as
-    | { deviceId?: string }
-    | null;
-  if (!body?.deviceId) {
-    return json({ code: "device_required", stage: "poll" }, 400, requestId);
+  const parsed = workerPollSchema.safeParse(
+    await request.json().catch(() => null),
+  );
+  if (!parsed.success) {
+    return json(
+      {
+        code: "worker_protocol_invalid",
+        stage: "worker_compatibility",
+        expectedVersion: MINIMUM_WORKER_VERSION,
+        expectedCapabilities: [WORKER_CAPABILITIES.inventory],
+      },
+      400,
+      requestId,
+    );
   }
-  const auth = await authenticateWorker(request, body.deviceId);
+  const report = parsed.data;
+  const auth = await authenticateWorker(request, report.deviceId);
   if ("code" in auth) {
     return json(
       { code: auth.code, stage: "poll" },
       auth.code === "device_revoked" ? 403 : 401,
+      requestId,
+    );
+  }
+  const compatibility = assessWorkerCompatibility(
+    report.workerVersion,
+    report.capabilities,
+  );
+  if (!compatibility.compatible) {
+    return json(
+      {
+        code: compatibility.code,
+        stage: "worker_compatibility",
+        expectedVersion: compatibility.minimumVersion,
+        actualVersion: compatibility.actualVersion,
+        expectedCapabilities: compatibility.requiredCapabilities,
+        actualCapabilities: compatibility.actualCapabilities,
+      },
+      426,
       requestId,
     );
   }
@@ -57,12 +91,16 @@ Deno.serve(async (request) => {
       );
     }
   }
-  const manifest = await workerService.from("worker_action_manifests").select(
-    "id,payload,signature_b64,expires_at",
-  ).eq("device_id", auth.device.id).is("consumed_at", null).gt(
-    "expires_at",
-    new Date().toISOString(),
-  ).order("created_at").limit(1).maybeSingle();
+  const manifest = report.capabilities.includes(
+      WORKER_CAPABILITIES.signedFileActions,
+    )
+    ? await workerService.from("worker_action_manifests").select(
+      "id,payload,signature_b64,expires_at",
+    ).eq("device_id", auth.device.id).is("consumed_at", null).gt(
+      "expires_at",
+      new Date().toISOString(),
+    ).order("created_at").limit(1).maybeSingle()
+    : { data: null, error: null };
   return manifest.error
     ? json({ code: "poll_failed", stage: "poll" }, 500, requestId)
     : json(
