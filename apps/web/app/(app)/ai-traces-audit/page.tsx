@@ -1,7 +1,12 @@
 import { tracesData } from '../../../lib/platform-data';
+import { createSupabaseServerClient } from '../../../lib/supabase-server';
+import { ArchivedPayload } from './archived-payload';
 
 export default async function TracesPage() {
   const { data: traces, error } = await tracesData();
+  const supabase = await createSupabaseServerClient();
+  const { data: factors } = await supabase.auth.mfa.listFactors();
+  const factorId = factors?.totp?.find((factor) => factor.status === 'verified')?.id;
   return (
     <>
       <h1>AI Traces &amp; Audit</h1>
@@ -55,7 +60,12 @@ export default async function TracesPage() {
                   {trace.build_version ? ` · ${trace.build_version}` : ''}
                 </p>
               ) : null}
-              {trace.archive_reference ? <p>Archived payload metadata is available.</p> : null}
+              {trace.archive_reference ? (
+                <ArchivedPayload
+                  objectKey={trace.archive_reference.objectKey}
+                  {...(factorId ? { factorId } : {})}
+                />
+              ) : null}
             </article>
           ))}
         </section>

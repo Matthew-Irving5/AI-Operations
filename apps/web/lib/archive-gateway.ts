@@ -41,3 +41,40 @@ export async function sha256Hex(bytes: Uint8Array): Promise<string> {
     byte.toString(16).padStart(2, '0'),
   ).join('');
 }
+
+export type ArchiveReadback = Readonly<{
+  sizeBytes: number;
+  contentType: string | undefined;
+  sha256: string | undefined;
+  bytes: Uint8Array;
+}>;
+
+export async function verifyArchiveReadback(
+  expected: Readonly<{ sizeBytes: number; contentType: string; sha256: string }>,
+  actual: ArchiveReadback,
+): Promise<Readonly<{ actualSha256: string; mismatches: readonly string[] }>> {
+  const actualSha256 = await sha256Hex(actual.bytes);
+  const mismatches: string[] = [];
+  if (actual.sizeBytes !== expected.sizeBytes) {
+    mismatches.push(`metadata size expected ${expected.sizeBytes} bytes, got ${actual.sizeBytes}`);
+  }
+  if (actual.bytes.byteLength !== expected.sizeBytes) {
+    mismatches.push(
+      `body size expected ${expected.sizeBytes} bytes, got ${actual.bytes.byteLength}`,
+    );
+  }
+  if (actualSha256 !== expected.sha256) {
+    mismatches.push(`body SHA-256 expected ${expected.sha256}, got ${actualSha256}`);
+  }
+  if (actual.sha256 !== expected.sha256) {
+    mismatches.push(
+      `metadata SHA-256 expected ${expected.sha256}, got ${actual.sha256 ?? 'missing'}`,
+    );
+  }
+  if (actual.contentType !== expected.contentType) {
+    mismatches.push(
+      `MIME type expected ${expected.contentType}, got ${actual.contentType ?? 'missing'}`,
+    );
+  }
+  return { actualSha256, mismatches };
+}
