@@ -1,5 +1,5 @@
 begin;
-select plan(13);
+select plan(14);
 
 select is(
   (select schema_version from public.prompt_versions where evaluation_status = 'approved' and version = 2 limit 1),
@@ -97,6 +97,12 @@ select ok(
 select ok(
   not has_table_privilege('service_role', 'public.prompt_versions', 'INSERT'),
   'service role cannot insert prompt versions directly'
+);
+select ok(
+  not has_table_privilege('anon', 'public.prompt_version_transitions', 'SELECT')
+    and not has_table_privilege('authenticated', 'public.prompt_version_transitions', 'SELECT')
+    and not has_table_privilege('service_role', 'public.prompt_version_transitions', 'SELECT'),
+  'prompt transition history remains unreadable through direct data API roles'
 );
 select ok(
   has_function_privilege('service_role', 'public.create_prompt_candidate(uuid,text,text,jsonb,text,integer,integer,jsonb)', 'EXECUTE'),

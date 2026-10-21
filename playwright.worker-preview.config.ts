@@ -66,6 +66,7 @@ export default defineConfig({
     command: workerCommand,
     url: `${baseURL}/login`,
     reuseExistingServer: false,
+    timeout: 180_000,
     env: webServerEnv,
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],

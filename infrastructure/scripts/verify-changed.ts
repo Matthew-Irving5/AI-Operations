@@ -193,7 +193,9 @@ export function buildImpactPlan(files: string[]): ImpactPlan {
       file.startsWith('supabase/tests/') ||
       file.startsWith('packages/db/'),
   );
-  const edge = normalized.some((file) => file.startsWith('supabase/functions/'));
+  const edge = normalized.some(
+    (file) => file.startsWith('supabase/functions/') || file === 'supabase/config.toml',
+  );
   const worker = normalized.some((file) => file.startsWith('apps/windows-worker/'));
   const workerPreview = normalized.some(
     (file) =>

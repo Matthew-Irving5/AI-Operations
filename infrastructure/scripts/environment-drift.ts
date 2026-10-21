@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import ts from 'typescript';
 import { z } from 'zod';
@@ -178,6 +178,28 @@ function databasePublicType(sourceText: string, metadata: ColumnTypeMetadata[]):
   const property = (node: ts.TypeLiteralNode, name: string) =>
     node.members.filter(ts.isPropertySignature).find((member) => propertyName(member) === name);
 
+  const referencedSetofTable = (node: ts.TypeNode): string | undefined => {
+    if (!ts.isArrayTypeNode(node)) return undefined;
+    let current: ts.TypeNode = node.elementType;
+    const keys: string[] = [];
+    while (ts.isIndexedAccessTypeNode(current)) {
+      const index = current.indexType;
+      if (!ts.isLiteralTypeNode(index) || !ts.isStringLiteral(index.literal)) return undefined;
+      keys.unshift(index.literal.text);
+      current = current.objectType;
+    }
+    if (
+      !ts.isTypeReferenceNode(current) ||
+      current.typeName.getText(source) !== 'Database' ||
+      keys.length !== 4 ||
+      keys[0] !== 'public' ||
+      keys[1] !== 'Tables' ||
+      keys[3] !== 'Row'
+    )
+      return undefined;
+    return keys[2];
+  };
+
   const serializeFunction = (node: ts.TypeNode, path: string[]): string => {
     const overloads = ts.isUnionTypeNode(node) ? node.types : [node];
     const signatures = overloads.flatMap((overload) => {
@@ -187,8 +209,27 @@ function databasePublicType(sourceText: string, metadata: ColumnTypeMetadata[]):
       const options = property(overload, 'SetofOptions')?.type;
       if (!args || !returns) return [serialize(overload, path)];
       const argsVariants = ts.isUnionTypeNode(args) ? args.types : [args];
-      const returnedTable =
+      const configuredSetofTable =
         options && ts.isTypeLiteralNode(options) ? setofTable(overload) : undefined;
+      const referencedTable = referencedSetofTable(returns);
+      const returnedTable = configuredSetofTable ?? referencedTable;
+      const returnTable = returnedTable
+        ? property(tablesProperty.type, returnedTable)?.type
+        : undefined;
+      const tableRow =
+        returnTable && ts.isTypeLiteralNode(returnTable)
+          ? property(returnTable, 'Row')?.type
+          : undefined;
+      const sameTableRows =
+        ts.isArrayTypeNode(returns) &&
+        Boolean(
+          tableRow &&
+            (referencedTable === returnedTable ||
+              (configuredSetofTable === returnedTable &&
+                ts.isTypeLiteralNode(returns.elementType) &&
+                serialize(returns.elementType, [...path, 'Returns'], returnedTable) ===
+                  serialize(tableRow, ['Tables', returnedTable, 'Row']))),
+        );
       return argsVariants.map((argsVariant) => {
         const printedArgs = print(argsVariant).replace(/\s+/g, ' ').trim();
         const serializedArgs =
@@ -196,11 +237,11 @@ function databasePublicType(sourceText: string, metadata: ColumnTypeMetadata[]):
           (printedArgs === 'never' || printedArgs === 'Record<PropertyKey, never>')
             ? '__canonical_no_args__'
             : serialize(argsVariant, [...path, 'Args']);
-        return `{Args:${serializedArgs};Returns:${serialize(
-          returns,
-          [...path, 'Returns'],
-          returnedTable,
-        )};SetofOptions:${options ? serialize(options, [...path, 'SetofOptions']) : 'none'}}`;
+        return `{Args:${serializedArgs};Returns:${
+          sameTableRows
+            ? `__table_rows:${returnedTable}__`
+            : serialize(returns, [...path, 'Returns'], returnedTable)
+        };SetofOptions:${sameTableRows ? `__table_rows:${returnedTable}__` : options ? serialize(options, [...path, 'SetofOptions']) : 'none'}}`;
       });
     });
     return `Overloads[${signatures.sort().join('|')}]`;
@@ -497,6 +538,19 @@ export function migrationVersionFromFilename(fileName: string): string {
   return match[1];
 }
 
+export function migrationInventoryFromFilenames(
+  fileNames: string[],
+): { fileName: string; version: string }[] {
+  const migrations = fileNames
+    .filter((fileName) => fileName.endsWith('.sql'))
+    .map((fileName) => ({ fileName, version: migrationVersionFromFilename(fileName) }))
+    .sort((left, right) => left.version.localeCompare(right.version));
+  const versions = migrations.map(({ version }) => version);
+  if (new Set(versions).size !== versions.length)
+    throw new Error('Duplicate Supabase migration versions exist in the repository.');
+  return migrations;
+}
+
 export function validateConfig(
   name: EnvironmentName,
   actual: {
@@ -745,15 +799,194 @@ function generateTypes(projectRef: string, token: string): string {
   }
 }
 
+function generateLocalTypes(): string {
+  try {
+    const generated = execFileSync(
+      'corepack',
+      ['pnpm', 'exec', 'supabase', 'gen', 'types', 'typescript', '--local', '--schema', 'public'],
+      {
+        encoding: 'utf8',
+        shell: process.platform === 'win32',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    ).trimEnd();
+    return execFileSync('corepack', ['pnpm', 'exec', 'prettier', '--parser', 'typescript'], {
+      encoding: 'utf8',
+      input: `${generated}\n`,
+      shell: process.platform === 'win32',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trimEnd();
+  } catch {
+    throw new Error('Could not generate database types from the local Supabase schema.');
+  }
+}
+
+export function safeLocalMetadataCommandFailure(error: unknown): string {
+  if (!error || typeof error !== 'object') return 'Unknown command failure.';
+  const childError = error as { code?: unknown; status?: unknown; stderr?: unknown };
+  const status =
+    typeof childError.status === 'number' ? `exit status ${childError.status}` : undefined;
+  const code = typeof childError.code === 'string' ? childError.code : undefined;
+  const stderr =
+    typeof childError.stderr === 'string'
+      ? childError.stderr
+      : Buffer.isBuffer(childError.stderr)
+        ? childError.stderr.toString('utf8')
+        : '';
+  const safeStderr = stderr
+    .replace(/postgres(?:ql)?:\/\/[^\s"'<>]+/gi, '[REDACTED_DATABASE_URL]')
+    .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[REDACTED_JWT]')
+    .replace(/(?:sb_secret_|sb_publishable_)[A-Za-z0-9_-]+/g, '[REDACTED_KEY]')
+    .replace(/Bearer\s+\S+/gi, 'Bearer [REDACTED]')
+    .replace(/(api[_-]?key|token|secret|password)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 1000);
+  return [status ?? code, safeStderr].filter(Boolean).join(': ') || 'Unknown command failure.';
+}
+
+export function parseLocalColumnMetadataOutput(output: string): ColumnTypeMetadata[] {
+  let cursor = 0;
+  let rowValidationError: z.ZodError | undefined;
+  let rowShape: string | undefined;
+  while (cursor < output.length) {
+    const start = output.indexOf('{', cursor);
+    if (start < 0) break;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let end = -1;
+    for (let index = start; index < output.length; index += 1) {
+      const character = output[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (character === '\\') escaped = true;
+        else if (character === '"') inString = false;
+        continue;
+      }
+      if (character === '"') inString = true;
+      else if (character === '{') depth += 1;
+      else if (character === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          end = index;
+          break;
+        }
+      }
+    }
+    cursor = start + 1;
+    if (end < start) continue;
+    let candidate: unknown;
+    try {
+      candidate = JSON.parse(output.slice(start, end + 1));
+    } catch {
+      continue;
+    }
+    if (
+      candidate === null ||
+      typeof candidate !== 'object' ||
+      Array.isArray(candidate) ||
+      !Object.hasOwn(candidate, 'rows')
+    )
+      continue;
+    const envelope = z.object({ rows: z.unknown() }).safeParse(candidate);
+    if (!envelope.success) continue;
+    const rows = envelope.data.rows;
+    rowShape = Array.isArray(rows)
+      ? 'array'
+      : rows === null
+        ? 'null'
+        : typeof rows === 'object'
+          ? `object keys=${Object.keys(rows).slice(0, 8).join(',') || 'none'}`
+          : typeof rows;
+    try {
+      return parseColumnTypeMetadata(rows);
+    } catch (error) {
+      if (error instanceof z.ZodError) rowValidationError = error;
+      else throw error;
+    }
+  }
+  if (rowValidationError) {
+    const issues = rowValidationError.issues
+      .slice(0, 3)
+      .map((issue) => `${issue.path.join('.') || 'row'}:${issue.code}`)
+      .join(', ');
+    throw new Error(
+      `Local Supabase public-column rows failed validation (${issues}; received ${rowShape ?? 'unknown'}).`,
+    );
+  }
+  throw new Error('Local Supabase public-column query returned no complete JSON object with rows.');
+}
+
+export function localMetadataQueryArguments(queryFile: string): string[] {
+  return [
+    'db',
+    'query',
+    '--local',
+    '--output-format',
+    'json',
+    '--agent',
+    'yes',
+    '--file',
+    queryFile,
+  ];
+}
+
+function localColumnTypeMetadata(): ColumnTypeMetadata[] {
+  const queryFile = `.local-database-types-${process.pid}.sql`;
+  writeFileSync(
+    queryFile,
+    `select table_name, column_name, data_type, is_nullable, is_generated
+from information_schema.columns
+where table_schema = 'public';\n`,
+    { encoding: 'utf8', mode: 0o600 },
+  );
+  try {
+    let output: string;
+    try {
+      output = execFileSync(
+        'corepack',
+        ['pnpm', 'exec', 'supabase', ...localMetadataQueryArguments(queryFile)],
+        {
+          encoding: 'utf8',
+          shell: process.platform === 'win32',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      );
+    } catch (error) {
+      throw new Error(
+        `Could not query public column metadata from local Supabase (${safeLocalMetadataCommandFailure(error)}).`,
+      );
+    }
+    return parseLocalColumnMetadataOutput(output);
+  } finally {
+    unlinkSync(queryFile);
+  }
+}
+
+export function checkLocalDatabaseTypeParity(): DriftReport {
+  const generatedTypes = generateLocalTypes();
+  const metadata = localColumnTypeMetadata();
+  const checkedInTypes = readFileSync('packages/db/src/database.types.ts', 'utf8');
+  const mismatches = generatedTypesMatch(generatedTypes, checkedInTypes, metadata)
+    ? []
+    : [
+        'repo ↔ local: generated database.types.ts differs from the fully migrated local schema; review `corepack pnpm exec supabase gen types typescript --local --schema public`',
+      ];
+  return {
+    ok: mismatches.length === 0,
+    mismatches,
+    evidence: {
+      mode: 'repo-local',
+      environment: 'local',
+      generatedTypesDigest: valueHash(generatedTypes),
+      publicColumnCount: metadata.length,
+    },
+  };
+}
+
 function localMigrationInventory(): { fileName: string; version: string }[] {
-  const migrations = readdirSync('supabase/migrations')
-    .filter((file) => file.endsWith('.sql'))
-    .map((fileName) => ({ fileName, version: migrationVersionFromFilename(fileName) }))
-    .sort((left, right) => left.version.localeCompare(right.version));
-  const versions = migrations.map(({ version }) => version);
-  if (new Set(versions).size !== versions.length)
-    throw new Error('Duplicate Supabase migration versions exist in the repository.');
-  return migrations;
+  return migrationInventoryFromFilenames(readdirSync('supabase/migrations'));
 }
 
 function localMigrations(): string[] {
@@ -1235,6 +1468,12 @@ function summarize(value: Awaited<ReturnType<typeof inventory>>) {
 
 async function main(): Promise<void> {
   const mode = process.argv[2] === '--' ? process.argv[3] : process.argv[2];
+  if (mode === 'repo-local') {
+    const report = checkLocalDatabaseTypeParity();
+    console.log(JSON.stringify(report, null, 2));
+    if (!report.ok) process.exitCode = 1;
+    return;
+  }
   if (mode === 'attest-source') {
     captureSourceAttestation();
     return;
@@ -1279,7 +1518,7 @@ async function main(): Promise<void> {
   }
   if (mode !== 'repo-staging' && mode !== 'staging-production') {
     throw new Error(
-      'Usage: pnpm environment:drift -- validate-staging|validate-production|repo-staging|staging-production',
+      'Usage: pnpm environment:drift -- validate-staging|validate-production|repo-local|repo-staging|staging-production',
     );
   }
   const report = mode === 'repo-staging' ? await runDriftCheck(mode) : await runPairCheck();

@@ -19,6 +19,23 @@ const approvalSchema = z.object({
 const traceSchema = z.object({
   id: z.string().uuid(),
   correlation_id: z.string().uuid(),
+  run_id: z.string().uuid().nullable(),
+  step_id: z.string().uuid().nullable(),
+  ai_call_id: z.string().uuid().nullable(),
+  parent_event_id: z.string().uuid().nullable(),
+  environment: z.enum(['local', 'test', 'staging', 'production']).nullable(),
+  build_version: z.string().nullable(),
+  occurred_at: z.string().datetime({ offset: true }).nullable(),
+  outcome: z.enum(['started', 'succeeded', 'failed', 'waiting', 'skipped']).nullable(),
+  archive_reference: z
+    .object({
+      objectKey: z.string().min(1),
+      sha256: z.string().regex(/^[a-f0-9]{64}$/),
+      sizeBytes: z.number().int().nonnegative(),
+      contentType: z.string().min(1),
+    })
+    .strict()
+    .nullable(),
   event_type: z.string(),
   severity: z.string(),
   created_at: z.string(),
@@ -252,7 +269,9 @@ export async function tracesData(): Promise<PageData<z.infer<typeof traceSchema>
   const client = await createSupabaseServerClient();
   const { data, error } = await client
     .from('trace_events')
-    .select('id,correlation_id,event_type,severity,created_at')
+    .select(
+      'id,correlation_id,run_id,step_id,ai_call_id,parent_event_id,environment,build_version,occurred_at,outcome,archive_reference,event_type,severity,created_at',
+    )
     .order('created_at', { ascending: false })
     .limit(100);
   return error

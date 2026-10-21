@@ -11,6 +11,7 @@ import {
   compareMigrations,
   compareSourceAttestations,
   compareSourceDigests,
+  migrationInventoryFromFilenames,
   migrationVersionFromFilename,
   parseAuthManifest,
   parseFunctionAuth,
@@ -22,6 +23,9 @@ import {
   inventoryFromWrangler,
   generatedTypesMatch,
   parseColumnTypeMetadata,
+  parseLocalColumnMetadataOutput,
+  localMetadataQueryArguments,
+  safeLocalMetadataCommandFailure,
   type FunctionInventory,
   type WorkerInventory,
 } from './environment-drift.js';
@@ -104,6 +108,59 @@ test('generated database types normalize only catalog-proven generator differenc
 
   assert.equal(generatedTypesMatch(generated, checkedIn, metadata), true);
   assert.equal(generatedTypesMatch(generated, checkedIn, []), false);
+});
+
+test('generated database type parity canonicalizes equivalent table-returning RPC shapes', () => {
+  const generated = `export type Database = { public: {
+    Tables: { handoffs: { Row: { id: string; status: string }; Insert: { id: string; status: string }; Update: { id?: string; status?: string } } };
+    Views: {};
+    Functions: { transition_handoff: {
+      Args: { p_handoff_id: string };
+      Returns: { id: string; status: string }[];
+      SetofOptions: { from: '*'; isOneToOne: false; isSetofReturn: true; to: 'handoffs' };
+    } };
+    Enums: {};
+    CompositeTypes: {};
+  } };`;
+  const checkedIn = `export type Database = { public: {
+    Tables: { handoffs: { Row: { id: string; status: string }; Insert: { id: string; status: string }; Update: { id?: string; status?: string } } };
+    Views: {};
+    Functions: { transition_handoff: {
+      Args: { p_handoff_id: string };
+      Returns: Database['public']['Tables']['handoffs']['Row'][];
+    } };
+    Enums: {};
+    CompositeTypes: {};
+  } };`;
+  const metadata = [
+    {
+      table_name: 'handoffs',
+      column_name: 'id',
+      data_type: 'uuid',
+      is_nullable: 'NO',
+      is_generated: 'NEVER',
+    },
+    {
+      table_name: 'handoffs',
+      column_name: 'status',
+      data_type: 'text',
+      is_nullable: 'NO',
+      is_generated: 'NEVER',
+    },
+  ];
+
+  assert.equal(generatedTypesMatch(generated, checkedIn, metadata), true);
+  assert.equal(
+    generatedTypesMatch(
+      generated.replace(
+        'Returns: { id: string; status: string }[]',
+        'Returns: { id: string; status: number }[]',
+      ),
+      checkedIn,
+      metadata,
+    ),
+    false,
+  );
 });
 
 test('generated database type parity retains real nullable-column, enum, and RPC drift', () => {
@@ -294,6 +351,72 @@ test('column metadata contract rejects incomplete catalog responses without echo
   assert.throws(() => parseColumnTypeMetadata([{ table_name: 'records', column_name: 'payload' }]));
 });
 
+test('local metadata command diagnostics keep useful failures and redact connection secrets', () => {
+  const diagnostic = safeLocalMetadataCommandFailure({
+    status: 1,
+    stderr: Buffer.from(
+      'connection failed at postgresql://postgres:local-password@127.0.0.1/db Bearer eyJheader.payload.signature',
+    ),
+  });
+
+  assert.match(diagnostic, /exit status 1/);
+  assert.match(diagnostic, /connection failed/);
+  assert.match(diagnostic, /\[REDACTED_DATABASE_URL\]/);
+  assert.match(diagnostic, /Bearer \[REDACTED\]/);
+  assert.doesNotMatch(diagnostic, /local-password|eyJheader/);
+});
+
+test('local metadata query forces the same structured CLI response in CI and agent shells', () => {
+  assert.deepEqual(localMetadataQueryArguments('columns.sql'), [
+    'db',
+    'query',
+    '--local',
+    '--output-format',
+    'json',
+    '--agent',
+    'yes',
+    '--file',
+    'columns.sql',
+  ]);
+});
+
+test('local database metadata parser selects the complete query object around CLI output', () => {
+  const output = [
+    'Connecting to local database...',
+    JSON.stringify({
+      boundary: 'fixture',
+      rows: [
+        {
+          table_name: 'handoffs',
+          column_name: 'id',
+          data_type: 'uuid',
+          is_nullable: 'NO',
+          is_generated: 'NEVER',
+        },
+      ],
+      warning: 'untrusted result text containing } and { characters',
+    }),
+    'Supabase CLI status: {this is trailing non-JSON output}',
+  ].join('\n');
+
+  assert.deepEqual(parseLocalColumnMetadataOutput(output), [
+    {
+      table_name: 'handoffs',
+      column_name: 'id',
+      data_type: 'uuid',
+      is_nullable: 'NO',
+      is_generated: 'NEVER',
+    },
+  ]);
+  assert.throws(() =>
+    parseLocalColumnMetadataOutput('query returned no metadata object {still not JSON}'),
+  );
+  assert.throws(
+    () => parseLocalColumnMetadataOutput('{"rows":{"items":[]}}'),
+    /received object keys=items/,
+  );
+});
+
 const functions: FunctionInventory = [
   { slug: 'manager-list', verify_jwt: true, version: 10, ezbr_sha256: 'sha-a' },
   { slug: 'job-worker', verify_jwt: false, version: 11, ezbr_sha256: 'sha-b' },
@@ -389,6 +512,17 @@ test('normalizes repository migration filenames to provider version identifiers'
     '20260927160301',
   );
   assert.throws(() => migrationVersionFromFilename('foundation.sql'));
+});
+
+test('rejects duplicate migration versions before local database reset', () => {
+  assert.throws(
+    () =>
+      migrationInventoryFromFilenames([
+        '20261015210000_ai15_allow_empty_report_sections.sql',
+        '20261015210000_ai19_observability.sql',
+      ]),
+    /Duplicate Supabase migration versions exist in the repository\./,
+  );
 });
 
 test('maps every local Edge Function to configured or default JWT verification', () => {

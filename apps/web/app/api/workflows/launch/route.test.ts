@@ -35,10 +35,17 @@ describe('workflow launch route', () => {
     {
       workflowCode: 'systems-daily-cost-capacity',
       hardCapUsd: 0.01,
+      modelCeiling: 'gpt-5.6-luna',
     },
     {
       workflowCode: 'systems-weekly-quality-platform',
       hardCapUsd: 0.05,
+      modelCeiling: 'gpt-5.6-luna',
+    },
+    {
+      workflowCode: 'systems-weekly-quality-platform',
+      hardCapUsd: 0.15,
+      modelCeiling: 'gpt-5.6-terra',
     },
   ] as const;
 
@@ -48,7 +55,6 @@ describe('workflow launch route', () => {
       const input = {
         ...flow,
         managerCode: 'systems',
-        modelCeiling: 'gpt-5.6-luna',
         searchCeiling: 0,
         idempotencyKey: '00000000-0000-4000-8000-000000000101',
         request: {},
@@ -77,6 +83,8 @@ describe('workflow launch route', () => {
     const invalidInputs = [
       { ...base, hardCapUsd: 0.06 },
       { ...base, modelCeiling: 'gpt-5.6-terra' },
+      { ...base, hardCapUsd: 0.15 },
+      { ...base, hardCapUsd: 0.15, modelCeiling: 'gpt-5.6-sol' },
       { ...base, searchCeiling: 1 },
       { ...base, managerCode: 'finance' },
       { ...base, request: { prompt: 'caller supplied prompt' } },

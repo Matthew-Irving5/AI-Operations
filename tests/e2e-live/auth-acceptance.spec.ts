@@ -205,6 +205,7 @@ test('staging proves stale schedule action denial and fresh MFA recovery in Chro
       pullRequestNumber,
       deploymentRunId,
       stagingOrigin: stagingTarget.origin,
+      acceptanceProfile: 'auth-browser',
       completeSuite: 'passed',
       manualMfaChallengeObserved,
       browserChecks: { chromium: 'passed', webkit: 'passed' },

@@ -5,9 +5,68 @@ import { join, resolve } from 'node:path';
 import { describe, it } from 'node:test';
 import { liveAuthScheduleAction } from './live-auth-schedule-action.js';
 import { writeLiveStagingAcceptanceEvidence } from './live-acceptance-evidence.js';
+import { createStagingAcceptanceStatus } from './release-gate.js';
 
 const runnerPath = resolve('infrastructure/scripts/run-live-e2e.ts');
 const journeyPath = resolve('tests/e2e-live/auth-acceptance.spec.ts');
+const combinedJourneyPath = resolve('tests/e2e-live/staging.spec.ts');
+
+const promptGovernanceProof = {
+  templateId: '00000000-0000-4000-8000-000000000001',
+  previousActiveVersion: 1,
+  previousPromptVersionId: '00000000-0000-4000-8000-000000000002',
+  previousModelRoute: 'gpt-5.6-terra',
+  candidateId: '00000000-0000-4000-8000-000000000003',
+  candidateVersion: 2,
+  candidateModelRoute: 'gpt-5.6-luna',
+  schemaVersion: 1,
+  toolPolicyVersion: 1,
+  evaluation: {
+    passed: true,
+    caseCount: 24,
+    managerCount: 8,
+    safetyPassed: true,
+    evidencePassed: true,
+    toolAuthorityPassed: true,
+    schemaPassed: true,
+    costPassed: true,
+    latencyPassed: true,
+  },
+  promotionIdempotencyKey: '00000000-0000-4000-8000-000000000004',
+  promotion: { previousVersion: 1, activeVersion: 2, replayed: false },
+  candidateRun: {
+    runId: 'candidate-run-1',
+    correlationId: 'candidate-trace-1',
+    reportId: 'candidate-report-1',
+    aiCallId: '00000000-0000-4000-8000-000000000005',
+    promptVersionId: '00000000-0000-4000-8000-000000000003',
+    model: 'gpt-5.6-luna',
+    modelRoute: 'gpt-5.6-luna',
+    schemaVersion: 1,
+    toolPolicyVersion: 1,
+    actualCostUsd: 0.01,
+    hardCapUsd: 0.05,
+    searchCalls: 0,
+  },
+  rollbackIdempotencyKey: '00000000-0000-4000-8000-000000000006',
+  rollback: { previousVersion: 2, activeVersion: 1, replayed: false },
+  postRollbackRun: {
+    runId: 'rollback-run-1',
+    correlationId: 'rollback-trace-1',
+    reportId: 'rollback-report-1',
+    aiCallId: '00000000-0000-4000-8000-000000000007',
+    promptVersionId: '00000000-0000-4000-8000-000000000002',
+    model: 'gpt-5.6-terra',
+    modelRoute: 'gpt-5.6-terra',
+    schemaVersion: 1,
+    toolPolicyVersion: 1,
+    actualCostUsd: 0.01,
+    hardCapUsd: 0.05,
+    searchCalls: 0,
+  },
+  previousRunHistoryUnchanged: true,
+  totalActualCostUsd: 0.02,
+} as const;
 
 function assertOrdered(source: string, markers: string[]) {
   let previousIndex = -1;
@@ -19,6 +78,32 @@ function assertOrdered(source: string, markers: string[]) {
 }
 
 describe('live auth acceptance harness', () => {
+  it('runs AI-16, AI-19, and auth-browser acceptance in one headed browser journey', async () => {
+    const [runner, journey] = await Promise.all([
+      readFile(runnerPath, 'utf8'),
+      readFile(combinedJourneyPath, 'utf8'),
+    ]);
+
+    assert.match(
+      runner,
+      /mode === 'suite'[\s\S]*?tests\/e2e-live\/staging\.spec\.ts'[\s\S]*?--grep=@ai16-ai19-acceptance/,
+    );
+    const suiteSelection = runner.slice(
+      runner.indexOf('const acceptanceSpecs'),
+      runner.indexOf('const liveArgs'),
+    );
+    const suiteBranch = suiteSelection.slice(suiteSelection.indexOf(": mode === 'suite'"));
+    assert.doesNotMatch(suiteBranch, /auth-acceptance\.spec\.ts/);
+    assert.match(journey, /staleDenied: 'passed'/);
+    assert.match(journey, /freshReauthAccepted: 'passed'/);
+    assert.equal([...journey.matchAll(/await signInWithFreshMfa\(page\)/g)].length, 1);
+    assert.match(journey, /acceptanceProfile: 'auth-browser'/);
+    assert.match(journey, /promptGovernanceProof: governanceProof\.evidence/);
+    assert.doesNotMatch(journey, /serviceRows(?:<[^>]+>)?\(\s*['"]prompt_version_transitions['"]/);
+    assert.match(journey, /promotionIdempotencyKey: promotionKey/);
+    assert.match(journey, /rollbackIdempotencyKey: rollbackKey/);
+  });
+
   it('never uses the service role to read user-owned schedules', async () => {
     const runner = await readFile(runnerPath, 'utf8');
     const journey = await readFile(journeyPath, 'utf8');
@@ -150,6 +235,7 @@ describe('live auth acceptance harness', () => {
         pullRequestNumber: 167,
         deploymentRunId: '38595680998',
         stagingOrigin: 'https://ai-operations-staging.ai-operations.workers.dev',
+        acceptanceProfile: 'auth-browser',
         completeSuite: 'passed',
         manualMfaChallengeObserved: true,
         browserChecks: { chromium: 'passed', webkit: 'passed' },
@@ -178,6 +264,192 @@ describe('live auth acceptance harness', () => {
         staleAttemptUsedMfaGate: false,
         freshReauthAccepted: 'passed',
       });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves AI-16 prompt governance proof in combined auth-browser acceptance evidence', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'aiops-combined-evidence-'));
+    const evidencePath = join(directory, 'acceptance.json');
+    const candidateSha = '1'.repeat(40);
+    const candidateTreeSha = '2'.repeat(40);
+    const deploymentRunId = '38595680998';
+    const stagingOrigin = 'https://ai-operations-staging.ai-operations.workers.dev';
+    try {
+      await writeLiveStagingAcceptanceEvidence(evidencePath, {
+        candidateSha,
+        candidateTreeSha,
+        pullRequestNumber: 167,
+        deploymentRunId,
+        stagingOrigin,
+        acceptanceProfile: 'auth-browser',
+        completeSuite: 'passed',
+        manualMfaChallengeObserved: true,
+        browserChecks: { chromium: 'passed', webkit: 'passed' },
+        checks: {
+          authAal2: 'passed',
+          safeRead: 'passed',
+          safeWrite: 'passed',
+          ui: 'passed',
+          edgeFunctions: 'passed',
+          releaseVersion: 'passed',
+        },
+        freshMfaAction: {
+          staleDenied: 'passed',
+          staleAttemptUsedMfaGate: false,
+          freshReauthAccepted: 'passed',
+        },
+        correlationIds: ['candidate-trace-1', 'rollback-trace-1'],
+        promptGovernanceProof,
+        acceptedAt: new Date().toISOString(),
+      });
+
+      const hostedSuite = JSON.parse(await readFile(evidencePath, 'utf8')) as Record<
+        string,
+        unknown
+      >;
+      const status = createStagingAcceptanceStatus({
+        candidateSha,
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 167,
+        state: 'success',
+        deployment: {
+          schemaVersion: 1,
+          state: 'CANDIDATE_STAGING_DEPLOYED',
+          candidateSha,
+          candidateTreeSha,
+          pullRequestNumber: 167,
+          runId: deploymentRunId,
+          runAttempt: '1',
+          origin: stagingOrigin,
+          acceptanceProfile: 'auth-browser',
+          migrations: 'passed',
+          edgeFunctions: 'passed',
+          sourceDrift: 'passed',
+          readinessSmoke: 'passed',
+        },
+        hostedSuite,
+      });
+
+      assert.equal(status.status.state, 'success');
+      assert.equal(status.acceptance?.acceptanceProfile, 'auth-browser');
+      assert.deepEqual(status.acceptance?.promptGovernanceProof, promptGovernanceProof);
+      assert.deepEqual(status.acceptance?.freshMfaAction, {
+        staleDenied: 'passed',
+        staleAttemptUsedMfaGate: false,
+        freshReauthAccepted: 'passed',
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('writes targeted suite evidence through the acceptance status consumer without inventing fresh MFA proof', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'aiops-targeted-evidence-'));
+    const evidencePath = join(directory, 'acceptance.json');
+    const candidateSha = '1'.repeat(40);
+    const candidateTreeSha = '2'.repeat(40);
+    const deploymentRunId = '38595680998';
+    const stagingOrigin = 'https://ai-operations-staging.ai-operations.workers.dev';
+    const workflowRuns = [
+      {
+        workflowCode: 'systems-daily-cost-capacity',
+        executionMode: 'deterministic',
+        runId: 'run-deterministic-1',
+        correlationId: 'trace-deterministic-1',
+        reportId: 'report-deterministic-1',
+        status: 'succeeded',
+        model: 'none',
+        aiCallCount: 0,
+        actualCostUsd: 0,
+        hardCapUsd: 0.01,
+        inputTokens: 0,
+        outputTokens: 0,
+        searchCalls: 0,
+        notificationDelivery: 'not_sent',
+      },
+      {
+        workflowCode: 'systems-weekly-quality-platform',
+        executionMode: 'ai',
+        runId: 'run-ai-1',
+        correlationId: 'trace-ai-1',
+        reportId: 'report-ai-1',
+        status: 'succeeded',
+        model: 'gpt-5.6-luna',
+        aiCallCount: 1,
+        actualCostUsd: 0.02,
+        hardCapUsd: 0.05,
+        inputTokens: 1000,
+        outputTokens: 500,
+        searchCalls: 0,
+        notificationDelivery: 'not_sent',
+      },
+    ] as const;
+    try {
+      await writeLiveStagingAcceptanceEvidence(evidencePath, {
+        candidateSha,
+        candidateTreeSha,
+        pullRequestNumber: 167,
+        deploymentRunId,
+        stagingOrigin,
+        acceptanceProfile: 'targeted',
+        completeSuite: 'passed',
+        manualMfaChallengeObserved: true,
+        browserChecks: { chromium: 'passed', webkit: 'passed' },
+        checks: {
+          authAal2: 'passed',
+          safeRead: 'passed',
+          safeWrite: 'passed',
+          ui: 'passed',
+          edgeFunctions: 'passed',
+          releaseVersion: 'passed',
+        },
+        correlationIds: ['run-deterministic-1', 'trace-deterministic-1', 'run-ai-1', 'trace-ai-1'],
+        workflowRuns,
+        acceptedAt: new Date().toISOString(),
+      });
+
+      const hostedSuite = JSON.parse(await readFile(evidencePath, 'utf8')) as Record<
+        string,
+        unknown
+      >;
+      const status = createStagingAcceptanceStatus({
+        candidateSha,
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 167,
+        state: 'success',
+        deployment: {
+          schemaVersion: 1,
+          state: 'CANDIDATE_STAGING_DEPLOYED',
+          candidateSha,
+          candidateTreeSha,
+          pullRequestNumber: 167,
+          runId: deploymentRunId,
+          runAttempt: '1',
+          origin: stagingOrigin,
+          acceptanceProfile: 'targeted',
+          migrations: 'passed',
+          edgeFunctions: 'passed',
+          sourceDrift: 'passed',
+          readinessSmoke: 'passed',
+        },
+        hostedSuite,
+      });
+
+      assert.equal(status.status.state, 'success');
+      assert.equal(status.acceptance?.acceptanceProfile, 'targeted');
+      assert.equal(status.acceptance?.humanMfa, 'user-completed');
+      assert.equal(Object.hasOwn(status.acceptance ?? {}, 'freshMfaAction'), false);
+      assert.deepEqual(status.acceptance?.workflowRuns, workflowRuns);
+      assert.deepEqual(status.acceptance?.correlationIds, [
+        'run-deterministic-1',
+        'trace-deterministic-1',
+        'run-ai-1',
+        'trace-ai-1',
+      ]);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

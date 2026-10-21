@@ -6174,30 +6174,60 @@ export type Database = {
       };
       trace_events: {
         Row: {
+          ai_call_id: string | null;
+          archive_reference: Json | null;
+          build_version: string | null;
           correlation_id: string;
+          contract_version: number;
           created_at: string;
+          environment: string | null;
           event_type: string;
           id: string;
+          occurred_at: string | null;
+          outcome: string | null;
+          parent_event_id: string | null;
           redacted_payload: NonNullable<Json>;
+          run_id: string | null;
           severity: string;
+          step_id: string | null;
           user_id: string;
         };
         Insert: {
+          ai_call_id?: string | null;
+          archive_reference?: Json | null;
+          build_version?: string | null;
           correlation_id: string;
+          contract_version?: number;
           created_at?: string;
+          environment?: string | null;
           event_type: string;
           id?: string;
+          occurred_at?: string | null;
+          outcome?: string | null;
+          parent_event_id?: string | null;
           redacted_payload?: NonNullable<Json>;
+          run_id?: string | null;
           severity?: string;
+          step_id?: string | null;
           user_id: string;
         };
         Update: {
+          ai_call_id?: string | null;
+          archive_reference?: Json | null;
+          build_version?: string | null;
           correlation_id?: string;
+          contract_version?: number;
           created_at?: string;
+          environment?: string | null;
           event_type?: string;
           id?: string;
+          occurred_at?: string | null;
+          outcome?: string | null;
+          parent_event_id?: string | null;
           redacted_payload?: NonNullable<Json>;
+          run_id?: string | null;
           severity?: string;
+          step_id?: string | null;
           user_id?: string;
         };
         Relationships: [
@@ -6668,6 +6698,15 @@ export type Database = {
       adapt_mobile_snapshot: {
         Args: { p_snapshot_id: string; p_token_hash: string };
         Returns: Json;
+      };
+      transition_ai14_contract_handoff: {
+        Args: {
+          p_aal2_verified: boolean;
+          p_handoff_id: string;
+          p_status: Database['public']['Enums']['handoff_status'];
+          p_user_id: string;
+        };
+        Returns: Database['public']['Tables']['conversation_handoffs']['Row'][];
       };
       add_model_pricing: {
         Args: {

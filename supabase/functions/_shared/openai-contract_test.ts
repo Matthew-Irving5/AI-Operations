@@ -85,6 +85,80 @@ Deno.test("strict report output accepts the governed empty-sections shape", () =
   assertEquals(validated?.report_sections, []);
 });
 
+Deno.test("provider section codes normalize to the persisted slug", () => {
+  const sectionProperties = reportOutputSchema.properties as Record<
+    string,
+    { items?: { properties?: Record<string, { pattern?: string }> } }
+  >;
+  assertEquals(
+    sectionProperties.report_sections?.items?.properties?.code?.pattern,
+    "^[a-z0-9-]{1,100}$",
+  );
+
+  const validated = validateReportOutput({
+    ...output,
+    findings: [],
+    evidence: [],
+    uncertainties: ["No supported synthetic records were supplied."],
+    report_sections: [{
+      code: "LIMITATION",
+      title: "Limitation",
+      content: "The synthetic run had no eligible records.",
+    }],
+  }, new Set());
+  assertEquals(validated?.report_sections, [{
+    code: "limitation",
+    title: "Limitation",
+    content: "The synthetic run had no eligible records.",
+  }]);
+
+  const snakeCase = validateReportOutput({
+    ...output,
+    findings: [],
+    evidence: [],
+    uncertainties: ["No supported synthetic records were supplied."],
+    report_sections: [{
+      code: "LIMITATION_CHECK",
+      title: "Limitation check",
+      content: "The synthetic run had no eligible records.",
+    }],
+  }, new Set());
+  assertEquals(snakeCase?.report_sections, [{
+    code: "limitation-check",
+    title: "Limitation check",
+    content: "The synthetic run had no eligible records.",
+  }]);
+
+  for (const code of ["LIMITATION CHECK", "\u212a"]) {
+    assertEquals(
+      validateReportOutput({
+        ...output,
+        report_sections: [{
+          code,
+          title: "Invalid section",
+          content: "This synthetic section code must be rejected.",
+        }],
+      }, new Set(["fixture-1"])),
+      null,
+    );
+  }
+
+  assertEquals(
+    validateReportOutput({
+      ...output,
+      report_sections: [
+        { code: "LIMITATION_CHECK", title: "First", content: "First section." },
+        {
+          code: "limitation-check",
+          title: "Second",
+          content: "Second section.",
+        },
+      ],
+    }, new Set(["fixture-1"])),
+    null,
+  );
+});
+
 Deno.test("provider usage strips untrusted provider response fields", () => {
   assertEquals(
     redactedProviderUsage({

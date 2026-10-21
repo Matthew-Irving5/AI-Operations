@@ -304,13 +304,19 @@ async function main(): Promise<void> {
   }
 
   try {
+    const acceptanceSpecs =
+      mode === 'auth-acceptance'
+        ? ['tests/e2e-live/auth-acceptance.spec.ts']
+        : mode === 'suite'
+          ? ['tests/e2e-live/staging.spec.ts', '--grep=@ai16-ai19-acceptance']
+          : [];
     const liveArgs = [
       'pnpm',
       'exec',
       'playwright',
       'test',
       '--config=playwright.live.config.ts',
-      ...(mode === 'auth-acceptance' ? ['tests/e2e-live/auth-acceptance.spec.ts'] : []),
+      ...acceptanceSpecs,
     ];
     execFileSync('corepack', liveArgs, {
       stdio: 'inherit',

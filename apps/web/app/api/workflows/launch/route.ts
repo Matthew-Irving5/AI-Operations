@@ -16,7 +16,7 @@ const onDemandSchema = z.object({
   }),
 });
 
-const systemsAcceptanceSchema = z.discriminatedUnion('workflowCode', [
+const systemsAcceptanceSchema = z.union([
   z
     .object({
       workflowCode: z.literal('systems-daily-cost-capacity'),
@@ -34,6 +34,17 @@ const systemsAcceptanceSchema = z.discriminatedUnion('workflowCode', [
       managerCode: z.literal('systems'),
       hardCapUsd: z.literal(0.05),
       modelCeiling: z.literal('gpt-5.6-luna'),
+      searchCeiling: z.literal(0),
+      idempotencyKey: z.string().uuid(),
+      request: z.object({}).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      workflowCode: z.literal('systems-weekly-quality-platform'),
+      managerCode: z.literal('systems'),
+      hardCapUsd: z.literal(0.15),
+      modelCeiling: z.literal('gpt-5.6-terra'),
       searchCeiling: z.literal(0),
       idempotencyKey: z.string().uuid(),
       request: z.object({}).strict(),
