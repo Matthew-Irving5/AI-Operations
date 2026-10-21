@@ -1,7 +1,16 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { Command, Dialog, Menu, Popover, Sheet, Tabs, Tooltip } from './interactive';
+import {
+  Command,
+  Dialog,
+  matchesCommand,
+  Menu,
+  Popover,
+  Sheet,
+  Tabs,
+  Tooltip,
+} from './interactive';
 
 const render = (element: Parameters<typeof renderToStaticMarkup>[0]) =>
   renderToStaticMarkup(element);
@@ -86,7 +95,15 @@ describe('accessible interaction substrates', () => {
   it('exposes a searchable listbox and useful empty state for command navigation', () => {
     const markup = render(
       createElement(Command, {
-        items: [{ id: 'open-runs', label: 'Open runs', description: 'Review recent executions' }],
+        items: [
+          {
+            id: 'open-runs',
+            label: 'Open runs',
+            description: 'Review recent executions',
+            group: 'Operations',
+            keywords: 'queue jobs',
+          },
+        ],
         onSelect: () => undefined,
       }),
     );
@@ -95,6 +112,27 @@ describe('accessible interaction substrates', () => {
     expect(markup).toContain('aria-controls=');
     expect(markup).toContain('role="listbox"');
     expect(markup).toContain('role="option"');
+    expect(markup).toContain('aria-label="Operations"');
     expect(markup).toContain('Open runs');
+  });
+
+  it('matches commands by fuzzy label text and grouped context', () => {
+    const traces = { id: 'traces', label: 'AI Traces & Audit', group: 'Attention & work' };
+    const personal = {
+      id: 'personal',
+      label: 'Personal',
+      keywords: 'planner executive assistant calendar tasks',
+    };
+    const health = {
+      id: 'health',
+      label: 'Health',
+      keywords: 'health performance fitness',
+    };
+
+    expect(matchesCommand(traces, 'trcs')).toBe(true);
+    expect(matchesCommand(traces, 'attention audit')).toBe(true);
+    expect(matchesCommand(traces, 'calendar')).toBe(false);
+    expect(matchesCommand(personal, 'trcs')).toBe(false);
+    expect(matchesCommand(health, 'trcs')).toBe(false);
   });
 });
