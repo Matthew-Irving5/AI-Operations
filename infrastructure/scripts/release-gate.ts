@@ -565,6 +565,9 @@ export function selectHostedAcceptanceProfile(files: string[]): HostedAcceptance
     return (
       file.startsWith('apps/web/app/api/auth/') ||
       file === 'apps/web/app/api/workflows/launch/route.ts' ||
+      file === 'apps/web/app/(app)/app-shell.tsx' ||
+      file === 'apps/web/app/(app)/layout.tsx' ||
+      file === 'apps/web/app/(app)/navigation.ts' ||
       file.startsWith('apps/web/app/login/') ||
       file.startsWith('apps/web/app/mfa/') ||
       file.startsWith('apps/web/lib/auth') ||
@@ -572,7 +575,8 @@ export function selectHostedAcceptanceProfile(files: string[]): HostedAcceptance
       file === 'apps/web/middleware.ts' ||
       file === 'supabase/config.toml' ||
       file.startsWith('supabase/functions/_shared/auth-assurance') ||
-      file.startsWith('tests/e2e/auth.')
+      file.startsWith('tests/e2e/auth.') ||
+      file === 'tests/e2e/platform-authenticated.spec.ts'
     );
   });
   return authBrowser ? 'auth-browser' : 'targeted';

@@ -1427,6 +1427,15 @@ test('hosted acceptance profile requires real MFA only for auth-browser changes'
     selectHostedAcceptanceProfile(['apps/web/app/api/workflows/launch/route.ts']),
     'auth-browser',
   );
+  assert.equal(
+    selectHostedAcceptanceProfile([
+      'apps/web/app/(app)/app-shell.tsx',
+      'apps/web/app/(app)/layout.tsx',
+      'apps/web/app/(app)/navigation.ts',
+      'tests/e2e/platform-authenticated.spec.ts',
+    ]),
+    'auth-browser',
+  );
   assert.equal(selectHostedAcceptanceProfile(['docs/testing/local-autonomous-qa.md']), 'targeted');
 });
 
