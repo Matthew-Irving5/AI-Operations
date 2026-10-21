@@ -25,6 +25,7 @@ This file records **confirmed** errors (not generic best practices). One row per
 | AI35-02  | Proxy hid owner denials from the Edge audit handler                                                                                                    | GITHUB-02; forward owner-denial variants to authenticated Edge; reject unknown fields                         | AI-35 run `39639201782`; owner probes returned 400; route regression (3/3)                                                                                                             |
 | AI39-01  | Generic on-demand completion could leave Procurement without a linked comparison, validated evidence, or actual search settlement | PROC-01; linked lifecycle plus provider-to-webhook and SQL commit regression | `supabase/tests/ai39_procurement_research.sql`; `apps/web/app/api/workflows/launch/route.test.ts`; `supabase/functions/openai-webhook/procurement_test.ts` |
 | AI39-02  | New contract alias reached direct and transitive Edge Function imports without deployment import maps | EDGE-01; test deployment import graphs and map every affected function | `infrastructure/scripts/edge-function-import-maps.test.ts`; AI-39 `supabase/config.toml` fix |
+| AI39-03  | Replacing the shared deterministic dispatcher bypassed manager-specific side effects and incorrectly completed workflow state | WORKFLOW-01; preserve manager executors and queue-owned lifecycle transitions | CI #176: `supabase/tests/ai15_stage_lifecycle.sql` #5; `supabase/tests/rls.sql` #49/#54 |
 
 ## Update rule
 

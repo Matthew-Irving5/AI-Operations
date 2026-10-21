@@ -144,104 +144,73 @@ create trigger sync_procurement_research_run_status
 revoke all on function public.sync_procurement_research_run_status() from public, anon, authenticated, service_role;
 
 -- Procurement must complete through the instrumented provider decision path.
+-- Preserve the canonical manager dispatch and let queue completion own run state.
 create or replace function public.complete_deterministic_workflow_run(p_run_id uuid)
 returns uuid language plpgsql security definer set search_path = public as $$
 declare
+  workflow_code text;
+  policy text;
+  report_id uuid;
   run_row record;
-  created_report uuid;
-  report_title text;
-  report_summary text;
 begin
-  select r.id, r.user_id, r.correlation_id, r.status, d.code, d.manager_id
-    into run_row
+  select r.user_id, r.correlation_id, r.status, d.code, d.notification_policy into run_row
     from public.workflow_runs r
     join public.workflow_definitions d on d.id = r.workflow_definition_id
-   where r.id = p_run_id
-   for update;
-
+   where r.id = p_run_id;
   if not found then raise exception 'workflow_run_not_found'; end if;
-  if run_row.code = 'procurement-on-demand-research'
+  workflow_code := run_row.code;
+  policy := run_row.notification_policy;
+  if workflow_code = 'procurement-on-demand-research'
     and run_row.status in ('queued', 'running') then
     raise exception 'procurement_requires_provider_research';
   end if;
-  if run_row.status = 'succeeded' then
-    select id into created_report from public.reports where run_id = p_run_id;
-    return created_report;
-  end if;
-  if run_row.status not in ('queued', 'running') then raise exception 'workflow_run_not_executable'; end if;
-
-  report_title := initcap(replace(run_row.code, '-', ' '));
-  report_summary := 'Deterministic workflow completed. Review source freshness and evidence before acting.';
-
-  insert into public.reports(
-    user_id, run_id, report_type, title, summary, markdown, structured_metrics, status
-  ) values (
-    run_row.user_id,
-    p_run_id,
-    run_row.code,
-    report_title,
-    report_summary,
-    '## ' || report_title || E'\n\n' || report_summary,
-    jsonb_build_object(
-      'workflow', run_row.code,
-      'execution_mode', 'deterministic',
-      'ai_called', false,
-      'validated', true
-    ),
-    'validated'
-  ) on conflict (run_id) do nothing returning id into created_report;
-
-  if created_report is null then
-    select id into created_report from public.reports where run_id = p_run_id;
+  if workflow_code like 'systems-%' then
+    report_id := public.execute_systems_workflow(p_run_id);
+  elsif workflow_code like 'personal-%' then
+    report_id := public.execute_personal_workflow(p_run_id);
+  elsif workflow_code like 'health-%' or workflow_code like 'finance-%' then
+    report_id := public.execute_health_finance_workflow(p_run_id);
+  elsif workflow_code like 'career-%' or workflow_code like 'travel-%' or workflow_code like 'procurement-%' then
+    report_id := public.execute_career_travel_procurement_workflow(p_run_id);
+  elsif workflow_code like 'digital-estate-%' then
+    report_id := public.execute_digital_estate_workflow(p_run_id);
   else
-    insert into public.report_sections(
-      report_id, code, title, display_order, content, structured_data, evidence_references
-    ) values (
-      created_report,
-      'execution',
-      'Execution status',
-      0,
-      report_summary,
-      jsonb_build_object('mode', 'deterministic', 'workflow', run_row.code),
-      '[]'::jsonb
-    );
+    raise exception 'workflow_code_not_supported';
   end if;
 
-  update public.workflow_runs
-     set status = 'succeeded', completed_at = now(), redacted_error = null
-   where id = p_run_id;
-
+  update public.reports
+     set structured_metrics = structured_metrics || jsonb_build_object(
+       'execution_mode', 'deterministic', 'ai_called', false, 'validation', 'passed'
+     )
+   where id = report_id;
   insert into public.trace_events(user_id, correlation_id, event_type, severity, redacted_payload)
-  values (
-    run_row.user_id,
-    run_row.correlation_id,
-    'workflow_completed',
-    'info',
-    jsonb_build_object(
-      'run_id', p_run_id,
-      'report_id', created_report,
-      'workflow', run_row.code,
-      'execution_mode', 'deterministic',
-      'validation', 'passed',
-      'ai_called', false
-    )
-  );
+  select run_row.user_id, run_row.correlation_id, 'workflow_completed', 'info',
+    jsonb_build_object('run_id', p_run_id, 'report_id', report_id, 'workflow', workflow_code, 'execution_mode', 'deterministic', 'validation', 'passed', 'ai_called', false)
+  where not exists (select 1 from public.trace_events where correlation_id = run_row.correlation_id and event_type = 'workflow_completed');
+  insert into public.audit_events(user_id, actor_type, action_type, target_type, target_id, aal, result, redacted_after)
+  select run_row.user_id, 'system', 'complete_deterministic_workflow', 'workflow_run', p_run_id, 'system', 'success',
+    jsonb_build_object('report_id', report_id, 'workflow', workflow_code, 'ai_called', false)
+  where not exists (select 1 from public.audit_events where target_id = p_run_id::text and action_type = 'complete_deterministic_workflow');
 
-  insert into public.audit_events(
-    user_id, actor_type, action_type, target_type, target_id, aal, result, redacted_after
-  ) values (
-    run_row.user_id,
-    'system',
-    'complete_deterministic_workflow',
-    'workflow_run',
-    p_run_id,
-    'system',
-    'success',
-    jsonb_build_object('report_id', created_report, 'workflow', run_row.code, 'ai_called', false)
-  );
-
-  return created_report;
-end; $$;
+  if policy in ('report', 'exception') then
+    insert into public.notifications(user_id, type, recipient, subject, status, dedupe_key)
+    select run_row.user_id, policy, account.email,
+      case policy when 'exception' then 'Workflow exception report is ready' else 'Workflow report is ready' end,
+      'pending', 'workflow-report:' || p_run_id::text
+    from public.app_users account where account.id = run_row.user_id
+    on conflict (dedupe_key) do nothing;
+    if not exists (select 1 from public.app_users where id = run_row.user_id and email is not null) then
+      raise exception 'notification_user_email_unavailable';
+    end if;
+  end if;
+  perform public.record_workflow_stage(p_run_id, 'notification_decision', 9, 'succeeded', 'policy:' || policy, null, null);
+  insert into public.trace_events(user_id, correlation_id, event_type, severity, redacted_payload)
+  select run_row.user_id, run_row.correlation_id, 'workflow_notification_decision', 'info',
+    jsonb_build_object('run_id', p_run_id, 'policy', policy, 'notification_created', policy in ('report', 'exception'))
+  where not exists (select 1 from public.trace_events where correlation_id = run_row.correlation_id and event_type = 'workflow_notification_decision');
+  return report_id;
+end;
+$$;
 revoke all on function public.complete_deterministic_workflow_run(uuid) from public;
 grant execute on function public.complete_deterministic_workflow_run(uuid) to service_role;
 
