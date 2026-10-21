@@ -29,19 +29,24 @@ const sha256 = async (value: string) => {
 };
 
 async function recordEvent(externalId: string): Promise<string | null> {
-  const inserted = await service.from("webhook_events").insert({
-    provider: "openai",
-    external_id: externalId,
-    signature_verified: true,
-    status: "received",
-  }).select("id").maybeSingle();
+  const inserted = await service
+    .from("webhook_events")
+    .insert({
+      provider: "openai",
+      external_id: externalId,
+      signature_verified: true,
+      status: "received",
+    })
+    .select("id")
+    .maybeSingle();
   if (!inserted.error) return inserted.data?.id ?? null;
   if (inserted.error.code !== "23505") return null;
-  const existing = await service.from("webhook_events").select("id").eq(
-    "provider",
-    "openai",
-  )
-    .eq("external_id", externalId).maybeSingle();
+  const existing = await service
+    .from("webhook_events")
+    .select("id")
+    .eq("provider", "openai")
+    .eq("external_id", externalId)
+    .maybeSingle();
   return existing.data?.id ?? null;
 }
 
@@ -54,10 +59,13 @@ async function resolveProviderJob(
     p_response_id: responseId,
   });
   if (
-    submission.error || !isRecord(submission.data) ||
+    submission.error ||
+    !isRecord(submission.data) ||
     typeof submission.data.id !== "string" ||
     typeof submission.data.status !== "string"
-  ) return null;
+  ) {
+    return null;
+  }
   return { id: submission.data.id, status: submission.data.status };
 }
 
@@ -121,16 +129,21 @@ Deno.serve(async (request) => {
   if (
     !["response.completed", "response.failed", "response.incomplete"].includes(
       body.type,
-    ) || !body.data?.id
+    ) ||
+    !body.data?.id
   ) {
     await markEvent(eventId, "processed");
     return json({ accepted: true });
   }
 
   const responseId = body.data.id;
-  const call = await service.from("ai_calls").select(
-    "id,run_id,user_id,model_id,estimated_cost,request_id,redacted_trace,status",
-  ).eq("response_id", responseId).maybeSingle();
+  const call = await service
+    .from("ai_calls")
+    .select(
+      "id,run_id,user_id,model_id,estimated_cost,request_id,redacted_trace,status",
+    )
+    .eq("response_id", responseId)
+    .maybeSingle();
   if (call.error) return json({ code: "response_lookup_failed" }, 500);
   if (!call.data?.run_id) {
     await markEvent(eventId, "processed");
@@ -162,7 +175,9 @@ Deno.serve(async (request) => {
   }
   if (
     !["submitted", "completed_pending_reconciliation", "reconciliation_failed"]
-      .includes(callData.status)
+      .includes(
+        callData.status,
+      )
   ) {
     return json({ code: "response_not_reconcilable" }, 409);
   }
@@ -191,9 +206,9 @@ Deno.serve(async (request) => {
         authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY") ?? ""}`,
       },
     },
-  ).then(async (result) => result.ok ? await result.json() : null).catch(() =>
-    null
-  );
+  )
+    .then(async (result) => (result.ok ? await result.json() : null))
+    .catch(() => null);
   if (
     isRecord(responseResult) &&
     ["failed", "incomplete"].includes(String(responseResult.status))
@@ -228,7 +243,7 @@ Deno.serve(async (request) => {
       responseResult.status === "failed"
         ? "provider_response_failed"
         : "provider_response_incomplete",
-      Math.min(callData.estimated_cost, failedCostResult.data),
+      failedCostResult.data,
       failedUsage,
       failedTrace,
     );
@@ -253,7 +268,9 @@ Deno.serve(async (request) => {
   let parsed: unknown = null;
   try {
     parsed = outputText ? JSON.parse(outputText) : null;
-  } catch { /* invalid output is settled below */ }
+  } catch {
+    /* invalid output is settled below */
+  }
   const validated = validateReportOutput(parsed, new Set(evidenceIds));
   const actionsAllowed = validated?.actions.every((action) =>
     allowedActionTypes.includes(action.type)
@@ -281,7 +298,7 @@ Deno.serve(async (request) => {
       responseId,
       callData.id,
       "provider_usage_exceeded_reservation",
-      callData.estimated_cost,
+      actualCost.data,
       usage,
       {
         request_id: callData.request_id,
@@ -327,10 +344,11 @@ Deno.serve(async (request) => {
     return json({ accepted: true, reconciliation: "failed" });
   }
 
-  const run = await service.from("workflow_runs").select("correlation_id").eq(
-    "id",
-    callData.run_id,
-  ).maybeSingle();
+  const run = await service
+    .from("workflow_runs")
+    .select("correlation_id")
+    .eq("id", callData.run_id)
+    .maybeSingle();
   if (run.error || !run.data) {
     await markEvent(eventId, "retrying");
     return json({ code: "run_context_unavailable" }, 500);

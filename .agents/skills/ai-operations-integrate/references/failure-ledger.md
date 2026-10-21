@@ -27,3 +27,4 @@ This file records **confirmed** errors (not generic best practices). One row per
 ## Update rule
 
 At each integration/infra fix: correct the existing domain rule or add a new stable ID, append a _verified_ incident row here, and commit alongside the code/regression. Before moving the Linear ticket to Done, review the entire ticket's integration incidents and record any missing knowledge. Don't expand this file with speculative causes or feature bugs that have no reusable integration lesson.
+| AI20-01  | Provider actual cost above estimate was clamped in the webhook and rejected by settlement, understating spend | DB-09; record full actual, cap/release the reservation, and test over-cap settlement plus replay | Local regression pending; PR evidence pending |

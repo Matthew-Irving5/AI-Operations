@@ -1,5 +1,5 @@
 begin;
-select plan(6);
+select plan(11);
 
 create temporary table ai15_fixture_owner (user_id uuid not null, email text not null) on commit drop;
 do $fixture$
@@ -53,7 +53,7 @@ select is(public.fail_instrumented_ai_provider_response(
   (select id from public.job_queue where deduplication_key = 'ai15-provider-failure-job'),
   'resp_ai15failure123',
   (select id from public.ai_calls where run_id = '00000000-0000-4000-8000-000000000318'),
-  'structured_output_invalid', 0.01, 10, 15, 0, 0,
+  'structured_output_invalid', 1.01, 10, 15, 0, 0,
   '{"input_tokens":10,"output_tokens":15}'::jsonb,
   '{"validation_passed":false}'::jsonb
 ), true, 'invalid output settlement and terminal queue transition succeed atomically');
@@ -61,14 +61,34 @@ select is((select status from public.ai_calls where run_id = '00000000-0000-4000
 select is((select status::text from public.job_queue where deduplication_key = 'ai15-provider-failure-job'), 'dead_letter', 'invalid output dead-letters the queue job');
 select is((select status::text from public.workflow_runs where id = '00000000-0000-4000-8000-000000000318'), 'failed', 'queue completion owns the failed run state');
 select is((select count(*)::integer from public.reports where run_id = '00000000-0000-4000-8000-000000000318'), 0, 'invalid output produces no report');
+select is((select actual_cost from public.ai_calls where run_id = '00000000-0000-4000-8000-000000000318'), 1.01::numeric, 'provider actual above both estimate and cap is recorded without clamping');
+select ok((select actual_amount = 1.01 and status = 'exhausted' from public.on_demand_budgets where run_id = '00000000-0000-4000-8000-000000000318'), 'on-demand budget records the full over-cap actual and closes');
+select ok((select consumed_amount = 1.01 and released_amount = 0 from public.cost_reservations where run_id = '00000000-0000-4000-8000-000000000318'), 'reservation ledger records full consumption and no fictitious release');
 select is(public.fail_instrumented_ai_provider_response(
   (select id from public.job_queue where deduplication_key = 'ai15-provider-failure-job'),
   'resp_ai15failure123',
   (select id from public.ai_calls where run_id = '00000000-0000-4000-8000-000000000318'),
-  'structured_output_invalid', 0.01, 10, 15, 0, 0,
+  'structured_output_invalid', 1.01, 10, 15, 0, 0,
   '{"input_tokens":10,"output_tokens":15}'::jsonb,
   '{"validation_passed":false}'::jsonb
 ), true, 'replayed failure completes idempotently');
+select is((select actual_amount from public.on_demand_budgets where run_id = '00000000-0000-4000-8000-000000000318'), 1.01::numeric, 'idempotent failure replay does not charge provider usage twice');
+
+insert into public.workflow_runs (id, user_id, workflow_definition_id, status, trigger, idempotency_key)
+select '00000000-0000-4000-8000-000000000319', (select user_id from ai15_fixture_owner), id, 'running', 'on_demand', 'ai20-on-demand-existing-actual'
+from public.workflow_definitions where code = 'systems-weekly-quality-platform'
+on conflict (id) do nothing;
+insert into public.on_demand_budgets (user_id, run_id, manager_code, hard_cap, actual_amount, model_ceiling, search_ceiling, expires_at)
+values ((select user_id from ai15_fixture_owner), '00000000-0000-4000-8000-000000000319', 'systems', 1.00, 0.60, 'gpt-5.6-luna', 0, now() + interval '1 hour');
+select throws_ok($$select public.reserve_instrumented_ai_call(
+  (select user_id from ai15_fixture_owner),
+  '00000000-0000-4000-8000-000000000319',
+  (select id from public.ai_model_catalog where model_id = 'gpt-5.6-luna'),
+  (select v.id from public.prompt_versions v join public.prompt_templates t on t.id = v.template_id where t.code = 'controlled-agent-report' and v.version = 1),
+  0.41,
+  'ai20:failure:attempt:2',
+  '{}'::jsonb
+)$$, 'P0001', 'on_demand_hard_cap_exceeded', 'reservation includes actual spend already consumed under the same run cap');
 
 select * from finish();
 rollback;
