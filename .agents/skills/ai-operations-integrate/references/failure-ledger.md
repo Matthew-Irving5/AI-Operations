@@ -45,6 +45,9 @@ This file records **confirmed** errors (not generic best practices). One row per
 | OPS-03 | WSL build retained a removed middleware test from another branch and failed TypeScript | RUNTIME-04; delete stale sources only after disposable-target guards | Worker test passed after clean sync; workspace guard regression |
 
 | AI41-01 | Worker poll lacked version and capability gates | WORKER-01; reject incompatible workers before queue claims; unit regression | Deno `worker-protocol_test.ts`: old-version and missing-inventory rejection cases
+| AI27-01  | Drive discovery and initial sync enumerated account-wide metadata, and change responses included metadata before selected IDs were filtered | GOOGLE-01; use persisted Picker IDs as the allowlist and fetch selected file metadata by ID only | [AI-27](https://linear.app/ai-operations-mi/issue/AI-27/harden-personal-google-drive-calendar-and-tasks-connection-as-the), [selected-ID sync regression](../../../../supabase/functions/_shared/google-sync_test.ts) |
+| AI27-02  | Deselecting a Drive file updated configuration but left the stored row marked selected | DB-11; reconcile selected state atomically and preserve the row/provenance | [AI-27](https://linear.app/ai-operations-mi/issue/AI-27/harden-personal-google-drive-calendar-and-tasks-connection-as-the), [selection RPC pgTAP regression](../../../../supabase/tests/source_permissions.sql) |
+| AI27-03  | Strict CSP omitted the Google origins required to load GIS/Picker scripts, connect to Picker APIs, and frame the Picker | WEB-01; allow only the required origins and assert the resulting policy | [AI-27](https://linear.app/ai-operations-mi/issue/AI-27/harden-personal-google-drive-calendar-and-tasks-connection-as-the), [Picker CSP regression](../../../../apps/web/middleware.test.ts) |
 
 ## Update rule
 

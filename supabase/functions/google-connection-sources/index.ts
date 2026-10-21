@@ -1,8 +1,10 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { z } from "https://esm.sh/zod@4.6.6";
 import { consumeRateLimit } from "../_shared/rate-limit.ts";
+import { googlePickerPublicConfiguration } from "../_shared/google-picker.ts";
 import {
   discoverGoogleSources,
+  hasExactGoogleScopes,
   isGoogleSyncError,
 } from "../_shared/google-sync.ts";
 
@@ -116,7 +118,7 @@ async function authenticate(request: Request) {
 
 async function ownedConnection(connectionId: string, userId: string) {
   const result = await service.from("connections").select(
-    "id,provider,account_role,status,sync_enabled,configuration",
+    "id,provider,account_role,status,sync_enabled,scopes,configuration",
   ).eq("id", connectionId).eq("user_id", userId).eq("provider", "google")
     .maybeSingle().returns<{
     id: string;
@@ -124,6 +126,7 @@ async function ownedConnection(connectionId: string, userId: string) {
     account_role: string;
     status: string;
     sync_enabled: boolean;
+    scopes: string[];
     configuration: Record<string, unknown>;
   }>();
   return result.error || !result.data ? null : result.data;
@@ -156,6 +159,25 @@ Deno.serve(async (request) => {
     return json({ code: "connection_role_forbidden" }, 403);
   }
   if (request.method === "GET") {
+    if (url.searchParams.get("operation") === "picker_config") {
+      if (
+        connection.status !== "connected" || !connection.sync_enabled ||
+        !hasExactGoogleScopes(connection.scopes)
+      ) {
+        return json({ code: "connection_unavailable" }, 404, requestId);
+      }
+      const picker = googlePickerPublicConfiguration((name) =>
+        Deno.env.get(name)
+      );
+      if (!picker) {
+        return json(
+          { code: "google_picker_not_configured", requestId },
+          503,
+          requestId,
+        );
+      }
+      return json({ connectionId, requestId, picker }, 200, requestId);
+    }
     try {
       const discovered = await discoverGoogleSources(service, connectionId);
       const configuration = connection.configuration ?? {};
