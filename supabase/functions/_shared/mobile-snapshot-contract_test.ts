@@ -6,6 +6,7 @@ import { MOBILE_LIMITS } from "./mobile-snapshot.ts";
 import {
   mobileEnvelopeSchema,
   mobileRecordSchema,
+  mobileReminderV2ScopeSchema,
 } from "./mobile-snapshot-contract.ts";
 
 Deno.test("mobile records do not require optional Apple identity timestamps", () => {
@@ -15,6 +16,47 @@ Deno.test("mobile records do not require optional Apple identity timestamps", ()
       source: "reminders",
       kind: "reminder",
       payload: {},
+    }).success,
+  );
+});
+
+Deno.test("Reminder v2 requires a supported list identity before persistence", () => {
+  const record = {
+    source: "reminders",
+    kind: "reminder",
+    payload: { contract_version: 2, list: "Fitness Plan" },
+  };
+  assert(mobileReminderV2ScopeSchema.safeParse(record).success);
+  assertEquals(
+    mobileReminderV2ScopeSchema.safeParse({
+      ...record,
+      payload: { contract_version: 1, list: "Fitness Plan" },
+    }).success,
+    false,
+  );
+  assertEquals(
+    mobileReminderV2ScopeSchema.safeParse({
+      ...record,
+      payload: { contract_version: 2 },
+    }).success,
+    false,
+  );
+  assertEquals(
+    mobileReminderV2ScopeSchema.safeParse({
+      ...record,
+      payload: { contract_version: 2, list: "Unapproved List" },
+    }).success,
+    false,
+  );
+});
+
+Deno.test("non-Reminder v1 records remain valid", () => {
+  assert(
+    mobileRecordSchema.safeParse({
+      record_id: "31000000-0000-4000-8000-000000000099",
+      source: "health",
+      kind: "health_sample",
+      payload: { type: "Steps" },
     }).success,
   );
 });

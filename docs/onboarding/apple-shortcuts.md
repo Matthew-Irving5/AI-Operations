@@ -10,7 +10,7 @@ request broad device access.
    `https://epmgvknrydadzitzupzx.supabase.co/functions/v1/mobile-snapshot-ingest` with
    `Authorization: Bearer <device token>`. Keep the token in your private Shortcut and never put it
    inside the JSON, screenshots, logs, or an exported Shortcut.
-4. Map only the approved lists. The server silently excludes Reminder lists not enabled for the device.
+4. In the universal collector, include Reminder contract version `2` and the exact source list name in every Reminder record. The database checks that list against the device's paired scope and rejects the entire snapshot before retaining any payload if the list is missing or disabled.
 5. To receive approved actions, call `apple-bridge-actions` with the same token. The endpoint exposes
    only actions in the `AI Actions` list that have already passed approval.
 6. Test with a harmless event and reminder, confirm the Personal page shows them, then enable the
