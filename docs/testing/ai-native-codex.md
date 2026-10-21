@@ -15,7 +15,7 @@ These are per-user Codex tools on one machine. They do **not** automatically con
 ## A low-friction ticket sequence
 
 1. **Read and state the contract.** Check the approved repo, current Linear issue, linked blockers, current code and `AGENTS.md`; run `corepack pnpm qa:doctor --fix`. Before editing, post a short _ticket-specific_ parent-conversation readback, and use the versioned readback artifact when its CI gate applies.
-2. **Investigate only the affected surface.** Use `ai-operations-investigate` for unfamiliar code or integrations; Serena and Context7 can help when available.
+2. **Integrate using established contracts.** For cross-boundary tickets load `ai-operations-integrate`: map actual callers/roles, producers, consumers and the existing repository patterns before editing. Review only the matching rule IDs and incidents; after any confirmed integration fix update the living rule + incident in the same commit, and reconcile lessons at Done. For unfamiliar code use `ai-operations-investigate`, Serena or Context7 as applicable.
 3. **Implement and diagnose narrowly.** Use `ai-operations-debug` for broken behaviour. Fix producer/consumer contracts and add the smallest earlier regression test. Run `corepack pnpm verify:changed`.
 4. **Ship deliberately.** Use `ai-operations-ship` for PR and CI ownership through required staged acceptance and permitted auto-merge. Never fake an acceptance status.
 5. **Resume accurately.** Use `ai-operations-handoff` at compaction or external wait; store the exact head SHA and next command in Linear. Don't start another competing agent on the same branch.

@@ -5,6 +5,7 @@ import { test } from 'node:test';
 
 const skills = [
   'ai-operations-investigate',
+  'ai-operations-integrate',
   'ai-operations-debug',
   'ai-operations-ship',
   'ai-operations-handoff',

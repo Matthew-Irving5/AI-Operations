@@ -10,5 +10,5 @@ description: Ship an AI Operations Linear issue through its existing PR, CI, exa
 3. Open one PR, inspect required GitHub Actions on exact head SHA, and fix failures by reproducing their narrow failing command. Do not forge statuses.
 4. Use existing deploy-staging.yml candidate/acceptance workflow and staging lease. Auth MFA remains human-owned; check headed browser availability before timers.
 5. Preserve branch protection. Enable auto-merge only where authorized; record exact resume action for external wait.
-6. Document actual merge SHA, tests, bounded production smoke and new regressions in Linear before Done.
+6. Document actual merge SHA, tests, bounded production smoke and new regressions in Linear before Done. Review integration/infra fixes: commit updated `ai-operations-integrate` rule + incident for each novel root cause; for no new learning, say so and cite existing rule ID in the completion note.
    Skip extra multi-agent reviews when existing local E2E and CI already prove the capability.

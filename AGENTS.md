@@ -101,6 +101,7 @@ Never:
 Codex discovers repository-scoped skills in `.agents/skills/`; read `docs/testing/ai-native-codex.md` for the current supported plugin setup, fallbacks and next-session prompt. Tool and skill installations never override this file, the Linear issue, security requirements or existing test/release gates.
 
 - For unfamiliar cross-module functionality, start with `ai-operations-investigate`; prefer Serena symbol/reference queries when connected, otherwise `rg`, installed types and the repo map. For version-specific external libraries, use Context7 if authenticated; otherwise official docs.
+- For any DB/Edge/provider/Worker/orchestrator/auth/deployment change, **load `ai-operations-integrate` after the issue readback and before implementation**. Apply its existing architecture rules and failure ledger to the actual changed interfaces; do not add a second startup test suite.
 - For a concrete failure, use `ai-operations-debug` to reproduce and localise it before edits.
 - For PR readiness/CI/staging/merge, use `ai-operations-ship` and **existing** GitHub workflows rather than a second release system.
 - For compaction, a parked human gate or delegation, use `ai-operations-handoff` to preserve exact current SHA, validated results, blockers and next command in the ticket.
@@ -116,7 +117,7 @@ Agent debugging optimizes **localisation time**, not the number of patches attem
 4. Make the smallest causal fix and rerun **only the narrow reproducer**. Do not run a broad suite while that reproducer is red.
 5. After two unsupported/failed fix hypotheses, stop patching. Revert speculative changes, restate the misunderstood invariant, reduce to a smaller reproduction, improve diagnostics if needed, and only then edit again.
 6. Once narrow green, run the changed-surface proof with `corepack pnpm verify:changed`. CI/staging are independent verification, not the primary debugger.
-7. Every escaped deterministic bug leaves three artifacts: the fix, a regression test, and an earlier diagnostic/invariant so the same class cannot escape to that stage again.
+7. Every escaped deterministic bug leaves three artifacts: the fix, a regression test, and an earlier diagnostic/invariant so the same class cannot escape to that stage again. When the cause is integration/infrastructure, update the matching `ai-operations-integrate` prevention rule and evidence-linked incident **in the same fix commit**; do not wait until ticket closure.
 
 Errors must be actionable without secret/personal-data leakage: identify the failed invariant, boundary/subsystem, expected vs actual state, correlation ID when available, owning contract/source when known, and the exact reproduction command.
 ## Mandatory ticket startup readback (execution contract v1)
@@ -130,6 +131,7 @@ This repository uses `docs/testing/linear-ticket-execution-contract.md` as the c
 - the cheapest focused reproduction/tests and final `verify:changed` proof;
 - whether hosted proof is genuinely required, plus safe fixture/auth/evidence readiness checks;
 - what each subagent must receive and return, or why none is used.
+- one succinct integration-contract sentence naming the existing path/permissions, and applicable `ai-operations-integrate` rule IDs (for affected cross-boundary tickets).
 
 Validate with `node infrastructure/scripts/ticket-readback.mjs check AI-XX`. No generic restatement of the issue, placeholder answers, passwords, tokens or personal operational data. The committed readback is a traceable record; the parent-conversation summary is the actual communication checkpoint. CI checks the readback's completeness on AI-numbered PRs, **not** factual correctness or whether it was written before editing. The owning agent remains responsible for both.
 
@@ -162,7 +164,7 @@ Use the cheapest proof capable of catching each defect class exactly once.
 - PR CI consists of parallel changed-surface **core** and **boundary** lanes. Superseded runs are cancelled. Full browser/Edge regression is scheduled separately.
 - If CI fails, use its exact failing command as the narrow reproducer; use `qa:debug` where useful. Fix locally, prove the narrow failure green, then push once. Do not debug by speculative GitHub Actions commits.
 - Staging proves only ticket-specific boundaries that cannot be established locally. Promote the accepted immutable candidate/provenance through the existing release gates; production gets a bounded affected-capability smoke.
-- Merge only with required checks green. Record material defects and the new regression/diagnostic that prevents recurrence.
+- Merge only with required checks green. Record material defects and the new regression/diagnostic that prevents recurrence. Before marking a ticket Done, review every confirmed integration/infra defect: its rule and linked incident must be committed, or the Linear completion note must identify the existing rule that already prevented recurrence. Keep generic functional bugs in the normal regression suite, not in the integration ledger.
 ## Conversation completion
 
 When the pass is merged:
