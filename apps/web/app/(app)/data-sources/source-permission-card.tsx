@@ -2,19 +2,25 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Script from 'next/script';
 import { GoogleConnect } from './google-connect';
 import {
   GOOGLE_DRIVE_EMPTY_STATE,
+  GOOGLE_DRIVE_FILE_SCOPE,
   actionMessage,
   cadenceLabel,
   consumeSourceRevokeResume,
   freshnessLabel,
+  hasOnlyGoogleDriveFileScope,
   googleScopeDetail,
   googleFreshnessLabel,
   latestFreshness,
+  parseGoogleDrivePickerConfiguration,
+  parseGooglePickerFiles,
   parseGoogleSourceDiscoveryDiagnostic,
   parseGoogleSourceResources,
   sourceDate,
+  type GoogleDrivePickerConfiguration,
   type GoogleSourceResources,
   type GoogleSourceDiscoveryDiagnostic,
   type SourceFreshness,
@@ -47,6 +53,51 @@ type ActionBody = {
   provider_revoked?: boolean;
   credential_deleted?: boolean;
 };
+
+type GoogleTokenResponse = {
+  access_token?: string;
+  scope?: string;
+  error?: string;
+};
+
+type GooglePickerBuilder = {
+  addView(view: string): GooglePickerBuilder;
+  enableFeature(feature: string): GooglePickerBuilder;
+  setOAuthToken(token: string): GooglePickerBuilder;
+  setDeveloperKey(key: string): GooglePickerBuilder;
+  setAppId(projectNumber: string): GooglePickerBuilder;
+  setCallback(callback: (value: unknown) => void): GooglePickerBuilder;
+  build(): { setVisible(visible: boolean): void };
+};
+
+type GooglePickerApi = {
+  Action: { PICKED: string };
+  Feature: { MULTISELECT_ENABLED: string };
+  ViewId: { DOCS: string };
+  PickerBuilder: new () => GooglePickerBuilder;
+};
+
+declare global {
+  interface Window {
+    gapi?: { load(name: string, callback: () => void): void };
+    google?: {
+      accounts?: {
+        oauth2?: {
+          initTokenClient(config: {
+            client_id: string;
+            scope: string;
+            include_granted_scopes: boolean;
+            login_hint: string;
+            prompt: string;
+            callback(response: GoogleTokenResponse): void;
+            error_callback?(error: { type?: string }): void;
+          }): { requestAccessToken(): void };
+        };
+      };
+      picker?: GooglePickerApi;
+    };
+  }
+}
 
 type SelectionIntent = {
   connectionId: string;
@@ -167,6 +218,14 @@ export function GoogleSourceCard({
   const [selectedDriveFileIds, setSelectedDriveFileIds] = useState<string[]>([]);
   const [selectionSaved, setSelectionSaved] = useState(false);
   const [savingSelection, setSavingSelection] = useState(false);
+  const [pickerConfiguration, setPickerConfiguration] =
+    useState<GoogleDrivePickerConfiguration | null>(null);
+  const [pickerConfigurationState, setPickerConfigurationState] = useState<
+    'loading' | 'ready' | 'unconfigured' | 'error'
+  >('loading');
+  const [pickerApiReady, setPickerApiReady] = useState(false);
+  const [googleIdentityReady, setGoogleIdentityReady] = useState(false);
+  const [pickerLibraryError, setPickerLibraryError] = useState(false);
   const completeRevoke = useCallback(() => {
     setRevoked(true);
     router.refresh();
@@ -209,12 +268,51 @@ export function GoogleSourceCard({
       });
     }
   }, [connection.id]);
+  const loadPickerConfiguration = useCallback(async () => {
+    setPickerConfigurationState('loading');
+    try {
+      const response = await fetch(
+        `/api/connections/sources?connectionId=${encodeURIComponent(connection.id)}&operation=picker_config`,
+        { headers: { accept: 'application/json' }, cache: 'no-store' },
+      );
+      const body: unknown = await response.json().catch(() => null);
+      const config = parseGoogleDrivePickerConfiguration(body);
+      if (!response.ok || !config) {
+        setPickerConfiguration(null);
+        setPickerConfigurationState(response.status === 503 ? 'unconfigured' : 'error');
+        return;
+      }
+      setPickerConfiguration(config);
+      setPickerConfigurationState('ready');
+    } catch {
+      setPickerConfiguration(null);
+      setPickerConfigurationState('error');
+    }
+  }, [connection.id]);
+  const onPickerApiScriptReady = useCallback(() => {
+    const gapi = window.gapi;
+    if (!gapi) {
+      setPickerLibraryError(true);
+      return;
+    }
+    gapi.load('picker', () => setPickerApiReady(true));
+  }, []);
+  const onGoogleIdentityScriptReady = useCallback(() => {
+    if (!window.google?.accounts?.oauth2) {
+      setPickerLibraryError(true);
+      return;
+    }
+    setGoogleIdentityReady(true);
+  }, []);
   useEffect(() => {
     if (state === 'connected') {
-      const timer = window.setTimeout(() => void loadResources(), 0);
+      const timer = window.setTimeout(() => {
+        void loadResources();
+        void loadPickerConfiguration();
+      }, 0);
       return () => window.clearTimeout(timer);
     }
-  }, [loadResources, state]);
+  }, [loadPickerConfiguration, loadResources, state]);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('resume') !== 'source_scope_change') return;
@@ -303,6 +401,74 @@ export function GoogleSourceCard({
       '/mfa?returnTo=%2Fdata-sources%3Fresume%3Dsource_scope_change&job=connection_scope_change',
     );
   }
+  function openDrivePicker() {
+    const identity = window.google?.accounts?.oauth2;
+    const picker = window.google?.picker;
+    if (!pickerConfiguration || !identity || !picker || !pickerApiReady || !googleIdentityReady) {
+      setStatus(
+        'Google Drive file selection is not ready. Retry after the source page finishes loading.',
+      );
+      return;
+    }
+    try {
+      const tokenClient = identity.initTokenClient({
+        client_id: pickerConfiguration.oauthClientId,
+        scope: GOOGLE_DRIVE_FILE_SCOPE,
+        include_granted_scopes: false,
+        login_hint: connection.account_label,
+        prompt: '',
+        callback: (response) => {
+          if (response.error || !response.access_token) {
+            setStatus(
+              'Google did not authorize Drive file selection. Your current selection is unchanged.',
+            );
+            return;
+          }
+          if (!hasOnlyGoogleDriveFileScope(response.scope)) {
+            setStatus(
+              'Google returned broader permissions than file selection needs. Selection was stopped.',
+            );
+            return;
+          }
+          const onPicked = (value: unknown) => {
+            const files = parseGooglePickerFiles(value, picker.Action.PICKED);
+            if (!files.length) return;
+            setSelectedDriveFileIds((current) => [
+              ...new Set([...current, ...files.map((file) => file.id)]),
+            ]);
+            setResourceState((current) => {
+              if (!current.data) return current;
+              const byId = new Map(current.data.driveFiles.map((file) => [file.id, file]));
+              for (const file of files) byId.set(file.id, file);
+              return {
+                ...current,
+                data: { ...current.data, driveFiles: [...byId.values()] },
+              };
+            });
+            setSelectionSaved(false);
+            setStatus('Drive files selected. Save the selection with fresh MFA before syncing.');
+          };
+          new picker.PickerBuilder()
+            .addView(picker.ViewId.DOCS)
+            .enableFeature(picker.Feature.MULTISELECT_ENABLED)
+            .setOAuthToken(response.access_token)
+            .setDeveloperKey(pickerConfiguration.apiKey)
+            .setAppId(pickerConfiguration.cloudProjectNumber)
+            .setCallback(onPicked)
+            .build()
+            .setVisible(true);
+        },
+        error_callback: () => {
+          setStatus(
+            'Google Drive file selection was cancelled or could not open. Try again from this page.',
+          );
+        },
+      });
+      tokenClient.requestAccessToken();
+    } catch {
+      setStatus('Google Drive file selection could not start. Try again from this page.');
+    }
+  }
   const overallFreshness = latestFreshness(freshness, [
     'google_calendar',
     'google_drive',
@@ -333,6 +499,22 @@ export function GoogleSourceCard({
         : 'Google data is stale or unavailable. Try Sync now; if the provider denied access, reconnect and review each permission.';
   return (
     <article className="card source-card" aria-labelledby={`google-${connection.id}`}>
+      {state === 'connected' ? (
+        <>
+          <Script
+            src="https://apis.google.com/js/api.js"
+            strategy="afterInteractive"
+            onReady={onPickerApiScriptReady}
+            onError={() => setPickerLibraryError(true)}
+          />
+          <Script
+            src="https://accounts.google.com/gsi/client"
+            strategy="afterInteractive"
+            onReady={onGoogleIdentityScriptReady}
+            onError={() => setPickerLibraryError(true)}
+          />
+        </>
+      ) : null}
       <div className="source-heading">
         <div>
           <div className="label">Personal Google data</div>
@@ -490,6 +672,24 @@ export function GoogleSourceCard({
                   <p>{GOOGLE_DRIVE_EMPTY_STATE}</p>
                 )}
               </div>
+              <button
+                type="button"
+                onClick={openDrivePicker}
+                disabled={
+                  pickerConfigurationState !== 'ready' ||
+                  !pickerApiReady ||
+                  !googleIdentityReady ||
+                  pickerLibraryError
+                }
+              >
+                Choose Drive files
+              </button>
+              {pickerConfigurationState === 'unconfigured' ? (
+                <p role="status">Drive file selection is not configured for this environment.</p>
+              ) : null}
+              {pickerLibraryError ? (
+                <p role="status">Google Drive file selection could not load. Retry this page.</p>
+              ) : null}
             </fieldset>
             <div className="source-selection-actions">
               <button type="button" onClick={() => void saveSelection()} disabled={savingSelection}>
