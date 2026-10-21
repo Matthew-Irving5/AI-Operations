@@ -2,6 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { verifyOpenAiWebhookSignature } from "../_shared/openai-webhook-security.ts";
 import {
   extractResponseOutputText,
+  type RedactedProviderUsage,
   redactedProviderUsage,
   validateReportOutput,
 } from "../_shared/openai-contract.ts";
@@ -75,7 +76,7 @@ async function failProviderResult(
   callId: string,
   errorCode: string,
   actualCost: number,
-  usage: Record<string, number>,
+  usage: RedactedProviderUsage,
   trace: Record<string, unknown>,
 ): Promise<boolean> {
   const failure = await service.rpc("fail_instrumented_ai_provider_response", {
@@ -140,7 +141,7 @@ Deno.serve(async (request) => {
   const call = await service
     .from("ai_calls")
     .select(
-      "id,run_id,user_id,model_id,estimated_cost,request_id,redacted_trace,status",
+      "id,run_id,user_id,model_id,model_pricing_id,estimated_cost,request_id,redacted_trace,status",
     )
     .eq("response_id", responseId)
     .maybeSingle();
@@ -214,6 +215,17 @@ Deno.serve(async (request) => {
     ["failed", "incomplete"].includes(String(responseResult.status))
   ) {
     const failedUsage = redactedProviderUsage(responseResult);
+    if (!failedUsage.has_complete_usage || !callData.model_pricing_id) {
+      await service.rpc("record_instrumented_ai_reconciliation_failure", {
+        p_call_id: callData.id,
+        p_error_code: !failedUsage.has_complete_usage
+          ? "provider_usage_incomplete"
+          : "model_pricing_version_missing",
+        p_redacted_trace: { response_id: responseId },
+      });
+      await markEvent(eventId, "retrying");
+      return json({ code: "provider_usage_reconciliation_required" }, 500);
+    }
     const failedCostResult = await service.rpc(
       "calculate_instrumented_ai_cost",
       {
@@ -222,6 +234,8 @@ Deno.serve(async (request) => {
         p_output_tokens: failedUsage.output_tokens,
         p_cached_input_tokens: failedUsage.cached_input_tokens,
         p_search_calls: 0,
+        p_cache_write_tokens: failedUsage.cache_write_tokens,
+        p_pricing_id: callData.model_pricing_id,
       },
     );
     if (failedCostResult.error || typeof failedCostResult.data !== "number") {
@@ -276,12 +290,25 @@ Deno.serve(async (request) => {
     allowedActionTypes.includes(action.type)
   ) ?? false;
   const usage = redactedProviderUsage(responseResult);
+  if (!usage.has_complete_usage || !callData.model_pricing_id) {
+    await service.rpc("record_instrumented_ai_reconciliation_failure", {
+      p_call_id: callData.id,
+      p_error_code: !usage.has_complete_usage
+        ? "provider_usage_incomplete"
+        : "model_pricing_version_missing",
+      p_redacted_trace: { response_id: responseId },
+    });
+    await markEvent(eventId, "retrying");
+    return json({ code: "provider_usage_reconciliation_required" }, 500);
+  }
   const actualCost = await service.rpc("calculate_instrumented_ai_cost", {
     p_model_id: callData.model_id,
     p_input_tokens: usage.input_tokens,
     p_output_tokens: usage.output_tokens,
     p_cached_input_tokens: usage.cached_input_tokens,
     p_search_calls: 0,
+    p_cache_write_tokens: usage.cache_write_tokens,
+    p_pricing_id: callData.model_pricing_id,
   });
   if (actualCost.error || typeof actualCost.data !== "number") {
     await service.rpc("record_instrumented_ai_reconciliation_failure", {

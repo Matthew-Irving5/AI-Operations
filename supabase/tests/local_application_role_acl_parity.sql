@@ -66,8 +66,8 @@ SELECT is(
   -- AI-19 revokes the historical PUBLIC EXECUTE grant on
   -- record_conversation_handoff_event(); rpc_security.sql enforces its exact
   -- anon/authenticated/service_role false/false/false matrix.
-  '5b5f2cad2b94fac077c2a94e3b2fa014',
-  'local routine ACL tuples match staging plus AI15 execution RPCs'
+  'ffaef55c0e51180628d1c8eceb878126',
+  'local routine ACL tuples include the reviewed AI20 reservation and pricing RPC signatures'
 );
 
 SELECT is(
