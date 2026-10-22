@@ -565,6 +565,8 @@ export function selectHostedAcceptanceProfile(files: string[]): HostedAcceptance
     return (
       file.startsWith('apps/web/app/api/auth/') ||
       file === 'apps/web/app/api/workflows/launch/route.ts' ||
+      file.startsWith('apps/web/app/(app)/career/page.tsx') ||
+      file.startsWith('apps/web/app/(app)/devices/') ||
       file === 'apps/web/app/(app)/app-shell.tsx' ||
       file === 'apps/web/app/(app)/layout.tsx' ||
       file === 'apps/web/app/(app)/navigation.ts' ||
@@ -573,8 +575,19 @@ export function selectHostedAcceptanceProfile(files: string[]): HostedAcceptance
       file.startsWith('apps/web/lib/auth') ||
       file.startsWith('apps/web/lib/local-test-auth') ||
       file === 'apps/web/middleware.ts' ||
+      file.startsWith('apps/windows-worker/src/ai_operations_worker/') ||
+      file.startsWith('packages/contracts/src/action-policy') ||
+      file.startsWith('packages/manager-core/src/action-execution') ||
       file === 'supabase/config.toml' ||
       file.startsWith('supabase/functions/_shared/auth-assurance') ||
+      file.startsWith('supabase/functions/_shared/worker-protocol') ||
+      file.startsWith('supabase/functions/device-register/') ||
+      file.startsWith('supabase/functions/device-revoke/') ||
+      file.startsWith('supabase/functions/github-career-sync/') ||
+      file.startsWith('supabase/functions/ai-execute/canonical-action-') ||
+      file.startsWith('supabase/functions/ai-execute/prompt-promotion-adapter') ||
+      file.startsWith('supabase/functions/worker-poll/') ||
+      file.startsWith('supabase/functions/worker-heartbeat/') ||
       file.startsWith('tests/e2e/auth.') ||
       file === 'tests/e2e/platform-authenticated.spec.ts'
     );

@@ -1439,6 +1439,32 @@ test('hosted acceptance profile requires real MFA only for auth-browser changes'
   assert.equal(selectHostedAcceptanceProfile(['docs/testing/local-autonomous-qa.md']), 'targeted');
 });
 
+test('issue-required action, worker-pairing, and Career proofs use auth-browser', () => {
+  assert.equal(
+    selectHostedAcceptanceProfile([
+      'packages/contracts/src/action-policy.ts',
+      'packages/manager-core/src/action-execution.ts',
+      'supabase/functions/ai-execute/canonical-action-dispatcher.ts',
+    ]),
+    'auth-browser',
+  );
+  assert.equal(
+    selectHostedAcceptanceProfile([
+      'apps/web/app/(app)/devices/device-manager.tsx',
+      'supabase/functions/_shared/worker-protocol.ts',
+      'apps/windows-worker/src/ai_operations_worker/protocol.py',
+    ]),
+    'auth-browser',
+  );
+  assert.equal(
+    selectHostedAcceptanceProfile([
+      'apps/web/app/(app)/career/page.tsx',
+      'supabase/functions/github-career-sync/index.ts',
+    ]),
+    'auth-browser',
+  );
+});
+
 test('targeted hosted acceptance is valid without MFA and cannot satisfy an auth-browser deployment', () => {
   assert.deepEqual(
     Ai16PromptGovernanceProofSchema.parse(ai16PromptGovernanceProof),
