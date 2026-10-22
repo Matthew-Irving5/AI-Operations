@@ -38,6 +38,8 @@ This file records **confirmed** errors (not generic best practices). One row per
 | AI27-02  | Deselecting a Drive file updated configuration but left the stored row marked selected | DB-11; reconcile selected state atomically and preserve the row/provenance | [AI-27](https://linear.app/ai-operations-mi/issue/AI-27/harden-personal-google-drive-calendar-and-tasks-connection-as-the), [selection RPC pgTAP regression](../../../../supabase/tests/source_permissions.sql) |
 | AI27-03  | Strict CSP omitted the Google origins required to load GIS/Picker scripts, connect to Picker APIs, and frame the Picker | WEB-01; allow only the required origins and assert the resulting policy | [AI-27](https://linear.app/ai-operations-mi/issue/AI-27/harden-personal-google-drive-calendar-and-tasks-connection-as-the), [Picker CSP regression](../../../../apps/web/middleware.test.ts) |
 
+| AI27-04  | Generic hosted `auth-browser` proof could pass without executing AI-27's required Google OAuth/Picker selected-file lifecycle | GOOGLE-02; route to a dedicated exact-candidate provider runner with redacted lifecycle evidence | [AI-27](https://linear.app/ai-operations-mi/issue/AI-27/harden-personal-google-drive-calendar-and-tasks-connection-as-the), [PR #179](https://github.com/Matthew-Irving5/AI-Operations/pull/179), `google-oauth-staging-acceptance.test.ts` |
+
 ## Update rule
 
 At each integration/infra fix: correct the existing domain rule or add a new stable ID, append a _verified_ incident row here, and commit alongside the code/regression. Before moving the Linear ticket to Done, review the entire ticket's integration incidents and record any missing knowledge. Don't expand this file with speculative causes or feature bugs that have no reusable integration lesson.
