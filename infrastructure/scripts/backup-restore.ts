@@ -44,7 +44,7 @@ const OBJECT_QUERY = singleLineSqlArgument(`
   ) refs where object_key is not null order by object_key`);
 const MIGRATION_QUERY =
   "select coalesce(max(version)::text, '0') as migration_version from supabase_migrations.schema_migrations";
-const ROW_COUNT_QUERY = `select jsonb_build_object(
+const ROW_COUNT_QUERY = singleLineSqlArgument(`select jsonb_build_object(
   'auth_users', (select count(*) from auth.users),
   'app_users', (select count(*) from public.app_users),
   'source_objects', (select count(*) from public.source_objects),
@@ -53,7 +53,7 @@ const ROW_COUNT_QUERY = `select jsonb_build_object(
   'evidence_references', (select count(*) from public.evidence_references),
   'linked_source_evidence', (select count(*) from public.evidence_references where source_object_id is not null),
   'archived_traces', (select count(*) from public.trace_events where archive_reference is not null)
-) as row_counts`;
+) as row_counts`);
 
 type QueryRow = Record<string, unknown>;
 
