@@ -34,6 +34,24 @@ export const mobileRecordSchema = z.object({
   modified_at: mobileOffsetTimestamp.nullable().optional(),
   payload: z.record(z.string(), z.unknown()),
 }).strict();
+
+export const mobileReminderLists = [
+  "Fitness Plan",
+  "Household & Personal",
+  "AI Actions",
+] as const;
+
+// The transport envelope remains v1. Reminder records independently move to
+// contract v2 so the server can enforce the paired device's selected list.
+export const mobileReminderV2ScopeSchema = z.object({
+  source: z.literal("reminders"),
+  kind: z.literal("reminder"),
+  payload: z.object({
+    contract_version: z.literal(2),
+    list: z.enum(mobileReminderLists),
+  }).passthrough(),
+}).passthrough();
+
 export const mobileEnvelopeSchema = z.object({
   schema_version: z.literal(1),
   snapshot_id: z.string().uuid(),

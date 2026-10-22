@@ -425,7 +425,12 @@ function runBoundary(plan: ImpactPlan): CheckResult[] {
       'supabase/functions/deno.json',
       ...indexes,
     ]);
-    add('Edge contract tests', 'deno', ['test', '--no-config', ...tests]);
+    add('Edge contract tests', 'deno', [
+      'test',
+      '--no-config',
+      '--allow-read=docs/onboarding',
+      ...tests,
+    ]);
   }
   if (plan.worker && !process.env.CI) {
     add('Windows worker tests', 'python', ['-m', 'pytest', '-p', 'no:cacheprovider'], {
