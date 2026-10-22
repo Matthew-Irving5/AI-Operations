@@ -5,6 +5,7 @@ import {
   assertIsolatedRestoreTarget,
   corepackInvocation,
   restoreLocalDatabaseFile,
+  rowsMatching,
 } from './backup-restore.js';
 import {
   assertIsolatedLocalRecoveryTarget,
@@ -254,4 +255,22 @@ test('Supabase CLI runs Corepack without a shell on Windows', () => {
     assert.equal(invocation.command, 'corepack');
     assert.deepEqual(invocation.args, args);
   }
+});
+
+test('Supabase database query parser ignores CLI diagnostics around the JSON envelope', () => {
+  const output = [
+    'Connecting to local database...',
+    JSON.stringify({
+      boundary: 'fixture',
+      rows: [{ migration_version: '20261021141700' }],
+      warning: 'untrusted text containing } and { characters',
+    }),
+    'A new version of Supabase CLI is available: v2.121.0',
+  ].join('\n');
+  assert.deepEqual(rowsMatching(output, ['migration_version']), [
+    { migration_version: '20261021141700' },
+  ]);
+  assert.throws(() => rowsMatching('query returned no JSON rows', ['migration_version']), {
+    message: 'backup_database_query_invalid_json',
+  });
 });

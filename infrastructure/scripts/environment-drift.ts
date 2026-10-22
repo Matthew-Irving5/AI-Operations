@@ -5,6 +5,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import ts from 'typescript';
 import { z } from 'zod';
 import { localFunctionDirectories } from './edge-function-inventory.js';
+import { parseJsonObjectsFromCliOutput } from './cli-json-output.js';
 
 const EnvironmentSchema = z.object({
   projectRef: z.string().min(1),
@@ -846,42 +847,9 @@ export function safeLocalMetadataCommandFailure(error: unknown): string {
 }
 
 export function parseLocalColumnMetadataOutput(output: string): ColumnTypeMetadata[] {
-  let cursor = 0;
   let rowValidationError: z.ZodError | undefined;
   let rowShape: string | undefined;
-  while (cursor < output.length) {
-    const start = output.indexOf('{', cursor);
-    if (start < 0) break;
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
-    let end = -1;
-    for (let index = start; index < output.length; index += 1) {
-      const character = output[index];
-      if (inString) {
-        if (escaped) escaped = false;
-        else if (character === '\\') escaped = true;
-        else if (character === '"') inString = false;
-        continue;
-      }
-      if (character === '"') inString = true;
-      else if (character === '{') depth += 1;
-      else if (character === '}') {
-        depth -= 1;
-        if (depth === 0) {
-          end = index;
-          break;
-        }
-      }
-    }
-    cursor = start + 1;
-    if (end < start) continue;
-    let candidate: unknown;
-    try {
-      candidate = JSON.parse(output.slice(start, end + 1));
-    } catch {
-      continue;
-    }
+  for (const candidate of parseJsonObjectsFromCliOutput(output)) {
     if (
       candidate === null ||
       typeof candidate !== 'object' ||
