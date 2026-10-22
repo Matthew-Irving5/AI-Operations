@@ -17,9 +17,11 @@ export function createConversationHandoffPersistence(
 ): ConversationHandoffPersistence {
   return {
     async createRequestedHandoff(input) {
-      const result = await client.rpc('create_conversation_handoff', {
-        p_handoff: input.handoff,
-      }).catch(throwPersistenceFailure);
+      const result = await client
+        .rpc('create_conversation_handoff', {
+          p_handoff: input.handoff,
+        })
+        .catch(throwPersistenceFailure);
       if (result.error) throwPersistenceFailure(result.error);
       if (
         !isRecord(result.data) ||
@@ -31,23 +33,22 @@ export function createConversationHandoffPersistence(
       return { handoffId: result.data.handoffId, duplicate: result.data.duplicate };
     },
     async resolveHandoff(input) {
-      const result = await client.rpc('resolve_conversation_handoff', {
-        p_handoff_id: input.handoffId,
-        p_user_id: input.userId,
-        p_status: input.status,
-        p_actor_manager_code: input.actorManagerCode,
-        p_correlation_id: input.correlationId,
-        p_transitioned_at: input.transitionedAt,
-      }).catch(throwPersistenceFailure);
+      const result = await client
+        .rpc('resolve_conversation_handoff', {
+          p_handoff_id: input.handoffId,
+          p_user_id: input.userId,
+          p_status: input.status,
+          p_actor_manager_code: input.actorManagerCode,
+          p_correlation_id: input.correlationId,
+          p_transitioned_at: input.transitionedAt,
+        })
+        .catch(throwPersistenceFailure);
       if (result.error) throwPersistenceFailure(result.error);
       if (!isRecord(result.data)) {
         throw new Error('conversation_handoff_persistence_response_invalid');
       }
       const manager = managerCodeSchema.safeParse(result.data.currentManagerCode);
-      if (
-        typeof result.data.conversationId !== 'string' ||
-        !manager.success
-      ) {
+      if (typeof result.data.conversationId !== 'string' || !manager.success) {
         throw new Error('conversation_handoff_persistence_response_invalid');
       }
       return {

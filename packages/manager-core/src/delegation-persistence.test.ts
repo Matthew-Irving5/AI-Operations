@@ -54,11 +54,13 @@ it('maps request creation to the atomic request/run/queue RPC', async () => {
     idempotencyKey: request.idempotencyKey,
   };
 
-  await expect(persistence.createAndQueueRequest({
-    request,
-    plan,
-    costRootRunId: request.sourceRunId,
-  })).resolves.toEqual({
+  await expect(
+    persistence.createAndQueueRequest({
+      request,
+      plan,
+      costRootRunId: request.sourceRunId,
+    }),
+  ).resolves.toEqual({
     requestId: request.id,
     destinationRunId: '66666666-6666-4666-8666-666666666666',
     duplicate: false,
@@ -78,12 +80,14 @@ it('maps completion to the atomic reply-and-resume RPC', async () => {
   });
   const persistence = createInterAgentDelegationPersistence({ rpc });
 
-  await expect(persistence.completeAndResume({
-    request: { ...request, status: 'running' },
-    reply,
-    status: 'completed',
-    completedAt: reply.createdAt,
-  })).resolves.toEqual({ sourceRunId: request.sourceRunId });
+  await expect(
+    persistence.completeAndResume({
+      request: { ...request, status: 'running' },
+      reply,
+      status: 'completed',
+      completedAt: reply.createdAt,
+    }),
+  ).resolves.toEqual({ sourceRunId: request.sourceRunId });
   expect(rpc).toHaveBeenCalledWith('complete_inter_agent_request', {
     p_request_id: request.id,
     p_reply: reply,
@@ -96,17 +100,29 @@ it('does not expose database error details or accept malformed RPC results', asy
   const persistenceFailure = createInterAgentDelegationPersistence({
     rpc: vi.fn().mockResolvedValue({ data: null, error: { message: 'private payload' } }),
   });
-  await expect(persistenceFailure.createAndQueueRequest({
-    request,
-    plan: { delegationDepth: 1, routingPath: ['personal', 'travel'], idempotencyKey: request.idempotencyKey },
-    costRootRunId: request.sourceRunId,
-  })).rejects.toThrow('inter_agent_persistence_failed');
+  await expect(
+    persistenceFailure.createAndQueueRequest({
+      request,
+      plan: {
+        delegationDepth: 1,
+        routingPath: ['personal', 'travel'],
+        idempotencyKey: request.idempotencyKey,
+      },
+      costRootRunId: request.sourceRunId,
+    }),
+  ).rejects.toThrow('inter_agent_persistence_failed');
   const malformed = createInterAgentDelegationPersistence({
     rpc: vi.fn().mockResolvedValue({ data: { requestId: request.id }, error: null }),
   });
-  await expect(malformed.createAndQueueRequest({
-    request,
-    plan: { delegationDepth: 1, routingPath: ['personal', 'travel'], idempotencyKey: request.idempotencyKey },
-    costRootRunId: request.sourceRunId,
-  })).rejects.toThrow('inter_agent_persistence_response_invalid');
+  await expect(
+    malformed.createAndQueueRequest({
+      request,
+      plan: {
+        delegationDepth: 1,
+        routingPath: ['personal', 'travel'],
+        idempotencyKey: request.idempotencyKey,
+      },
+      costRootRunId: request.sourceRunId,
+    }),
+  ).rejects.toThrow('inter_agent_persistence_response_invalid');
 });

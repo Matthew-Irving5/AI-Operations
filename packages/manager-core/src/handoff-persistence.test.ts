@@ -19,7 +19,8 @@ const handoff: ConversationHandoff = {
 };
 
 it('persists requests and transitions through the canonical handoff RPCs', async () => {
-  const rpc = vi.fn()
+  const rpc = vi
+    .fn()
     .mockResolvedValueOnce({ data: { handoffId: handoff.id, duplicate: false }, error: null })
     .mockResolvedValueOnce({
       data: { conversationId: handoff.conversationId, currentManagerCode: 'travel' },
@@ -27,24 +28,31 @@ it('persists requests and transitions through the canonical handoff RPCs', async
     });
   const persistence = createConversationHandoffPersistence({ rpc });
 
-  await expect(persistence.createRequestedHandoff({ handoff, event: {
-    contractVersion: 1,
-    id: '55555555-5555-4555-8555-555555555555',
-    handoffId: handoff.id,
-    userId: handoff.userId,
-    status: 'requested',
-    actorManagerCode: handoff.fromManagerCode,
-    createdAt: handoff.initiatedAt,
-    correlationId: handoff.correlationId,
-  } })).resolves.toEqual({ handoffId: handoff.id, duplicate: false });
-  await expect(persistence.resolveHandoff({
-    handoffId: handoff.id,
-    userId: handoff.userId,
-    status: 'accepted',
-    actorManagerCode: 'travel',
-    correlationId: handoff.correlationId,
-    transitionedAt: '2026-10-21T12:01:00.000Z',
-  })).resolves.toEqual({
+  await expect(
+    persistence.createRequestedHandoff({
+      handoff,
+      event: {
+        contractVersion: 1,
+        id: '55555555-5555-4555-8555-555555555555',
+        handoffId: handoff.id,
+        userId: handoff.userId,
+        status: 'requested',
+        actorManagerCode: handoff.fromManagerCode,
+        createdAt: handoff.initiatedAt,
+        correlationId: handoff.correlationId,
+      },
+    }),
+  ).resolves.toEqual({ handoffId: handoff.id, duplicate: false });
+  await expect(
+    persistence.resolveHandoff({
+      handoffId: handoff.id,
+      userId: handoff.userId,
+      status: 'accepted',
+      actorManagerCode: 'travel',
+      correlationId: handoff.correlationId,
+      transitionedAt: '2026-10-21T12:01:00.000Z',
+    }),
+  ).resolves.toEqual({
     conversationId: handoff.conversationId,
     currentManagerCode: 'travel',
   });
@@ -64,31 +72,37 @@ it('persists requests and transitions through the canonical handoff RPCs', async
 
 it('rejects malformed RPC results and sanitizes persistence failures', async () => {
   const invalid = createConversationHandoffPersistence({
-    rpc: vi.fn().mockResolvedValue({ data: { conversationId: handoff.conversationId }, error: null }),
+    rpc: vi
+      .fn()
+      .mockResolvedValue({ data: { conversationId: handoff.conversationId }, error: null }),
   });
-  await expect(invalid.resolveHandoff({
-    handoffId: handoff.id,
-    userId: handoff.userId,
-    status: 'accepted',
-    actorManagerCode: 'travel',
-    correlationId: handoff.correlationId,
-    transitionedAt: handoff.initiatedAt,
-  })).rejects.toThrow('conversation_handoff_persistence_response_invalid');
+  await expect(
+    invalid.resolveHandoff({
+      handoffId: handoff.id,
+      userId: handoff.userId,
+      status: 'accepted',
+      actorManagerCode: 'travel',
+      correlationId: handoff.correlationId,
+      transitionedAt: handoff.initiatedAt,
+    }),
+  ).rejects.toThrow('conversation_handoff_persistence_response_invalid');
 
   const failed = createConversationHandoffPersistence({
     rpc: vi.fn().mockRejectedValue(new Error('sensitive request content')),
   });
-  await expect(failed.createRequestedHandoff({
-    handoff,
-    event: {
-      contractVersion: 1,
-      id: '55555555-5555-4555-8555-555555555555',
-      handoffId: handoff.id,
-      userId: handoff.userId,
-      status: 'requested',
-      actorManagerCode: handoff.fromManagerCode,
-      createdAt: handoff.initiatedAt,
-      correlationId: handoff.correlationId,
-    },
-  })).rejects.toThrow('conversation_handoff_persistence_failed');
+  await expect(
+    failed.createRequestedHandoff({
+      handoff,
+      event: {
+        contractVersion: 1,
+        id: '55555555-5555-4555-8555-555555555555',
+        handoffId: handoff.id,
+        userId: handoff.userId,
+        status: 'requested',
+        actorManagerCode: handoff.fromManagerCode,
+        createdAt: handoff.initiatedAt,
+        correlationId: handoff.correlationId,
+      },
+    }),
+  ).rejects.toThrow('conversation_handoff_persistence_failed');
 });

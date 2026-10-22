@@ -23,12 +23,14 @@ export function createInterAgentDelegationPersistence(
 ): InterAgentDelegationPersistence {
   return {
     async createAndQueueRequest(input) {
-      const result = await client.rpc('create_inter_agent_request_run', {
-        p_request: input.request,
-        p_delegation_depth: input.plan.delegationDepth,
-        p_routing_path: input.plan.routingPath,
-        p_cost_root_run_id: input.costRootRunId,
-      }).catch(throwPersistenceFailure);
+      const result = await client
+        .rpc('create_inter_agent_request_run', {
+          p_request: input.request,
+          p_delegation_depth: input.plan.delegationDepth,
+          p_routing_path: input.plan.routingPath,
+          p_cost_root_run_id: input.costRootRunId,
+        })
+        .catch(throwPersistenceFailure);
       if (result.error) throwPersistenceFailure(result.error);
       if (
         !isRecord(result.data) ||
@@ -45,12 +47,14 @@ export function createInterAgentDelegationPersistence(
       };
     },
     async completeAndResume(input) {
-      const result = await client.rpc('complete_inter_agent_request', {
-        p_request_id: input.request.id,
-        p_reply: input.reply,
-        p_status: input.status,
-        p_completed_at: input.completedAt,
-      }).catch(throwPersistenceFailure);
+      const result = await client
+        .rpc('complete_inter_agent_request', {
+          p_request_id: input.request.id,
+          p_reply: input.reply,
+          p_status: input.status,
+          p_completed_at: input.completedAt,
+        })
+        .catch(throwPersistenceFailure);
       if (result.error) throwPersistenceFailure(result.error);
       if (!isRecord(result.data)) {
         throw new Error('inter_agent_persistence_response_invalid');

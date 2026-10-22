@@ -80,7 +80,14 @@ $$;
 
 -- Preserve the actor in the canonical handoff event, which AI-14 left null.
 create or replace function public.record_conversation_handoff_event()
-returns trigger language plpgsql set search_path = '' as $$
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  audit_user_id uuid;
+  audit_aal text;
 begin
   insert into public.conversation_handoff_events(
     handoff_id,user_id,status,actor_manager_code,correlation_id,created_at
@@ -93,6 +100,28 @@ begin
     new.correlation_id,
     clock_timestamp()
   );
+
+  if tg_op = 'UPDATE' then
+    if old.status is distinct from new.status then
+      audit_user_id := nullif(current_setting('ai19.actor_user_id', true), '')::uuid;
+      audit_aal := nullif(current_setting('ai19.actor_aal', true), '');
+      if audit_user_id is distinct from new.user_id or audit_aal is distinct from 'aal2' then
+        raise exception 'handoff_transition_audit_context_required';
+      end if;
+
+      insert into public.audit_events(
+        user_id,actor_type,action_type,target_type,target_id,aal,correlation_id,
+        redacted_before,redacted_after,result
+      ) values (
+        audit_user_id,'user','transition_ai14_contract_handoff',
+        'conversation_handoff',new.id::text,audit_aal,new.correlation_id,
+        jsonb_build_object('status',old.status),
+        jsonb_build_object('status',new.status),
+        'success'
+      );
+    end if;
+  end if;
+
   return new;
 end;
 $$;
