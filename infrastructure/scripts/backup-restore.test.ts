@@ -3,6 +3,7 @@ import test from 'node:test';
 import { assertIsolatedRestoreTarget } from './backup-restore.js';
 import {
   assertIsolatedLocalRecoveryTarget,
+  assertIsolatedLocalSourceProject,
   assertLoopbackS3Endpoint,
   assertRecoveryBucketEmpty,
 } from './restore-target.js';
@@ -124,6 +125,26 @@ test('local recovery requires an isolated workdir, project id, and port block', 
         'production-project-ref',
       ),
     /restore_local_workdir_invalid/,
+  );
+});
+
+test('local synthetic source allows its own project ref while excluding production', () => {
+  const result = assertIsolatedLocalSourceProject(
+    'C:\\recovery\\ai45-source',
+    'C:\\worktrees\\ai-45',
+    isolatedLocalConfig.replace('aiops-ai45-recovery', 'aiops-ai45-source'),
+    'production-project-ref',
+  );
+  assert.equal(result.projectId, 'aiops-ai45-source');
+  assert.throws(
+    () =>
+      assertIsolatedLocalSourceProject(
+        'C:\\recovery\\ai45-source',
+        'C:\\worktrees\\ai-45',
+        isolatedLocalConfig.replace('aiops-ai45-recovery', 'production-project-ref'),
+        'production-project-ref',
+      ),
+    /restore_local_project_id_not_isolated/,
   );
 });
 

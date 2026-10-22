@@ -21,6 +21,7 @@ import {
   assertLoopbackS3Endpoint,
   assertRecoveryBucketEmpty,
   readIsolatedLocalRecoveryTarget,
+  readIsolatedLocalSourceProject,
 } from './restore-target.js';
 
 const execFile = promisify(execFileCallback);
@@ -219,7 +220,32 @@ function r2Client(accessKeyEnv: string, secretKeyEnv: string): S3Client {
   });
 }
 
+function localRecoveryTestEnabled(): boolean {
+  const value = process.env.AI_OPS_LOCAL_RECOVERY_TEST;
+  if (value !== undefined && value !== '1') throw new Error('backup_local_test_flag_invalid');
+  return value === '1';
+}
+
+function localRecoveryTestR2Client(): S3Client {
+  return new S3Client({
+    region: 'us-east-1',
+    endpoint: assertLoopbackS3Endpoint(requiredEnv('AI_OPS_LOCAL_RECOVERY_S3_ENDPOINT')),
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: requiredEnv('AI_OPS_LOCAL_RECOVERY_TEST_S3_ACCESS_KEY_ID'),
+      secretAccessKey: requiredEnv('AI_OPS_LOCAL_RECOVERY_TEST_S3_SECRET_ACCESS_KEY'),
+    },
+  });
+}
+
+function backupR2Client(accessKeyEnv: string, secretKeyEnv: string): S3Client {
+  return localRecoveryTestEnabled()
+    ? localRecoveryTestR2Client()
+    : r2Client(accessKeyEnv, secretKeyEnv);
+}
+
 function localRecoveryR2Client(endpoint: string): S3Client {
+  if (localRecoveryTestEnabled()) return localRecoveryTestR2Client();
   return new S3Client({
     region: 'us-east-1',
     endpoint: assertLoopbackS3Endpoint(endpoint),
@@ -253,6 +279,9 @@ async function prepareRestoreTarget(environment: 'staging' | 'production'): Prom
   const sourceArchiveBucket = requiredEnv('AI_OPS_STAGING_ARCHIVE_BUCKET');
   const backupBucket = requiredEnv('AI_OPS_STAGING_BACKUP_BUCKET');
   const targetEnvironment = requiredEnv('AI_OPS_RESTORE_TARGET_ENV');
+  if (localRecoveryTestEnabled() && targetEnvironment !== 'local-recovery') {
+    throw new Error('restore_local_test_requires_local_target');
+  }
 
   if (targetEnvironment === 'staging-recovery') {
     const projectRef = requiredEnv('AI_OPS_STAGING_RECOVERY_PROJECT_REF');
@@ -342,7 +371,21 @@ async function createBackup(): Promise<void> {
   if (sourceEnvironment !== 'staging' && sourceEnvironment !== 'production') {
     throw new Error('backup_source_environment_invalid');
   }
+  if (localRecoveryTestEnabled() && sourceEnvironment !== 'staging') {
+    throw new Error('backup_local_test_staging_only');
+  }
   const sourceProjectRef = requiredEnv(`AI_OPS_${sourceEnvironment.toUpperCase()}_PROJECT_REF`);
+  const productionProjectRef = requiredEnv('AI_OPS_PRODUCTION_PROJECT_REF');
+  const localSource = localRecoveryTestEnabled()
+    ? await readIsolatedLocalSourceProject(
+        requiredEnv('AI_OPS_LOCAL_RECOVERY_TEST_SOURCE_WORKDIR'),
+        ROOT,
+        productionProjectRef,
+      )
+    : undefined;
+  if (localSource && localSource.projectId !== sourceProjectRef) {
+    throw new Error('backup_local_source_project_mismatch');
+  }
   const sourceBucket = requiredEnv(`AI_OPS_${sourceEnvironment.toUpperCase()}_ARCHIVE_BUCKET`);
   const backupBucket = requiredEnv(`AI_OPS_${sourceEnvironment.toUpperCase()}_BACKUP_BUCKET`);
   if (sourceBucket === backupBucket) throw new Error('backup_bucket_must_be_separate');
@@ -356,51 +399,90 @@ async function createBackup(): Promise<void> {
   });
   if (worktreeStatus.stdout.trim()) throw new Error('backup_source_worktree_dirty');
   const git = await execFile('git', ['rev-parse', 'HEAD'], { cwd: ROOT, windowsHide: true });
-  const sourceR2 = r2Client('AI_OPS_R2_SOURCE_ACCESS_KEY_ID', 'AI_OPS_R2_SOURCE_SECRET_ACCESS_KEY');
-  const backupR2 = r2Client('AI_OPS_R2_BACKUP_ACCESS_KEY_ID', 'AI_OPS_R2_BACKUP_SECRET_ACCESS_KEY');
+  const sourceR2 = backupR2Client(
+    'AI_OPS_R2_SOURCE_ACCESS_KEY_ID',
+    'AI_OPS_R2_SOURCE_SECRET_ACCESS_KEY',
+  );
+  const backupR2 = backupR2Client(
+    'AI_OPS_R2_BACKUP_ACCESS_KEY_ID',
+    'AI_OPS_R2_BACKUP_SECRET_ACCESS_KEY',
+  );
   const temp = await mkdtemp(join(tmpdir(), 'ai-ops-backup-'));
   try {
     const databasePath = join(temp, 'database.sql');
     const migrationRows = rowsMatching(
-      await supabase([
-        'db',
-        'query',
-        '--project-ref',
-        sourceProjectRef,
-        '--output-format',
-        'json',
-        MIGRATION_QUERY,
-      ]),
+      localSource
+        ? await localSupabase(localSource.workdir, [
+            'db',
+            'query',
+            '--local',
+            '--output-format',
+            'json',
+            MIGRATION_QUERY,
+          ])
+        : await supabase([
+            'db',
+            'query',
+            '--project-ref',
+            sourceProjectRef,
+            '--output-format',
+            'json',
+            MIGRATION_QUERY,
+          ]),
       ['migration_version'],
     );
     const migrationVersion = String(migrationRows[0]?.migration_version ?? '');
     if (!/^(0|\d{14})$/.test(migrationVersion)) throw new Error('backup_migration_version_invalid');
     const referenceRows = rowsMatching(
-      await supabase([
-        'db',
-        'query',
-        '--project-ref',
-        sourceProjectRef,
-        '--output-format',
-        'json',
-        OBJECT_QUERY,
-      ]),
+      localSource
+        ? await localSupabase(localSource.workdir, [
+            'db',
+            'query',
+            '--local',
+            '--output-format',
+            'json',
+            OBJECT_QUERY,
+          ])
+        : await supabase([
+            'db',
+            'query',
+            '--project-ref',
+            sourceProjectRef,
+            '--output-format',
+            'json',
+            OBJECT_QUERY,
+          ]),
       ['object_key', 'sha256', 'size_bytes', 'content_type'],
     );
-    const rowCounts = await queryRowCounts(sourceProjectRef);
-    await supabase([
-      'db',
-      'dump',
-      '--project-ref',
-      sourceProjectRef,
-      '--data-only',
-      '--schema',
-      'public,auth',
-      '--exclude',
-      'auth.audit_log_entries,auth.flow_state,auth.mfa_challenges,auth.mfa_factors,auth.mfa_amr_claims,auth.one_time_tokens,auth.refresh_tokens,auth.sessions,auth.schema_migrations',
-      '--file',
-      databasePath,
-    ]);
+    const rowCounts = await queryRowCounts(sourceProjectRef, localSource?.workdir);
+    if (localSource) {
+      await localSupabase(localSource.workdir, [
+        'db',
+        'dump',
+        '--local',
+        '--data-only',
+        '--schema',
+        'public,auth',
+        '--exclude',
+        'auth.audit_log_entries,auth.flow_state,auth.mfa_challenges,auth.mfa_factors,auth.mfa_amr_claims,auth.one_time_tokens,auth.refresh_tokens,auth.sessions,auth.schema_migrations',
+        '--file',
+        databasePath,
+      ]);
+    } else {
+      await supabase([
+        'db',
+        'dump',
+        '--project-ref',
+        sourceProjectRef,
+        '--data-only',
+        '--schema',
+        'public,auth',
+        '--exclude',
+        'auth.audit_log_entries,auth.flow_state,auth.mfa_challenges,auth.mfa_factors,auth.mfa_amr_claims,auth.one_time_tokens,auth.refresh_tokens,auth.sessions,auth.schema_migrations',
+        '--file',
+        databasePath,
+      ]);
+    }
     const databaseSql = await readFile(databasePath);
     const sourceObjects = new Map<
       string,
@@ -527,7 +609,10 @@ async function createBackup(): Promise<void> {
 
 async function loadBackup(backupKey: string, environment: 'staging' | 'production') {
   const backupBucket = requiredEnv(`AI_OPS_${environment.toUpperCase()}_BACKUP_BUCKET`);
-  const client = r2Client('AI_OPS_R2_BACKUP_ACCESS_KEY_ID', 'AI_OPS_R2_BACKUP_SECRET_ACCESS_KEY');
+  const client = backupR2Client(
+    'AI_OPS_R2_BACKUP_ACCESS_KEY_ID',
+    'AI_OPS_R2_BACKUP_SECRET_ACCESS_KEY',
+  );
   const key = parseBackupKey(
     requiredEnv(`AI_OPS_${environment.toUpperCase()}_BACKUP_ENCRYPTION_KEY`),
   );
@@ -633,15 +718,24 @@ async function restoreBackup(
       throw new Error('restore_database_row_counts_mismatch');
     }
     const userRows = rowsMatching(
-      await supabase([
-        'db',
-        'query',
-        '--project-ref',
-        sourceProjectRef,
-        '--output-format',
-        'json',
-        'select id::text as user_id from public.app_users order by id limit 1',
-      ]),
+      target.kind === 'local-recovery'
+        ? await localSupabase(target.workdir, [
+            'db',
+            'query',
+            '--local',
+            '--output-format',
+            'json',
+            'select id::text as user_id from public.app_users order by id limit 1',
+          ])
+        : await supabase([
+            'db',
+            'query',
+            '--project-ref',
+            sourceProjectRef,
+            '--output-format',
+            'json',
+            'select id::text as user_id from public.app_users order by id limit 1',
+          ]),
       ['user_id'],
     );
     const userId = String(userRows[0]?.user_id ?? '');
@@ -657,7 +751,11 @@ async function restoreBackup(
       values ('${userId}', '${backupKey.replace(/'/g, "''")}', '${backupSha}', true, 'passed', now(),
        ${encrypted.byteLength}, '${databaseSha}', ${objectCount}, 1, '${migrationVersion}',
        '${sourceCommit}', '${environment}', 'AES-256-GCM', '${keyVersion.replace(/'/g, "''")}')`;
-    await supabase(['db', 'query', '--project-ref', sourceProjectRef, insert]);
+    if (target.kind === 'local-recovery') {
+      await localSupabase(target.workdir, ['db', 'query', '--local', insert]);
+    } else {
+      await supabase(['db', 'query', '--project-ref', sourceProjectRef, insert]);
+    }
     process.stdout.write(
       JSON.stringify({
         status: 'restored-and-verified',
@@ -683,6 +781,9 @@ async function main(): Promise<void> {
     const environment = environmentArg ?? process.env.AI_OPS_BACKUP_SOURCE_ENV;
     if (environment !== 'staging' && environment !== 'production')
       throw new Error('backup_source_environment_invalid');
+    if (localRecoveryTestEnabled() && environment !== 'staging') {
+      throw new Error('backup_local_test_staging_only');
+    }
     const target = command === 'restore' ? await prepareRestoreTarget(environment) : undefined;
     let backup: Awaited<ReturnType<typeof loadBackup>> | undefined;
     try {

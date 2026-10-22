@@ -83,17 +83,16 @@ export function assertLoopbackS3Endpoint(endpoint: string): string {
   return parsed.origin;
 }
 
-export function assertIsolatedLocalRecoveryTarget(
+function assertIsolatedLocalProject(
   workdir: string,
   repositoryRoot: string,
   configText: string,
-  sourceProjectRef: string,
-  productionProjectRef: string,
+  forbiddenProjectIds: readonly string[],
 ): IsolatedLocalRecoveryTarget {
   if (!workdir || !isAbsolute(workdir)) throw new Error('restore_local_workdir_invalid');
   const resolvedWorkdir = resolve(workdir);
   const resolvedRoot = resolve(repositoryRoot);
-  if (isWithinPath(resolvedRoot, resolvedWorkdir) || !sourceProjectRef || !productionProjectRef) {
+  if (isWithinPath(resolvedRoot, resolvedWorkdir)) {
     throw new Error('restore_local_target_not_isolated');
   }
 
@@ -101,11 +100,7 @@ export function assertIsolatedLocalRecoveryTarget(
   if (!projectId || !/^[a-z0-9][a-z0-9_-]{2,63}$/.test(projectId)) {
     throw new Error('restore_local_project_id_invalid');
   }
-  if (
-    projectId === 'ai-operations-local' ||
-    projectId === sourceProjectRef ||
-    projectId === productionProjectRef
-  ) {
+  if (projectId === 'ai-operations-local' || forbiddenProjectIds.includes(projectId)) {
     throw new Error('restore_local_project_id_not_isolated');
   }
 
@@ -129,6 +124,62 @@ export function assertIsolatedLocalRecoveryTarget(
   }
 
   return { workdir: resolvedWorkdir, projectId };
+}
+
+export function assertIsolatedLocalRecoveryTarget(
+  workdir: string,
+  repositoryRoot: string,
+  configText: string,
+  sourceProjectRef: string,
+  productionProjectRef: string,
+): IsolatedLocalRecoveryTarget {
+  if (!sourceProjectRef || !productionProjectRef) {
+    throw new Error('restore_local_target_not_isolated');
+  }
+  return assertIsolatedLocalProject(workdir, repositoryRoot, configText, [
+    sourceProjectRef,
+    productionProjectRef,
+  ]);
+}
+
+export function assertIsolatedLocalSourceProject(
+  workdir: string,
+  repositoryRoot: string,
+  configText: string,
+  productionProjectRef: string,
+): IsolatedLocalRecoveryTarget {
+  if (!productionProjectRef) throw new Error('restore_local_target_not_isolated');
+  return assertIsolatedLocalProject(workdir, repositoryRoot, configText, [productionProjectRef]);
+}
+
+export async function readIsolatedLocalSourceProject(
+  workdir: string,
+  repositoryRoot: string,
+  productionProjectRef: string,
+): Promise<IsolatedLocalRecoveryTarget> {
+  if (!isAbsolute(workdir)) throw new Error('restore_local_workdir_invalid');
+  let resolvedWorkdir: string;
+  let resolvedRoot: string;
+  try {
+    [resolvedWorkdir, resolvedRoot] = await Promise.all([
+      realpath(workdir),
+      realpath(repositoryRoot),
+    ]);
+  } catch {
+    throw new Error('restore_local_workdir_missing');
+  }
+  let configText: string;
+  try {
+    configText = await readFile(join(resolvedWorkdir, 'supabase', 'config.toml'), 'utf8');
+  } catch {
+    throw new Error('restore_local_config_missing');
+  }
+  return assertIsolatedLocalSourceProject(
+    resolvedWorkdir,
+    resolvedRoot,
+    configText,
+    productionProjectRef,
+  );
 }
 
 export async function readIsolatedLocalRecoveryTarget(
