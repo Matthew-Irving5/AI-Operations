@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { consumeRateLimit } from "../_shared/rate-limit.ts";
 import {
+  fetchGithubPullRequestFilesEvidence,
   githubAllowedOwner,
   type GithubEvidenceRecord,
   type GithubRepository,
@@ -493,9 +494,51 @@ Deno.serve(async (request) => {
         "Retry after verifying the provider response contract; no raw provider content was retained.",
       );
     }
+    let normalizedPullEvidence = pullEvidence;
+    const latestAuthoredPullRequest = pullEvidence[0];
+    if (latestAuthoredPullRequest) {
+      const fileEvidence = await fetchGithubPullRequestFilesEvidence(
+        repository,
+        latestAuthoredPullRequest,
+        (targetUrl) => githubJson(targetUrl, token),
+      );
+      if ("error" in fileEvidence) {
+        const isProviderFailure = fileEvidence.error === "provider_failed";
+        const rateLimited = fileEvidence.status === 429;
+        return failure(
+          requestId,
+          fileEvidence.error === "provider_unreachable"
+            ? "github_provider_unreachable"
+            : isProviderFailure
+            ? "github_provider_pull_request_files_failed"
+            : "github_sync_invalid_pull_request_files",
+          rateLimited ? 429 : 502,
+          fileEvidence.error === "invalid_response" ||
+            fileEvidence.error === "owner_not_allowlisted"
+            ? "provider.github.pull_request_files_validation"
+            : "provider.github.pull_request_files",
+          fileEvidence.error === "provider_unreachable"
+            ? "Authored pull request file evidence could not be retrieved; no Career evidence was changed."
+            : isProviderFailure
+            ? `GitHub rejected bounded authored pull request file retrieval with HTTP ${fileEvidence.status}; no Career evidence was changed.`
+            : "GitHub returned pull request file evidence outside the normalized provenance contract; no Career evidence was changed.",
+          rateLimited
+            ? "Wait for the GitHub rate limit to reset before retrying."
+            : fileEvidence.error === "owner_not_allowlisted"
+            ? "Confirm the configured token targets only Matthew-Irving5; no repository request was made."
+            : "Verify read-only pull request metadata access and retry once.",
+          fileEvidence.status === undefined
+            ? {}
+            : { providerStatus: fileEvidence.status },
+        );
+      }
+      normalizedPullEvidence = pullEvidence.map((record) =>
+        record === latestAuthoredPullRequest ? fileEvidence.evidence : record
+      );
+    }
     const repositoryEvidence = [
       ...commitEvidence,
-      ...pullEvidence,
+      ...normalizedPullEvidence,
       ...releaseEvidence,
     ];
     if (readme.response.ok) {

@@ -1,12 +1,16 @@
 import {
   assertEquals,
   assertRejects,
+  assertThrows,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  fetchGithubPullRequestFilesEvidence,
+  githubPullRequestFilesEndpoint,
   parseGithubAuthenticatedUser,
   parseGithubCommitEvidence,
   parseGithubDocumentationEvidence,
   parseGithubPullRequestEvidence,
+  parseGithubPullRequestFilesEvidence,
   parseGithubReleaseEvidence,
   parseGithubRepositories,
   parseGithubSyncRequest,
@@ -165,6 +169,210 @@ Deno.test("normalizes dated personal repository evidence without retaining provi
       ),
     false,
   );
+});
+
+Deno.test("stores bounded authored pull request file links without patch content", async () => {
+  const sha = "b".repeat(40);
+  const repository = {
+    id: 42,
+    name: "synthetic-career-project",
+    ownerLogin: "Matthew-Irving5",
+    htmlUrl: "https://github.com/Matthew-Irving5/synthetic-career-project",
+    updatedAt: "2026-10-20T12:00:00Z",
+    language: "TypeScript",
+  } as const;
+  const pull = {
+    number: 17,
+    html_url:
+      "https://github.com/Matthew-Irving5/synthetic-career-project/pull/17",
+    user: { login: "Matthew-Irving5" },
+    merged_at: "2026-10-19T12:00:00Z",
+    title: "must not be retained",
+  };
+  const evidence = parseGithubPullRequestEvidence([pull], repository.name)?.[0];
+  if (!evidence) throw new Error("authored pull request fixture was rejected");
+  const files = [
+    {
+      filename: "src/feature.ts",
+      additions: 12,
+      blob_url:
+        `https://github.com/Matthew-Irving5/${repository.name}/blob/${sha}/src/feature.ts`,
+      patch: "must not be retained",
+    },
+    {
+      filename: "index.ts",
+      additions: 2,
+      blob_url:
+        `https://github.com/Matthew-Irving5/${repository.name}/blob/${sha}/index.ts`,
+    },
+  ];
+  const result = parseGithubPullRequestFilesEvidence(
+    files,
+    repository,
+    evidence,
+  );
+  if (!result) throw new Error("pull request file fixture was rejected");
+
+  assertEquals(result.sourceUrl, evidence.sourceUrl);
+  assertEquals(result.sourceDate, evidence.sourceDate);
+  assertEquals(result.payload.changedFiles, [
+    {
+      path: "src/feature.ts",
+      blobUrl:
+        `https://github.com/Matthew-Irving5/${repository.name}/blob/${sha}/src/feature.ts`,
+      additions: 12,
+    },
+    {
+      path: "index.ts",
+      blobUrl:
+        `https://github.com/Matthew-Irving5/${repository.name}/blob/${sha}/index.ts`,
+      additions: 2,
+    },
+  ]);
+  assertEquals(JSON.stringify(result).includes("must not be retained"), false);
+  assertEquals(
+    await fetchGithubPullRequestFilesEvidence(
+      repository,
+      evidence,
+      () => ({ response: new Response("[]"), payload: files }),
+    ),
+    { evidence: result },
+  );
+  assertEquals(
+    githubPullRequestFilesEndpoint(repository, 17).toString(),
+    `https://api.github.com/repos/Matthew-Irving5/${repository.name}/pulls/17/files?per_page=30`,
+  );
+  assertThrows(
+    () =>
+      githubPullRequestFilesEndpoint({
+        ...repository,
+        ownerLogin: "OtherOwner",
+      }, 17),
+    Error,
+    "github_pull_request_not_allowlisted",
+  );
+});
+
+Deno.test("pull request file retrieval rejects the provider failure path before evidence is accepted", async () => {
+  const repository = {
+    id: 42,
+    name: "synthetic-career-project",
+    ownerLogin: "Matthew-Irving5",
+    htmlUrl: "https://github.com/Matthew-Irving5/synthetic-career-project",
+    updatedAt: "2026-10-20T12:00:00Z",
+    language: "TypeScript",
+  } as const;
+  const evidence = parseGithubPullRequestEvidence([{
+    number: 17,
+    html_url:
+      "https://github.com/Matthew-Irving5/synthetic-career-project/pull/17",
+    user: { login: "Matthew-Irving5" },
+    merged_at: "2026-10-19T12:00:00Z",
+  }], repository.name)?.[0];
+  if (!evidence) throw new Error("authored pull request fixture was rejected");
+  let requestCount = 0;
+
+  assertEquals(
+    await fetchGithubPullRequestFilesEvidence(repository, evidence, () => {
+      requestCount += 1;
+      return { response: new Response("{}", { status: 503 }), payload: null };
+    }),
+    { error: "provider_failed", status: 503 },
+  );
+  assertEquals(
+    await fetchGithubPullRequestFilesEvidence(repository, evidence, () => {
+      requestCount += 1;
+      throw new Error("synthetic provider outage");
+    }),
+    { error: "provider_unreachable" },
+  );
+  assertEquals(
+    await fetchGithubPullRequestFilesEvidence(repository, evidence, () => {
+      requestCount += 1;
+      return { response: new Response("{}"), payload: { malformed: true } };
+    }),
+    { error: "invalid_response" },
+  );
+  assertEquals(requestCount, 3);
+
+  const rejectedOwner = await fetchGithubPullRequestFilesEvidence(
+    { ...repository, ownerLogin: "OtherOwner" },
+    evidence,
+    () => {
+      requestCount += 1;
+      return { response: new Response("[]"), payload: [] };
+    },
+  );
+  assertEquals(rejectedOwner, { error: "owner_not_allowlisted" });
+  assertEquals(requestCount, 3);
+
+  const invalidArtifact = await fetchGithubPullRequestFilesEvidence(
+    repository,
+    {
+      ...evidence,
+      sourceUrl: "https://github.com/OtherOwner/synthetic/pull/17",
+    },
+    () => {
+      requestCount += 1;
+      return { response: new Response("[]"), payload: [] };
+    },
+  );
+  assertEquals(invalidArtifact, { error: "invalid_response" });
+  assertEquals(requestCount, 3);
+});
+
+Deno.test("rejects pull request files outside the exact personal repository blob", () => {
+  const sha = "c".repeat(40);
+  const repository = {
+    id: 42,
+    name: "synthetic-career-project",
+    ownerLogin: "Matthew-Irving5",
+    htmlUrl: "https://github.com/Matthew-Irving5/synthetic-career-project",
+    updatedAt: "2026-10-20T12:00:00Z",
+    language: "TypeScript",
+  } as const;
+  const pull = {
+    number: 17,
+    html_url:
+      "https://github.com/Matthew-Irving5/synthetic-career-project/pull/17",
+    user: { login: "Matthew-Irving5" },
+    merged_at: "2026-10-19T12:00:00Z",
+  };
+  const evidence = parseGithubPullRequestEvidence([pull], repository.name)?.[0];
+  if (!evidence) throw new Error("authored pull request fixture was rejected");
+  for (
+    const files of [
+      [{
+        filename: "src/feature.ts",
+        additions: 12,
+        blob_url:
+          `https://github.com/OtherOwner/${repository.name}/blob/${sha}/src/feature.ts`,
+      }],
+      [{
+        filename: "../outside.ts",
+        additions: 12,
+        blob_url:
+          `https://github.com/Matthew-Irving5/${repository.name}/blob/${sha}/../outside.ts`,
+      }],
+      [{
+        filename: "src/\u0001feature.ts",
+        additions: 12,
+        blob_url:
+          `https://github.com/Matthew-Irving5/${repository.name}/blob/${sha}/src/\u0001feature.ts`,
+      }],
+      [{
+        filename: "src/feature.ts",
+        additions: 12,
+        blob_url:
+          `https://github.com/Matthew-Irving5/other-repo/blob/${sha}/src/feature.ts`,
+      }],
+    ]
+  ) {
+    assertEquals(
+      parseGithubPullRequestFilesEvidence(files, repository, evidence),
+      null,
+    );
+  }
 });
 
 Deno.test("accepts repositories owned by the allowlisted account", () => {

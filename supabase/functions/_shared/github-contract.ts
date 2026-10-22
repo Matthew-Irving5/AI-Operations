@@ -25,7 +25,12 @@ export type GithubEvidenceRecord = Readonly<{
   evidenceKind: GithubEvidenceKind;
   sourceUrl: string;
   sourceDate: string;
-  payload: Readonly<Record<string, string | number | null>>;
+  payload: Readonly<Record<string, unknown>>;
+}>;
+export type GithubPullRequestFile = Readonly<{
+  path: string;
+  blobUrl: string;
+  additions: number;
 }>;
 
 export type GithubAuthenticatedUser = Readonly<
@@ -49,7 +54,9 @@ function personalGithubUrl(value: unknown): value is string {
       url.hostname === "github.com" &&
       url.pathname.startsWith(`/${githubAllowedOwner}/`) &&
       url.username === "" &&
-      url.password === ""
+      url.password === "" &&
+      url.search === "" &&
+      url.hash === ""
     );
   } catch {
     return false;
@@ -312,6 +319,161 @@ export function parseGithubPullRequestEvidence(
     evidence.push(parsed);
   }
   return evidence;
+}
+
+function isPullRequestBlobUrl(
+  value: unknown,
+  repositoryName: string,
+  path: string,
+): value is string {
+  if (!personalGithubUrl(value)) return false;
+  try {
+    const url = new URL(value);
+    const segments = url.pathname.split("/").filter(Boolean);
+    if (
+      segments.length < 5 ||
+      segments[0] !== githubAllowedOwner ||
+      segments[1] !== repositoryName ||
+      segments[2] !== "blob" ||
+      !/^[a-f0-9]{40}$/i.test(segments[3])
+    ) return false;
+    return decodeURIComponent(segments.slice(4).join("/")) === path;
+  } catch {
+    return false;
+  }
+}
+
+export function githubPullRequestFilesEndpoint(
+  repository: GithubRepository,
+  pullNumber: number,
+): URL {
+  if (
+    repository.ownerLogin !== githubAllowedOwner ||
+    !/^[A-Za-z0-9_.-]{1,100}$/.test(repository.name) ||
+    repository.name === "." ||
+    repository.name === ".." ||
+    !personalRepositoryUrl(repository.htmlUrl, repository.name) ||
+    !Number.isSafeInteger(pullNumber) ||
+    pullNumber <= 0
+  ) {
+    throw new Error("github_pull_request_not_allowlisted");
+  }
+  const url = new URL(
+    `/repos/${githubAllowedOwner}/${
+      encodeURIComponent(repository.name)
+    }/pulls/${pullNumber}/files`,
+    "https://api.github.com",
+  );
+  url.searchParams.set("per_page", "30");
+  return url;
+}
+
+export function parseGithubPullRequestFilesEvidence(
+  payload: unknown,
+  repository: GithubRepository,
+  evidence: GithubEvidenceRecord,
+): GithubEvidenceRecord | null {
+  const number = evidence.payload.number;
+  if (
+    repository.ownerLogin !== githubAllowedOwner ||
+    evidence.evidenceKind !== "pull_request" ||
+    evidence.payload.kind !== "pull_request" ||
+    evidence.payload.author !== githubAllowedOwner ||
+    typeof number !== "number" ||
+    !Number.isSafeInteger(number) ||
+    number <= 0 ||
+    evidence.sourceUrl !==
+      `https://github.com/${githubAllowedOwner}/${repository.name}/pull/${number}` ||
+    !sourceDate(evidence.sourceDate)
+  ) return null;
+
+  const records = providerRecords(payload);
+  if (!records || records.length > 30) return null;
+  const changedFiles: GithubPullRequestFile[] = [];
+  for (const record of records) {
+    const path = record.filename;
+    const additions = record.additions;
+    if (
+      typeof path !== "string" ||
+      path.length === 0 ||
+      path.length > 500 ||
+      path.startsWith("/") ||
+      path.includes("\\") ||
+      containsControlCharacter(path) ||
+      path.split("/").some((segment) => segment === "." || segment === "..") ||
+      typeof additions !== "number" ||
+      !Number.isSafeInteger(additions) ||
+      additions < 0 ||
+      !isPullRequestBlobUrl(record.blob_url, repository.name, path)
+    ) return null;
+    changedFiles.push({ path, blobUrl: record.blob_url, additions });
+  }
+
+  return {
+    ...evidence,
+    payload: { ...evidence.payload, changedFiles },
+  };
+}
+
+function containsControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const characterCode = value.charCodeAt(index);
+    if (characterCode < 0x20 || characterCode === 0x7f) return true;
+  }
+  return false;
+}
+
+export async function fetchGithubPullRequestFilesEvidence(
+  repository: GithubRepository,
+  evidence: GithubEvidenceRecord,
+  request: (url: string) =>
+    | { response: Response; payload: unknown }
+    | Promise<{ response: Response; payload: unknown }>,
+): Promise<
+  | { evidence: GithubEvidenceRecord }
+  | {
+    error:
+      | "owner_not_allowlisted"
+      | "provider_unreachable"
+      | "provider_failed"
+      | "invalid_response";
+    status?: number;
+  }
+> {
+  const pullNumber = evidence.payload.number;
+  if (
+    evidence.evidenceKind !== "pull_request" ||
+    evidence.payload.kind !== "pull_request" ||
+    evidence.payload.author !== githubAllowedOwner ||
+    typeof pullNumber !== "number" ||
+    !Number.isSafeInteger(pullNumber) ||
+    pullNumber <= 0 ||
+    evidence.sourceUrl !==
+      `https://github.com/${githubAllowedOwner}/${repository.name}/pull/${pullNumber}` ||
+    !sourceDate(evidence.sourceDate)
+  ) return { error: "invalid_response" };
+  let target: URL;
+  try {
+    target = githubPullRequestFilesEndpoint(repository, pullNumber);
+  } catch {
+    return { error: "owner_not_allowlisted" };
+  }
+
+  let result: { response: Response; payload: unknown };
+  try {
+    result = await request(target.toString());
+  } catch {
+    return { error: "provider_unreachable" };
+  }
+  if (!result.response.ok) {
+    return { error: "provider_failed", status: result.response.status };
+  }
+  const normalized = parseGithubPullRequestFilesEvidence(
+    result.payload,
+    repository,
+    evidence,
+  );
+  return normalized ? { evidence: normalized } : { error: "invalid_response" };
 }
 
 export function parseGithubReleaseEvidence(
