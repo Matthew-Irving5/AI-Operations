@@ -58,7 +58,16 @@ WITH grants AS (
       -- grants by rpc_security.sql; the captured staging fingerprint predates them.
       to_regprocedure('public.record_prompt_evaluation(uuid,jsonb)'),
       to_regprocedure('public.transition_prompt_version(uuid,integer,integer,uuid,text,text)'),
-      to_regprocedure('public.create_prompt_candidate(uuid,text,text,jsonb,text,integer,integer,jsonb)')
+      to_regprocedure('public.create_prompt_candidate(uuid,text,text,jsonb,text,integer,integer,jsonb)'),
+      -- AI-17 delegation and handoff ACLs are checked exactly by rpc_security.sql.
+      to_regprocedure('public.create_inter_agent_request_run(jsonb,integer,text[],uuid)'),
+      to_regprocedure('public.resume_inter_agent_source_run(uuid)'),
+      to_regprocedure('public.complete_inter_agent_request(uuid,jsonb,text,timestamptz)'),
+      to_regprocedure('public.finalize_inter_agent_destination_run()'),
+      to_regprocedure('public.resume_waiting_inter_agent_source()'),
+      to_regprocedure('public.expire_inter_agent_requests(integer)'),
+      to_regprocedure('public.create_conversation_handoff(jsonb)'),
+      to_regprocedure('public.resolve_conversation_handoff(uuid,uuid,text,text,uuid,timestamptz)')
     )
 )
 SELECT is(
