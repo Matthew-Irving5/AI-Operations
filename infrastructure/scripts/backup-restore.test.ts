@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assertIsolatedRestoreTarget } from './backup-restore.js';
+import { assertIsolatedRestoreTarget, restoreLocalDatabaseFile } from './backup-restore.js';
 import {
   assertIsolatedLocalRecoveryTarget,
   assertIsolatedLocalSourceProject,
@@ -175,4 +175,62 @@ test('restore requires an empty recovery bucket and follows every listing page',
       })),
     /restore_bucket_listing_invalid/,
   );
+});
+
+test('local restore imports a full SQL dump with psql error propagation and cleanup', async () => {
+  const calls: Array<{ command: string; args: string[]; maxBuffer?: number }> = [];
+  await restoreLocalDatabaseFile(
+    'aiops-ai45-recovery',
+    'C:\\temp\\database.sql',
+    async (command, args, maxBuffer) => {
+      calls.push({ command, args, ...(maxBuffer === undefined ? {} : { maxBuffer }) });
+      return command === 'docker' && args[0] === 'ps' ? 'supabase_db_aiops-ai45-recovery\n' : '';
+    },
+  );
+
+  const psql = calls.find(({ args }) => args[0] === 'exec' && args.includes('psql'));
+  assert.ok(psql);
+  assert.ok(psql.args.includes('--single-transaction'));
+  assert.deepEqual(psql.args.slice(psql.args.indexOf('--set'), psql.args.indexOf('--set') + 2), [
+    '--set',
+    'ON_ERROR_STOP=1',
+  ]);
+  assert.ok(calls.some(({ args }) => args[0] === 'cp' && args[1] === 'C:\\temp\\database.sql'));
+  assert.ok(calls.some(({ args }) => args[0] === 'exec' && args.includes('rm')));
+});
+
+test('local restore returns a sanitized import error and still removes its temporary dump', async () => {
+  let cleanupCalled = false;
+  await assert.rejects(
+    () =>
+      restoreLocalDatabaseFile(
+        'aiops-ai45-recovery',
+        'C:\\temp\\database.sql',
+        async (_command, args) => {
+          if (args[0] === 'ps') return 'supabase_db_aiops-ai45-recovery\n';
+          if (args.includes('psql')) throw new Error('SQL payload must not reach CLI output');
+          if (args.includes('rm')) cleanupCalled = true;
+          return '';
+        },
+      ),
+    /restore_local_database_import_failed/,
+  );
+  assert.equal(cleanupCalled, true);
+});
+
+test('local restore refuses to copy into an unverified database container', async () => {
+  const calls: Array<string[]> = [];
+  await assert.rejects(
+    () =>
+      restoreLocalDatabaseFile(
+        'aiops-ai45-recovery',
+        'C:\\temp\\database.sql',
+        async (_command, args) => {
+          calls.push(args);
+          return 'supabase_db_other-project\n';
+        },
+      ),
+    /restore_local_database_container_not_running/,
+  );
+  assert.equal(calls.length, 1);
 });

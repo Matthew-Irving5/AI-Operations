@@ -325,6 +325,80 @@ async function prepareRestoreTarget(environment: 'staging' | 'production'): Prom
   throw new Error('restore_target_must_be_isolated_staging_or_local');
 }
 
+type LocalCommandRunner = (command: string, args: string[], maxBuffer?: number) => Promise<string>;
+
+async function runLocalCommand(
+  command: string,
+  args: string[],
+  maxBuffer = 8 * 1024 * 1024,
+): Promise<string> {
+  const result = await execFile(command, args, { cwd: ROOT, maxBuffer, windowsHide: true });
+  return result.stdout;
+}
+
+export async function restoreLocalDatabaseFile(
+  projectId: string,
+  databasePath: string,
+  run: LocalCommandRunner = runLocalCommand,
+): Promise<void> {
+  const container = `supabase_db_${projectId}`;
+  let running: string;
+  try {
+    running = await run('docker', [
+      'ps',
+      '--filter',
+      `name=^/${container}$`,
+      '--format',
+      '{{.Names}}',
+    ]);
+  } catch {
+    throw new Error('restore_local_database_container_check_failed');
+  }
+  if (running.trim() !== container) {
+    throw new Error('restore_local_database_container_not_running');
+  }
+
+  const containerPath = `/tmp/ai-ops-restore-${crypto.randomUUID()}.sql`;
+  try {
+    await run('docker', ['cp', databasePath, `${container}:${containerPath}`]);
+  } catch {
+    throw new Error('restore_local_database_dump_copy_failed');
+  }
+
+  let importFailed = false;
+  try {
+    await run(
+      'docker',
+      [
+        'exec',
+        container,
+        'psql',
+        '--no-psqlrc',
+        '--quiet',
+        '--single-transaction',
+        '--set',
+        'ON_ERROR_STOP=1',
+        '--username',
+        'postgres',
+        '--dbname',
+        'postgres',
+        '--file',
+        containerPath,
+      ],
+      512 * 1024 * 1024,
+    );
+  } catch {
+    importFailed = true;
+  }
+
+  try {
+    await run('docker', ['exec', container, 'rm', '-f', containerPath]);
+  } catch {
+    throw new Error('restore_local_database_dump_cleanup_failed');
+  }
+  if (importFailed) throw new Error('restore_local_database_import_failed');
+}
+
 async function bodyBytes(
   body: { transformToByteArray(): Promise<Uint8Array> } | undefined,
 ): Promise<Buffer> {
@@ -676,11 +750,7 @@ async function restoreBackup(
     const dataPath = join(temp, 'database.sql');
     await writeFile(dataPath, Buffer.from(payload.databaseSqlBase64, 'base64'), { mode: 0o600 });
     if (target.kind === 'local-recovery') {
-      await localSupabase(
-        target.workdir,
-        ['db', 'query', '--local', '--file', dataPath],
-        512 * 1024 * 1024,
-      );
+      await restoreLocalDatabaseFile(target.projectRef, dataPath);
     } else {
       await supabase(
         ['db', 'query', '--project-ref', target.projectRef, '--file', dataPath],
