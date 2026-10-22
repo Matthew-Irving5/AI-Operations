@@ -47,6 +47,8 @@ This file records **confirmed** errors (not generic best practices). One row per
 
 | AI28-06 | Mobile envelope claimed MFA was not required although real pairing/revocation consume fresh MFA gates; transport requests could imply a real Shortcut run | ACC-08; separately require observed pairing/revocation MFA and operator-confirmed Shortcut execution | Production device/revoke routes; `release-gate.test.ts` rejects missing mobile assertions even when action MFA passed |
 
+| AI28-07 | A persisted rejected mobile adapter row was treated as a completed duplicate on retry, so the same immutable raw record could never recover after a transient adapter failure | DB-10; retry only the rejected row for the selected adapter/version under a per-record lock, then assert one canonical row/provenance and a no-op replay | AI-28 forward migration `20261022180901_ai28_retry_rejected_mobile_adaptation.sql`; `supabase/tests/mobile_adapters.sql` |
+
 ## Update rule
 
 At each integration/infra fix: correct the existing domain rule or add a new stable ID, append a _verified_ incident row here, and commit alongside the code/regression. Before moving the Linear ticket to Done, review the entire ticket's integration incidents and record any missing knowledge. Don't expand this file with speculative causes or feature bugs that have no reusable integration lesson.

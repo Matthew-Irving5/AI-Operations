@@ -1,5 +1,5 @@
 begin;
-select plan(59);
+select plan(66);
 
 insert into public.apple_bridge_devices(id, user_id, label, token_hash, token_prefix)
 values ('00000000-0000-4000-8000-000000000301',
@@ -290,6 +290,53 @@ select ok((pg_get_functiondef('public.adapt_mobile_snapshot(text,uuid)'::regproc
   || pg_get_functiondef('public.adapt_mobile_record_v1(uuid)'::regprocedure))
   !~ '(workflow_runs|notifications|actions|ai_calls|http|net[.])',
   'The snapshot adapter function contains no execution or external-side-effect path');
+
+-- Model a transient adapter failure after immutable raw persistence. The first
+-- attempt's rejection is synthetic; retry must reuse this raw row and recover.
+insert into public.mobile_ingestion_records(snapshot_internal_id, user_id, record_id,
+  source, kind, canonical_hash, payload, raw_record, ingest_status)
+select id, user_id, '31000000-0000-4000-8000-000000000007', 'calendar', 'calendar_event',
+  repeat('0', 64),
+  '{"title":"Synthetic retry event","start_at":"2026-08-20T15:00:00+01:00","end_at":"2026-08-20T16:00:00+01:00","all_day":false,"calendar":"Synthetic","location":"","notes":"","url":""}'::jsonb,
+  '{"fixture":"seeded transient adapter failure"}'::jsonb, 'accepted'
+from public.mobile_snapshots
+where snapshot_id='30000000-0000-4000-8000-000000000001';
+insert into public.mobile_record_adaptations(record_internal_id, user_id, adapter_name,
+  adapter_version, status, error)
+select id, user_id, 'calendar', 'v1', 'rejected', 'synthetic_transient_adapter_failure'
+from public.mobile_ingestion_records
+where record_id='31000000-0000-4000-8000-000000000007';
+select is((select count(*) from public.mobile_record_adaptations
+  where record_internal_id=(select id from public.mobile_ingestion_records
+    where record_id='31000000-0000-4000-8000-000000000007') and status='rejected'),
+  1::bigint, 'The seeded transient state records one rejected adaptation');
+select is(public.adapt_mobile_snapshot(repeat('3', 64),
+  '30000000-0000-4000-8000-000000000001')->>'adapted', '1',
+  'Retry adapts the previously rejected record from the same raw snapshot');
+select is((select count(*) from public.mobile_ingestion_records
+  where record_id='31000000-0000-4000-8000-000000000007'), 1::bigint,
+  'Retry preserves exactly one immutable raw record');
+select is((select count(*) from public.mobile_calendar_event_items
+  where raw_record_id=(select id from public.mobile_ingestion_records
+    where record_id='31000000-0000-4000-8000-000000000007')), 1::bigint,
+  'Retry creates exactly one canonical calendar row');
+select is((select count(*) from public.mobile_record_adaptations
+  where record_internal_id=(select id from public.mobile_ingestion_records
+    where record_id='31000000-0000-4000-8000-000000000007')
+    and adapter_name='calendar' and adapter_version='v1' and status='adapted'
+    and derived_row_id is not null and error is null), 1::bigint,
+  'Successful retry replaces the rejected attempt with one canonical provenance row');
+select is(public.adapt_mobile_snapshot(repeat('3', 64),
+  '30000000-0000-4000-8000-000000000001')->>'adapted', '0',
+  'Replaying a successful retry performs no additional adaptation');
+select is((select count(*) from public.mobile_calendar_event_items
+  where raw_record_id=(select id from public.mobile_ingestion_records
+    where record_id='31000000-0000-4000-8000-000000000007'))
+  +(select count(*) from public.mobile_record_adaptations
+    where record_internal_id=(select id from public.mobile_ingestion_records
+      where record_id='31000000-0000-4000-8000-000000000007')
+      and adapter_name='calendar' and adapter_version='v1'), 2::bigint,
+  'Successful retry replay leaves one canonical row and one provenance row');
 
 select * from finish();
 rollback;
