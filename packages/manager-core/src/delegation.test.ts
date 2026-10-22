@@ -95,8 +95,10 @@ it('deduplicates equivalent requests and changes the key for a new source run', 
 });
 
 it('requires an explicit destination workflow code', async () => {
-  await expect(planInterAgentDelegation({
-    request: { ...base, destinationWorkflowCode: '  ' },
-    routingPath: base.routingPath,
-  })).rejects.toMatchObject({ code: 'inter_agent_destination_workflow_required' });
+  await expect(
+    planInterAgentDelegation({
+      request: { ...base, destinationWorkflowCode: '  ' },
+      routingPath: base.routingPath,
+    }),
+  ).rejects.toMatchObject({ code: 'inter_agent_destination_workflow_required' });
 });

@@ -8,39 +8,44 @@ import {
 } from '@ai-operations/contracts';
 
 export interface ConversationHandoffAuthorizer {
-  canTransferOwnership(
-    fromManagerCode: ManagerCode,
-    toManagerCode: ManagerCode,
-  ): Promise<boolean>;
+  canTransferOwnership(fromManagerCode: ManagerCode, toManagerCode: ManagerCode): Promise<boolean>;
 }
 
 export interface ConversationHandoffPersistence {
   /** Writes the requested handoff and its initial event atomically. */
-  createRequestedHandoff(input: Readonly<{
-    handoff: ConversationHandoff;
-    event: ConversationHandoffEvent;
-  }>): Promise<Readonly<{ handoffId: string; duplicate: boolean }>>;
+  createRequestedHandoff(
+    input: Readonly<{
+      handoff: ConversationHandoff;
+      event: ConversationHandoffEvent;
+    }>,
+  ): Promise<Readonly<{ handoffId: string; duplicate: boolean }>>;
   /** Writes the transition/event and changes current ownership on acceptance atomically. */
-  resolveHandoff(input: Readonly<{
-    handoffId: string;
-    userId: string;
-    status: Extract<ConversationHandoff['status'], 'accepted' | 'rejected' | 'cancelled'>;
-    actorManagerCode: ManagerCode;
-    correlationId: string;
-    transitionedAt: string;
-  }>): Promise<Readonly<{ conversationId: string; currentManagerCode: ManagerCode }>>;
+  resolveHandoff(
+    input: Readonly<{
+      handoffId: string;
+      userId: string;
+      status: Extract<ConversationHandoff['status'], 'accepted' | 'rejected' | 'cancelled'>;
+      actorManagerCode: ManagerCode;
+      correlationId: string;
+      transitionedAt: string;
+    }>,
+  ): Promise<Readonly<{ conversationId: string; currentManagerCode: ManagerCode }>>;
 }
 
-export async function requestConversationHandoff(input: Readonly<{
-  handoff: ConversationHandoff;
-  authorizer: ConversationHandoffAuthorizer;
-  persistence: ConversationHandoffPersistence;
-}>): Promise<Readonly<{ handoffId: string; duplicate: boolean }>> {
+export async function requestConversationHandoff(
+  input: Readonly<{
+    handoff: ConversationHandoff;
+    authorizer: ConversationHandoffAuthorizer;
+    persistence: ConversationHandoffPersistence;
+  }>,
+): Promise<Readonly<{ handoffId: string; duplicate: boolean }>> {
   const handoff = conversationHandoffSchema.parse(input.handoff);
   if (handoff.status !== 'requested' || handoff.acceptedAt !== null) {
     throw new Error('conversation_handoff_must_start_requested');
   }
-  if (!(await input.authorizer.canTransferOwnership(handoff.fromManagerCode, handoff.toManagerCode))) {
+  if (
+    !(await input.authorizer.canTransferOwnership(handoff.fromManagerCode, handoff.toManagerCode))
+  ) {
     throw new Error('conversation_handoff_capability_missing');
   }
   const event = conversationHandoffEventSchema.parse({
@@ -56,13 +61,15 @@ export async function requestConversationHandoff(input: Readonly<{
   return await input.persistence.createRequestedHandoff({ handoff, event });
 }
 
-export async function resolveConversationHandoff(input: Readonly<{
-  handoff: ConversationHandoff;
-  status: Extract<ConversationHandoff['status'], 'accepted' | 'rejected' | 'cancelled'>;
-  actorManagerCode: ManagerCode;
-  persistence: ConversationHandoffPersistence;
-  now?: () => string;
-}>): Promise<Readonly<{ conversationId: string; currentManagerCode: ManagerCode }>> {
+export async function resolveConversationHandoff(
+  input: Readonly<{
+    handoff: ConversationHandoff;
+    status: Extract<ConversationHandoff['status'], 'accepted' | 'rejected' | 'cancelled'>;
+    actorManagerCode: ManagerCode;
+    persistence: ConversationHandoffPersistence;
+    now?: () => string;
+  }>,
+): Promise<Readonly<{ conversationId: string; currentManagerCode: ManagerCode }>> {
   const handoff = conversationHandoffSchema.parse(input.handoff);
   if (!canTransitionConversationHandoff(handoff.status, input.status)) {
     throw new Error('conversation_handoff_transition_invalid');

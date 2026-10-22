@@ -66,7 +66,16 @@ WITH grants AS (
       to_regprocedure('public.complete_canonical_action_execution(uuid,uuid,text,text,uuid,jsonb)'),
       to_regprocedure('public.load_canonical_action_execution_request(uuid)'),
       to_regprocedure('public.load_prompt_promotion_target(uuid,integer)'),
-      to_regprocedure('public.request_canonical_action_reversal(uuid,text)')
+      to_regprocedure('public.request_canonical_action_reversal(uuid,text)'),
+      -- AI-17 delegation and handoff ACLs are checked exactly by rpc_security.sql.
+      to_regprocedure('public.create_inter_agent_request_run(jsonb,integer,text[],uuid)'),
+      to_regprocedure('public.resume_inter_agent_source_run(uuid)'),
+      to_regprocedure('public.complete_inter_agent_request(uuid,jsonb,text,timestamptz)'),
+      to_regprocedure('public.finalize_inter_agent_destination_run()'),
+      to_regprocedure('public.resume_waiting_inter_agent_source()'),
+      to_regprocedure('public.expire_inter_agent_requests(integer)'),
+      to_regprocedure('public.create_conversation_handoff(jsonb)'),
+      to_regprocedure('public.resolve_conversation_handoff(uuid,uuid,text,text,uuid,timestamptz)')
     )
 )
 SELECT is(
