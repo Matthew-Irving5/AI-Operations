@@ -47,12 +47,16 @@ test('Deno Edge files bypass Prettier and use the Edge formatter lane', () => {
 
 test('Windows command arguments preserve route-group paths through cmd.exe', () => {
   const path = 'apps/web/app/(app)/design-system/page.tsx';
+  const grep =
+    'authenticated shell groups routes, preserves history, and supports the command palette';
 
   assert.deepEqual(shellSafeArguments(['--check', path], 'win32'), [
     '--check',
     '"apps/web/app/(app)/design-system/page.tsx"',
   ]);
+  assert.deepEqual(shellSafeArguments(['--grep', grep], 'win32'), ['--grep', `"${grep}"`]);
   assert.deepEqual(shellSafeArguments(['--check', path], 'linux'), ['--check', path]);
+  assert.deepEqual(shellSafeArguments(['--grep', grep], 'linux'), ['--grep', grep]);
 });
 
 test('independent changed-surface checks continue and summarize failures without leaking secrets', () => {

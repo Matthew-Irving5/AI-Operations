@@ -39,6 +39,7 @@ This file records **confirmed** errors (not generic best practices). One row per
 | AI27-03  | Strict CSP omitted the Google origins required to load GIS/Picker scripts, connect to Picker APIs, and frame the Picker | WEB-01; allow only the required origins and assert the resulting policy | [AI-27](https://linear.app/ai-operations-mi/issue/AI-27/harden-personal-google-drive-calendar-and-tasks-connection-as-the), [Picker CSP regression](../../../../apps/web/middleware.test.ts) |
 
 | AI27-04  | Generic hosted `auth-browser` proof could pass without executing AI-27's required Google OAuth/Picker selected-file lifecycle | GOOGLE-02; route to a dedicated exact-candidate provider runner with redacted lifecycle evidence | [AI-27](https://linear.app/ai-operations-mi/issue/AI-27/harden-personal-google-drive-calendar-and-tasks-connection-as-the), [PR #179](https://github.com/Matthew-Irving5/AI-Operations/pull/179), `google-oauth-staging-acceptance.test.ts` |
+| AI27-05  | Windows local QA runner split a multiword Playwright `--grep` argument and ran all nine tests instead of the requested one | QA-01; call `shellSafeArguments` before the shell-backed Playwright invocation and assert multiword preservation | [AI-27](https://linear.app/ai-operations-mi/issue/AI-27/harden-personal-google-drive-calendar-and-tasks-connection-as-the), `infrastructure/scripts/verify-changed.test.ts` (9/9), isolated Chromium repro (1/1) |
 
 ## Update rule
 

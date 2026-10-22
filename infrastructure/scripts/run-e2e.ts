@@ -7,6 +7,8 @@ import { basename, join } from 'node:path';
 import { requiredBrowsersFromPlaywrightArgs, runLocalQaPreflight } from './local-qa-preflight';
 import { configureLocalAuthCallback } from './local-auth-config';
 import { copyLocalSupabaseWorkspaceFiles } from './qa-workspace-dependencies';
+import { sanitizeCommandError } from './qa-debug';
+import { shellSafeArguments } from './verify-changed';
 
 function run(args: string[], env = process.env, timeoutMs = 120_000): string {
   return execFileSync('corepack', ['pnpm', ...args], {
@@ -342,11 +344,15 @@ async function main(): Promise<void> {
       LOCAL_QA_WSL_DISTRO: workerPreview ? process.env.LOCAL_QA_WSL_DISTRO : undefined,
     });
     const runPlaywright = (args: string[]) =>
-      execFileSync('corepack', ['pnpm', 'exec', 'playwright', 'test', ...args], {
-        env,
-        shell: process.platform === 'win32',
-        stdio: 'inherit',
-      });
+      execFileSync(
+        'corepack',
+        shellSafeArguments(['pnpm', 'exec', 'playwright', 'test', ...args]),
+        {
+          env,
+          shell: process.platform === 'win32',
+          stdio: 'inherit',
+        },
+      );
     process.stdout.write(
       `[qa:local] ${projectId}: running Playwright ${playwrightArgs.join(' ') || 'all projects'}.\n`,
     );
