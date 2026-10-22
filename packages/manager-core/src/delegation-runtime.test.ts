@@ -18,6 +18,7 @@ const requestBase = {
   sourceMessageId: null,
   sourceManagerCode: 'personal' as const,
   destinationManagerCode: 'travel' as const,
+  destinationWorkflowCode: 'travel-on-demand-plan',
   objective: 'Compare two trip options against this budget.',
   requiredOutputContract: { type: 'object', additionalProperties: false },
   contextEvidenceIds: [],
@@ -45,6 +46,8 @@ function persistence(overrides: Partial<InterAgentDelegationPersistence> = {}) {
   } satisfies InterAgentDelegationPersistence;
 }
 
+const allowDelegation = { canDelegate: vi.fn(() => Promise.resolve(true)) };
+
 it('produces one canonical AI-14 request for atomic request/run/queue persistence', async () => {
   let capturedPlan:
     | Parameters<InterAgentDelegationPersistence['createAndQueueRequest']>[0]['plan']
@@ -67,6 +70,7 @@ it('produces one canonical AI-14 request for atomic request/run/queue persistenc
     request: requestBase,
     routingPath: ['personal'],
     sourceRunLineage: { id: runId, costRootRunId: null },
+    authorizer: allowDelegation,
     persistence: store,
     newId: () => requestId,
     now: () => timestamp,
@@ -102,6 +106,7 @@ it('keeps nested specialist runs under the original on-demand cost root', async 
     },
     routingPath: ['personal', 'travel'],
     sourceRunLineage: { id: nestedSourceRunId, costRootRunId: rootRunId },
+    authorizer: allowDelegation,
     persistence: store,
     newId: () => requestId,
     now: () => timestamp,
@@ -121,6 +126,7 @@ it('rejects lineage that does not match the request source run', async () => {
       request: requestBase,
       routingPath: ['personal'],
       sourceRunLineage: { id: rootRunId, costRootRunId: null },
+      authorizer: allowDelegation,
       persistence: store,
     }),
   ).rejects.toThrow('inter_agent_source_run_lineage_mismatch');
@@ -133,9 +139,28 @@ it('rejects a run-backed delegation when source cost lineage is missing', async 
     createAndQueueInterAgentRequest({
       request: requestBase,
       routingPath: ['personal'],
+      authorizer: allowDelegation,
       persistence: store,
     }),
   ).rejects.toThrow('inter_agent_source_run_lineage_missing');
+  expect(store.createAndQueueRequest).not.toHaveBeenCalled();
+});
+
+it('rejects a route missing either manager capability before persistence', async () => {
+  const store = persistence();
+  const authorizer = { canDelegate: vi.fn(() => Promise.resolve(false)) };
+
+  await expect(
+    createAndQueueInterAgentRequest({
+      request: requestBase,
+      routingPath: ['personal'],
+      sourceRunLineage: { id: runId, costRootRunId: null },
+      authorizer,
+      persistence: store,
+    }),
+  ).rejects.toThrow('inter_agent_capability_missing');
+
+  expect(authorizer.canDelegate).toHaveBeenCalledWith('personal', 'travel');
   expect(store.createAndQueueRequest).not.toHaveBeenCalled();
 });
 

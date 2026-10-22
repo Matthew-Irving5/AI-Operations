@@ -23,6 +23,7 @@ export type InterAgentRequestIntent = Pick<
   | 'userId'
   | 'sourceManagerCode'
   | 'destinationManagerCode'
+  | 'destinationWorkflowCode'
   | 'objective'
   | 'requiredOutputContract'
   | 'contextEvidenceIds'
@@ -80,6 +81,9 @@ export async function planInterAgentDelegation(
   }>,
 ): Promise<InterAgentDelegationPlan> {
   const request = input.request;
+  if (!request.destinationWorkflowCode?.trim()) {
+    throw new InterAgentRoutingError('inter_agent_destination_workflow_required');
+  }
   if (input.routingPath[input.routingPath.length - 1] !== request.sourceManagerCode) {
     throw new InterAgentRoutingError('inter_agent_routing_owner_mismatch');
   }
@@ -94,6 +98,7 @@ export async function planInterAgentDelegation(
     sourceMessageId: request.sourceMessageId,
     sourceManagerCode: request.sourceManagerCode,
     destinationManagerCode: request.destinationManagerCode,
+    destinationWorkflowCode: request.destinationWorkflowCode.trim(),
     objective: request.objective.trim().replace(/\s+/g, ' ').toLowerCase(),
     requiredOutputContract: request.requiredOutputContract,
     contextEvidenceIds: [...new Set(request.contextEvidenceIds)].sort(),

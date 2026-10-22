@@ -13,7 +13,7 @@ import {
   type InterAgentDelegationPlan,
   type InterAgentRequestIntent,
   type InterAgentSourceRunLineage,
-} from './delegation';
+} from './delegation.ts';
 
 type InterAgentRequestDraft = InterAgentRequestIntent &
   Pick<InterAgentRequest, 'priority' | 'deadlineAt' | 'correlationId'>;
@@ -38,11 +38,20 @@ export interface InterAgentDelegationPersistence {
   ): Promise<Readonly<{ sourceRunId: string | null }>>;
 }
 
+export interface InterAgentRouteAuthorizer {
+  /** Resolve the enabled manager_capabilities registry for both route endpoints. */
+  canDelegate(
+    sourceManagerCode: ManagerCode,
+    destinationManagerCode: ManagerCode,
+  ): Promise<boolean>;
+}
+
 export async function createAndQueueInterAgentRequest(
   input: Readonly<{
     request: InterAgentRequestDraft;
     routingPath: readonly ManagerCode[];
     sourceRunLineage?: InterAgentSourceRunLineage;
+    authorizer: InterAgentRouteAuthorizer;
     persistence: InterAgentDelegationPersistence;
     newId?: () => string;
     now?: () => string;
@@ -58,6 +67,14 @@ export async function createAndQueueInterAgentRequest(
     request: input.request,
     routingPath: input.routingPath,
   });
+  if (
+    !(await input.authorizer.canDelegate(
+      input.request.sourceManagerCode,
+      input.request.destinationManagerCode,
+    ))
+  ) {
+    throw new Error('inter_agent_capability_missing');
+  }
   const timestamp = (input.now ?? (() => new Date().toISOString()))();
   const request = interAgentRequestSchema.parse({
     ...input.request,
