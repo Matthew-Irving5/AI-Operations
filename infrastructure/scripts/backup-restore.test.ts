@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assertIsolatedRestoreTarget, restoreLocalDatabaseFile } from './backup-restore.js';
+import { dirname, resolve } from 'node:path';
+import {
+  assertIsolatedRestoreTarget,
+  corepackInvocation,
+  restoreLocalDatabaseFile,
+} from './backup-restore.js';
 import {
   assertIsolatedLocalRecoveryTarget,
   assertIsolatedLocalSourceProject,
@@ -233,4 +238,20 @@ test('local restore refuses to copy into an unverified database container', asyn
     /restore_local_database_container_not_running/,
   );
   assert.equal(calls.length, 1);
+});
+
+test('Supabase CLI runs Corepack without a shell on Windows', () => {
+  const args = ['pnpm', 'exec', 'supabase', 'db', 'push', '--local', '--yes'];
+  const invocation = corepackInvocation(args);
+  if (process.platform === 'win32') {
+    assert.equal(invocation.command, process.execPath);
+    assert.equal(
+      invocation.args[0],
+      resolve(dirname(process.execPath), 'node_modules/corepack/dist/corepack.js'),
+    );
+    assert.deepEqual(invocation.args.slice(1), args);
+  } else {
+    assert.equal(invocation.command, 'corepack');
+    assert.deepEqual(invocation.args, args);
+  }
 });
