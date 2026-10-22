@@ -147,10 +147,12 @@ export const ProcurementStagingAcceptanceEvidenceSchema = z
       context.addIssue({ code: 'custom', message: 'procurement_acceptance_cost_cap_exceeded' });
     }
     const { allIn, sourceA, sourceB } = evidence.comparison;
-    if (
-      allIn.itemMinor + allIn.deliveryMinor + allIn.accessoriesMinor + allIn.mandatoryFeesMinor !==
-      allIn.totalMinor
-    ) {
+    const calculatedAllIn =
+      BigInt(allIn.itemMinor) +
+      BigInt(allIn.deliveryMinor) +
+      BigInt(allIn.accessoriesMinor) +
+      BigInt(allIn.mandatoryFeesMinor);
+    if (calculatedAllIn !== BigInt(allIn.totalMinor)) {
       context.addIssue({ code: 'custom', message: 'procurement_all_in_total_mismatch' });
     }
     if (sourceA.candidateId === sourceB.candidateId || sourceA.totalMinor === sourceB.totalMinor) {

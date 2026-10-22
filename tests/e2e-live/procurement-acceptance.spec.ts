@@ -221,7 +221,12 @@ function totalMinor(candidate: ProcurementDecision['candidates'][number]): numbe
     mandatoryFeesMinor === null
   )
     return null;
-  return itemPriceMinor + deliveryMinor + requiredAccessoriesMinor + mandatoryFeesMinor;
+  const total =
+    BigInt(itemPriceMinor) +
+    BigInt(deliveryMinor) +
+    BigInt(requiredAccessoriesMinor) +
+    BigInt(mandatoryFeesMinor);
+  return total <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(total) : null;
 }
 
 test('AI-39 persisted Procurement acceptance: comparison, revision lineage, and denied action', async ({
