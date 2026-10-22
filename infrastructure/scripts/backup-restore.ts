@@ -81,8 +81,9 @@ async function runSupabase(
   const cliArgs = localWorkdir ? ['--workdir', localWorkdir, ...args] : args;
   if (localWorkdir) delete childEnv.SUPABASE_ACCESS_TOKEN;
   else childEnv.SUPABASE_ACCESS_TOKEN = requiredEnv('SUPABASE_ACCESS_TOKEN');
+  const invocation = corepackInvocation(['pnpm', 'exec', 'supabase', ...cliArgs]);
   try {
-    const result = await execFile('corepack', ['pnpm', 'exec', 'supabase', ...cliArgs], {
+    const result = await execFile(invocation.command, invocation.args, {
       cwd: ROOT,
       env: childEnv,
       maxBuffer,
@@ -92,6 +93,16 @@ async function runSupabase(
   } catch (error) {
     throw new Error(`backup_supabase_command_failed:${redactedError(error)}`);
   }
+}
+
+export function corepackInvocation(args: string[]): { command: string; args: string[] } {
+  if (process.platform === 'win32') {
+    return {
+      command: process.execPath,
+      args: [resolve(dirname(process.execPath), 'node_modules/corepack/dist/corepack.js'), ...args],
+    };
+  }
+  return { command: 'corepack', args };
 }
 
 async function supabase(args: string[], maxBuffer = 128 * 1024 * 1024): Promise<string> {
