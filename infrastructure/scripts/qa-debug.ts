@@ -18,8 +18,22 @@ export function sanitize(text: string): string {
     .slice(-12_000);
 }
 
+export function sanitizeCommandError(error: unknown): string {
+  if (!error || typeof error !== 'object') return '';
+  const commandError = error as { stderr?: Buffer | string; stdout?: Buffer | string };
+  const output = [commandError.stderr, commandError.stdout]
+    .map((stream) => (stream ? String(stream).slice(-1000) : ''))
+    .filter(Boolean)
+    .join('\n');
+  return sanitize(output).slice(-2000);
+}
+
 export function classifyFailure(text: string): FailureClass {
-  if (/zod|schema|shape mismatch|expected.+received|serialization|deserializ/i.test(text)) {
+  if (
+    /zod|schema|shape mismatch|expected.+received|serialization|deserializ|failed to read file: open packages\/\S+: no such file or directory/i.test(
+      text,
+    )
+  ) {
     return 'CONTRACT';
   }
   if (

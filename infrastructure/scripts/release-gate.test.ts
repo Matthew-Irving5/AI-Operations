@@ -1033,6 +1033,28 @@ test('AI-39 Procurement evidence stays pending until its strict candidate-bound 
   assert.equal(success.acceptance?.humanMfa, 'user-completed');
   assert.deepEqual(success.acceptance?.checks, hostedSuite.checks);
   assert.deepEqual(success.acceptance?.procurementEvidence, hostedSuite);
+  assert.equal(
+    acceptStagingCandidate({
+      ready: ready(),
+      currentPullRequestHeadSha: candidateSha,
+      currentPullRequestTreeSha: candidateTreeSha,
+      currentPullRequestNumber: 152,
+      acceptance: success.acceptance!,
+    }).acceptanceProfile,
+    'procurement',
+  );
+
+  assert.throws(
+    () =>
+      acceptStagingCandidate({
+        ready: ready(),
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        acceptance: hostedSuite,
+      }),
+    /invalid_evidence/,
+  );
 
   assert.throws(
     () =>
@@ -2203,6 +2225,10 @@ test('AI-39 procurement selection binds a dedicated profile to its ticket marker
   ];
   assert.equal(selectHostedAcceptanceProfile(ai39CandidateFiles), 'procurement');
   assert.equal(selectHostedAcceptanceProfile(ai39CandidateFiles, 'procurement'), 'procurement');
+  assert.equal(
+    selectHostedAcceptanceProfile(['tests/e2e-live/procurement-acceptance.spec.ts']),
+    'procurement',
+  );
   assert.throws(
     () => selectHostedAcceptanceProfile(['apps/web/app/(app)/procurement/page.tsx'], 'procurement'),
     /procurement override requires the AI-39 readback or dedicated acceptance spec marker/,
