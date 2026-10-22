@@ -117,9 +117,20 @@ Deno.test("Shortcut documentation scopes the endpoint to its paired Supabase pro
       ),
     );
     assert(guide.includes("same Supabase project"));
+    const absoluteUrls = [...guide.matchAll(/https?:\/\/[^\s`]+/g)].map(
+      (match) => {
+        try {
+          return new URL(match[0]);
+        } catch {
+          return null;
+        }
+      },
+    );
     assert(
-      !guide.includes(
-        "https://epmgvknrydadzitzupzx.supabase.co/functions/v1/mobile-snapshot-ingest",
+      !absoluteUrls.some(
+        (url) =>
+          url?.hostname === "epmgvknrydadzitzupzx.supabase.co" &&
+          url.pathname === "/functions/v1/mobile-snapshot-ingest",
       ),
     );
   }
