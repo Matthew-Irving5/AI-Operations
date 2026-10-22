@@ -324,7 +324,7 @@ const MobileShortcutProofSchema = z
   })
   .strict();
 
-const MobileShortcutStagingEvidenceSchema = z
+export const MobileShortcutStagingEvidenceSchema = z
   .object({
     schemaVersion: z.literal(1),
     state: z.literal('MOBILE_SHORTCUTS_STAGING_ACCEPTED'),
@@ -376,7 +376,7 @@ const Ai44ActionChecksSchema = z
   })
   .strict();
 
-const Ai44ActionProofSchema = z
+export const Ai44ActionProofSchema = z
   .object({
     schemaVersion: z.literal(1),
     state: z.literal('AI44_ACTION_STAGING_ACCEPTED'),
