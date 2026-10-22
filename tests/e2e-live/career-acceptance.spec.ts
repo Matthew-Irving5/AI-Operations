@@ -45,6 +45,7 @@ const OwnerDenialResponseSchema = z
 
 const AuditRowSchema = z
   .object({
+    correlation_id: z.string().uuid(),
     action_type: z.literal('github_career_sync_owner_denied'),
     target_type: z.literal('github_owner'),
     target_id: z.enum(['hard_denied', 'not_allowlisted']),
@@ -172,7 +173,6 @@ async function verifyOwnerDenial(
   },
 ): Promise<DenialEvidence> {
   const requestId = randomUUID();
-  const startedAt = new Date();
   const response = await page.evaluate(
     async ({ owner, requestId }) => {
       const result = await fetch('/api/career/github-sync', {
@@ -187,7 +187,6 @@ async function verifyOwnerDenial(
     },
     { owner: input.owner, requestId },
   );
-  const finishedAt = new Date();
   const parsed = OwnerDenialResponseSchema.safeParse(response.body);
   failUnless(
     response.status === 403 && parsed.success && parsed.data.code === input.expectedCode,
@@ -199,28 +198,25 @@ async function verifyOwnerDenial(
   );
 
   const query = new URLSearchParams({
-    select: 'action_type,target_type,target_id,result,redacted_after,created_at',
+    select: 'correlation_id,action_type,target_type,target_id,result,redacted_after',
     user_id: `eq.${userId}`,
+    correlation_id: `eq.${requestId}`,
     action_type: 'eq.github_career_sync_owner_denied',
     target_type: 'eq.github_owner',
     target_id: `eq.${input.auditTargetId}`,
     result: 'eq.denied',
-    created_at: `gte.${startedAt.toISOString()}`,
-    order: 'created_at.desc',
-    limit: '5',
+    limit: '2',
   });
   const rows = (await auditRows(query)).map((row) => AuditRowSchema.parse(row));
-  const matchingRows = rows.filter((row) => {
-    const timestamp = Date.parse(row.created_at);
-    return timestamp >= startedAt.getTime() && timestamp <= finishedAt.getTime();
-  });
   failUnless(
-    matchingRows.length === 1,
-    'Career owner denial did not produce exactly one matching audit event for this request window.',
+    rows.length === 1,
+    'Career owner denial did not produce exactly one audit event for this request ID.',
   );
-  const audit = matchingRows[0]!;
+  const audit = rows[0]!;
   failUnless(
-    audit.target_id === input.auditTargetId && audit.redacted_after.provider_request_made === false,
+    audit.correlation_id === requestId &&
+      audit.target_id === input.auditTargetId &&
+      audit.redacted_after.provider_request_made === false,
     'Career owner-denial audit did not prove that no provider request was made.',
   );
   return {

@@ -7,6 +7,37 @@ export type GithubSyncRequestError =
   | "owner_not_allowlisted"
   | "invalid_request";
 
+export function isGithubRequestId(value: string | null): value is string {
+  return (
+    value !== null &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(value)
+  );
+}
+
+export function githubOwnerDenialAuditEvent(input: {
+  userId: string;
+  requestId: string;
+  reason: Exclude<GithubSyncRequestError, "invalid_request">;
+}) {
+  const hardDenied = input.reason === "owner_hard_denied";
+  return {
+    user_id: input.userId,
+    actor_type: "user" as const,
+    action_type: "github_career_sync_owner_denied" as const,
+    target_type: "github_owner" as const,
+    target_id: hardDenied
+      ? ("hard_denied" as const)
+      : ("not_allowlisted" as const),
+    correlation_id: input.requestId,
+    result: "denied" as const,
+    redacted_after: {
+      reason: input.reason,
+      provider_request_made: false as const,
+    },
+  };
+}
+
 export type GithubRepository = Readonly<{
   id: number;
   name: string;

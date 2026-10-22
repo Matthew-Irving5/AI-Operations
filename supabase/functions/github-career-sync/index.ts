@@ -4,7 +4,9 @@ import {
   fetchGithubPullRequestFilesEvidence,
   githubAllowedOwner,
   type GithubEvidenceRecord,
+  githubOwnerDenialAuditEvent,
   type GithubRepository,
+  isGithubRequestId,
   parseGithubCommitEvidence,
   parseGithubDocumentationEvidence,
   parseGithubPullRequestEvidence,
@@ -127,7 +129,10 @@ function githubHeaders(token: string): HeadersInit {
 }
 
 Deno.serve(async (request) => {
-  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+  const suppliedRequestId = request.headers.get("x-request-id");
+  const requestId = isGithubRequestId(suppliedRequestId)
+    ? suppliedRequestId
+    : crypto.randomUUID();
   if (request.method !== "POST") {
     return failure(
       requestId,
@@ -179,18 +184,13 @@ Deno.serve(async (request) => {
   if ("error" in parsedRequest) {
     if (parsedRequest.error !== "invalid_request") {
       const deniedOwner = parsedRequest.error === "owner_hard_denied";
-      const audit = await service.from("audit_events").insert({
-        user_id: identity.user.id,
-        actor_type: "user",
-        action_type: "github_career_sync_owner_denied",
-        target_type: "github_owner",
-        target_id: deniedOwner ? "hard_denied" : "not_allowlisted",
-        result: "denied",
-        redacted_after: {
+      const audit = await service.from("audit_events").insert(
+        githubOwnerDenialAuditEvent({
+          userId: identity.user.id,
+          requestId,
           reason: parsedRequest.error,
-          provider_request_made: false,
-        },
-      });
+        }),
+      );
       if (audit.error) {
         return failure(
           requestId,
@@ -326,18 +326,13 @@ Deno.serve(async (request) => {
       );
     }
     const deniedOwner = repositoryRequest.error === "owner_hard_denied";
-    const audit = await service.from("audit_events").insert({
-      user_id: identity.user.id,
-      actor_type: "user",
-      action_type: "github_career_sync_owner_denied",
-      target_type: "github_owner",
-      target_id: deniedOwner ? "hard_denied" : "not_allowlisted",
-      result: "denied",
-      redacted_after: {
+    const audit = await service.from("audit_events").insert(
+      githubOwnerDenialAuditEvent({
+        userId: identity.user.id,
+        requestId,
         reason: repositoryRequest.error,
-        provider_request_made: false,
-      },
-    });
+      }),
+    );
     if (audit.error) {
       return failure(
         requestId,

@@ -5,7 +5,9 @@ import {
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   fetchGithubPullRequestFilesEvidence,
+  githubOwnerDenialAuditEvent,
   githubPullRequestFilesEndpoint,
+  isGithubRequestId,
   parseGithubAuthenticatedUser,
   parseGithubCommitEvidence,
   parseGithubDocumentationEvidence,
@@ -19,6 +21,43 @@ import {
 } from "./github-contract.ts";
 
 const mfaGateId = "00000000-0000-4000-8000-000000000101";
+
+Deno.test("binds owner-denial audit rows to the originating request", () => {
+  assertEquals(
+    githubOwnerDenialAuditEvent({
+      userId: "00000000-0000-4000-8000-000000000102",
+      requestId: mfaGateId,
+      reason: "owner_hard_denied",
+    }),
+    {
+      user_id: "00000000-0000-4000-8000-000000000102",
+      actor_type: "user",
+      action_type: "github_career_sync_owner_denied",
+      target_type: "github_owner",
+      target_id: "hard_denied",
+      correlation_id: mfaGateId,
+      result: "denied",
+      redacted_after: {
+        reason: "owner_hard_denied",
+        provider_request_made: false,
+      },
+    },
+  );
+  assertEquals(
+    githubOwnerDenialAuditEvent({
+      userId: "00000000-0000-4000-8000-000000000102",
+      requestId: mfaGateId,
+      reason: "owner_not_allowlisted",
+    }).target_id,
+    "not_allowlisted",
+  );
+});
+
+Deno.test("accepts only UUID request IDs for audit correlation", () => {
+  assertEquals(isGithubRequestId(mfaGateId), true);
+  assertEquals(isGithubRequestId("request-123"), false);
+  assertEquals(isGithubRequestId(null), false);
+});
 
 Deno.test("validates the exact request shape and rejects targeted owners", () => {
   assertEquals(parseGithubSyncRequest({ mfaGateId }), {
