@@ -6,6 +6,7 @@ import {
   corepackInvocation,
   restoreLocalDatabaseFile,
   rowsMatching,
+  singleLineSqlArgument,
 } from './backup-restore.js';
 import {
   assertIsolatedLocalRecoveryTarget,
@@ -273,4 +274,11 @@ test('Supabase database query parser ignores CLI diagnostics around the JSON env
   assert.throws(() => rowsMatching('query returned no JSON rows', ['migration_version']), {
     message: 'backup_database_query_invalid_json:expected=migration_version',
   });
+});
+
+test('multiline SQL is made safe for Windows Corepack CLI argv', () => {
+  assert.equal(
+    singleLineSqlArgument('\n  select a, b\n  from records\n  where a is not null  '),
+    'select a, b from records where a is not null',
+  );
 });
