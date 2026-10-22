@@ -49,6 +49,9 @@ This file records **confirmed** errors (not generic best practices). One row per
 
 | AI28-07 | A persisted rejected mobile adapter row was treated as a completed duplicate on retry, so the same immutable raw record could never recover after a transient adapter failure | DB-10; retry only the rejected row for the selected adapter/version under a per-record lock, then assert one canonical row/provenance and a no-op replay | AI-28 forward migration `20261022180901_ai28_retry_rejected_mobile_adaptation.sql`; `supabase/tests/mobile_adapters.sql` |
 
+| AI44-09 | Next 16.4 security update built successfully but Worker login returned 500 because OpenNext 1.20.2 omitted preview-props.json | RUNTIME-01; compatible adapter/Wrangler pins and dependency-to-Worker impact routing | Actual Worker expired-session test; verify-changed dependency regression |
+| OPS-03 | WSL build retained a removed middleware test from another branch and failed TypeScript | RUNTIME-04; delete stale sources only after disposable-target guards | Worker test passed after clean sync; workspace guard regression |
+
 ## Update rule
 
 At each integration/infra fix: correct the existing domain rule or add a new stable ID, append a _verified_ incident row here, and commit alongside the code/regression. Before moving the Linear ticket to Done, review the entire ticket's integration incidents and record any missing knowledge. Don't expand this file with speculative causes or feature bugs that have no reusable integration lesson.

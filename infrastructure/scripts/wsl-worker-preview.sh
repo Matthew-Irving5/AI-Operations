@@ -32,7 +32,7 @@ if [[ -e "$resolved_build_root/.git" || ! -f "$resolved_build_root/package.json"
 fi
 
 mkdir -p "$build_root"
-rsync -a \
+rsync -a --delete \
   --exclude=.git \
   --exclude=node_modules \
   --exclude=.env \
