@@ -437,7 +437,7 @@ function mobileShortcutEvidence(overrides: Record<string, unknown> = {}) {
       updatedSnapshotOnlyChanges: 'passed',
       revokedDeviceRejectedWithoutWrites: 'passed',
       invalidInputsRejected: 'passed',
-      failedAdaptationRetry: 'passed',
+      interruptedIngestRecovery: 'passed',
       freshnessTransitions: 'passed',
     },
     proof: {

@@ -257,7 +257,7 @@ const CostRuntimeChecksSchema = z
 const DecimalUsdSchema = z.string().regex(/^(?:0|[1-9][0-9]{0,5})(?:\.[0-9]{1,8})?$/);
 
 function decimalUsdUnits(value: string): bigint {
-  const [whole, fraction = ''] = value.split('.');
+  const [whole = '', fraction = ''] = value.split('.');
   return BigInt(whole) * 100_000_000n + BigInt(fraction.padEnd(8, '0'));
 }
 
@@ -281,7 +281,7 @@ const MobileShortcutChecksSchema = z
     updatedSnapshotOnlyChanges: z.literal('passed'),
     revokedDeviceRejectedWithoutWrites: z.literal('passed'),
     invalidInputsRejected: z.literal('passed'),
-    failedAdaptationRetry: z.literal('passed'),
+    interruptedIngestRecovery: z.literal('passed'),
     freshnessTransitions: z.literal('passed'),
   })
   .strict();
@@ -1366,8 +1366,10 @@ export function createStagingAcceptanceStatus(input: unknown): StagingAcceptance
       ? { mobileActionEvidence: parsed.hostedSuite }
       : {}),
     correlationIds: parsed.hostedSuite.correlationIds,
-    ...(parsed.hostedSuite.workflowRuns ? { workflowRuns: parsed.hostedSuite.workflowRuns } : {}),
-    ...(parsed.hostedSuite.promptGovernanceProof
+    ...('workflowRuns' in parsed.hostedSuite && parsed.hostedSuite.workflowRuns
+      ? { workflowRuns: parsed.hostedSuite.workflowRuns }
+      : {}),
+    ...('promptGovernanceProof' in parsed.hostedSuite && parsed.hostedSuite.promptGovernanceProof
       ? { promptGovernanceProof: parsed.hostedSuite.promptGovernanceProof }
       : {}),
     acceptedAt: parsed.hostedSuite.acceptedAt,
@@ -1687,7 +1689,7 @@ export function authorizeProductionPromotion(input: {
       'one associated merged PR',
       `${parsed.associatedPullRequests.length} PRs`,
     );
-  const mergedPr = parsed.associatedPullRequests[0];
+  const mergedPr = parsed.associatedPullRequests[0]!;
   if (mergedPr.state !== 'closed' || mergedPr.mergedAt === null)
     fail(
       'merge_pr_not_merged',
@@ -1757,16 +1759,9 @@ export function authorizeProductionPromotion(input: {
   });
 }
 
-export function recordProductionSmoke(input: {
-  deployedSha: string;
-  promotion: ProductionPromotionEvidence;
-  probes: Array<{
-    name: 'workerVersion' | 'loginShell' | 'authBoundary' | 'safeFunction';
-    result: 'passed' | 'failed';
-    diagnosticCode?: string;
-    observedReleaseSha?: string;
-  }>;
-}): ProductionSmokeEvidence {
+export function recordProductionSmoke(
+  input: z.input<typeof ProductionSmokeInputSchema>,
+): ProductionSmokeEvidence {
   const promotion = parseEvidence(
     ProductionPromotionEvidenceSchema,
     input.promotion,
