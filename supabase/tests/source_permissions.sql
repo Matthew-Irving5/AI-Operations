@@ -1,5 +1,5 @@
 begin;
-select plan(42);
+select plan(47);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password,
   email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -212,6 +212,36 @@ select is((select configuration->'selected_calendar_ids'->>0 from public.connect
 select is((select consumed_at is not null from public.mfa_action_gates
   where id = '50000000-0000-4000-8000-000000000006'), true,
   'source selection consumes its gate exactly once');
+insert into public.google_drive_files(
+  user_id, connection_id, drive_file_id, name, mime_type, selected, created_at
+) values
+  ('00000000-0000-0000-0000-000000000101', '60000000-0000-4000-8000-000000000001',
+    'drive-file-1', 'Synthetic retained history', 'text/plain', true, '2026-01-01T00:00:00Z'),
+  ('00000000-0000-0000-0000-000000000101', '60000000-0000-4000-8000-000000000001',
+    'drive-file-2', 'Synthetic selected file', 'text/plain', false, '2026-01-02T00:00:00Z');
+insert into public.mfa_action_gates(id, user_id, action_key, expires_at, created_at)
+values ('50000000-0000-4000-8000-000000000009',
+  '00000000-0000-0000-0000-000000000101', 'connection_scope_change',
+  now() + interval '2 minutes', now());
+select is((public.update_google_source_selection(
+  '60000000-0000-4000-8000-000000000001', '{calendar@example.com}', '{drive-file-2}',
+  '50000000-0000-4000-8000-000000000009'
+)->>'status'), 'updated', 'Drive selection change commits through the MFA RPC');
+select is((select selected from public.google_drive_files
+  where connection_id = '60000000-0000-4000-8000-000000000001'
+    and drive_file_id = 'drive-file-1'), false,
+  'deselected Drive rows are no longer selected');
+select is((select selected from public.google_drive_files
+  where connection_id = '60000000-0000-4000-8000-000000000001'
+    and drive_file_id = 'drive-file-2'), true,
+  'newly selected Drive rows become selected atomically');
+select is((select count(*)::integer from public.google_drive_files
+  where connection_id = '60000000-0000-4000-8000-000000000001'), 2,
+  'source selection retains historical Drive rows');
+select is((select created_at from public.google_drive_files
+  where connection_id = '60000000-0000-4000-8000-000000000001'
+    and drive_file_id = 'drive-file-1'), '2026-01-01T00:00:00Z'::timestamptz,
+  'deselection preserves Drive row provenance timestamps');
 
 -- Finance requests use the user-bound one-time gate as their elevation proof.
 -- The resumed browser request may still carry an AAL1 JWT, so these tests
