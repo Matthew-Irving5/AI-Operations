@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  GetObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import {
   decryptBackupPayload,
   encryptBackupPayload,
@@ -12,6 +17,11 @@ import {
   sha256Hex,
   verifyArchiveObjectReadback,
 } from './backup-integrity.js';
+import {
+  assertLoopbackS3Endpoint,
+  assertRecoveryBucketEmpty,
+  readIsolatedLocalRecoveryTarget,
+} from './restore-target.js';
 
 const execFile = promisify(execFileCallback);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -61,10 +71,17 @@ function redactedError(error: unknown): string {
     .slice(0, 300);
 }
 
-async function supabase(args: string[], maxBuffer = 128 * 1024 * 1024): Promise<string> {
-  const childEnv = { ...process.env, SUPABASE_ACCESS_TOKEN: requiredEnv('SUPABASE_ACCESS_TOKEN') };
+async function runSupabase(
+  args: string[],
+  maxBuffer: number,
+  localWorkdir?: string,
+): Promise<string> {
+  const childEnv = { ...process.env };
+  const cliArgs = localWorkdir ? ['--workdir', localWorkdir, ...args] : args;
+  if (localWorkdir) delete childEnv.SUPABASE_ACCESS_TOKEN;
+  else childEnv.SUPABASE_ACCESS_TOKEN = requiredEnv('SUPABASE_ACCESS_TOKEN');
   try {
-    const result = await execFile('corepack', ['pnpm', 'exec', 'supabase', ...args], {
+    const result = await execFile('corepack', ['pnpm', 'exec', 'supabase', ...cliArgs], {
       cwd: ROOT,
       env: childEnv,
       maxBuffer,
@@ -74,6 +91,18 @@ async function supabase(args: string[], maxBuffer = 128 * 1024 * 1024): Promise<
   } catch (error) {
     throw new Error(`backup_supabase_command_failed:${redactedError(error)}`);
   }
+}
+
+async function supabase(args: string[], maxBuffer = 128 * 1024 * 1024): Promise<string> {
+  return runSupabase(args, maxBuffer);
+}
+
+async function localSupabase(
+  workdir: string,
+  args: string[],
+  maxBuffer = 128 * 1024 * 1024,
+): Promise<string> {
+  return runSupabase(args, maxBuffer, workdir);
 }
 
 function rowsMatching(stdout: string, requiredColumns: string[]): QueryRow[] {
@@ -128,17 +157,29 @@ function normalizedCounts(value: unknown): Record<string, number> {
   return normalized;
 }
 
-async function queryRowCounts(projectRef: string): Promise<Record<string, number>> {
+async function queryRowCounts(
+  projectRef: string,
+  localWorkdir?: string,
+): Promise<Record<string, number>> {
   const rows = rowsMatching(
-    await supabase([
-      'db',
-      'query',
-      '--project-ref',
-      projectRef,
-      '--output-format',
-      'json',
-      ROW_COUNT_QUERY,
-    ]),
+    localWorkdir
+      ? await localSupabase(localWorkdir, [
+          'db',
+          'query',
+          '--local',
+          '--output-format',
+          'json',
+          ROW_COUNT_QUERY,
+        ])
+      : await supabase([
+          'db',
+          'query',
+          '--project-ref',
+          projectRef,
+          '--output-format',
+          'json',
+          ROW_COUNT_QUERY,
+        ]),
     ['row_counts'],
   );
   if (!rows[0]) throw new Error('backup_row_count_missing');
@@ -176,6 +217,83 @@ function r2Client(accessKeyEnv: string, secretKeyEnv: string): S3Client {
       secretAccessKey: requiredR2Env(secretKeyEnv),
     },
   });
+}
+
+function localRecoveryR2Client(endpoint: string): S3Client {
+  return new S3Client({
+    region: 'us-east-1',
+    endpoint: assertLoopbackS3Endpoint(endpoint),
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: requiredEnv('AI_OPS_LOCAL_RECOVERY_S3_ACCESS_KEY_ID'),
+      secretAccessKey: requiredEnv('AI_OPS_LOCAL_RECOVERY_S3_SECRET_ACCESS_KEY'),
+    },
+  });
+}
+
+type RestoreTarget =
+  | {
+      kind: 'staging-recovery';
+      projectRef: string;
+      bucket: string;
+      recoveryR2: S3Client;
+    }
+  | {
+      kind: 'local-recovery';
+      workdir: string;
+      projectRef: string;
+      bucket: string;
+      recoveryR2: S3Client;
+    };
+
+async function prepareRestoreTarget(environment: 'staging' | 'production'): Promise<RestoreTarget> {
+  if (environment !== 'staging') throw new Error('production_backup_restore_forbidden');
+  const sourceProjectRef = requiredEnv('AI_OPS_STAGING_PROJECT_REF');
+  const productionProjectRef = requiredEnv('AI_OPS_PRODUCTION_PROJECT_REF');
+  const sourceArchiveBucket = requiredEnv('AI_OPS_STAGING_ARCHIVE_BUCKET');
+  const backupBucket = requiredEnv('AI_OPS_STAGING_BACKUP_BUCKET');
+  const targetEnvironment = requiredEnv('AI_OPS_RESTORE_TARGET_ENV');
+
+  if (targetEnvironment === 'staging-recovery') {
+    const projectRef = requiredEnv('AI_OPS_STAGING_RECOVERY_PROJECT_REF');
+    assertIsolatedRestoreTarget(sourceProjectRef, projectRef, productionProjectRef);
+    const bucket = requiredEnv('AI_OPS_STAGING_RECOVERY_ARCHIVE_BUCKET');
+    if (new Set([bucket, sourceArchiveBucket, backupBucket]).size !== 3) {
+      throw new Error('restore_target_bucket_not_isolated');
+    }
+    return {
+      kind: 'staging-recovery',
+      projectRef,
+      bucket,
+      recoveryR2: r2Client(
+        'AI_OPS_R2_RECOVERY_ACCESS_KEY_ID',
+        'AI_OPS_R2_RECOVERY_SECRET_ACCESS_KEY',
+      ),
+    };
+  }
+
+  if (targetEnvironment === 'local-recovery') {
+    const localTarget = await readIsolatedLocalRecoveryTarget(
+      requiredEnv('AI_OPS_LOCAL_RECOVERY_WORKDIR'),
+      ROOT,
+      sourceProjectRef,
+      productionProjectRef,
+    );
+    const bucket = requiredEnv('AI_OPS_LOCAL_RECOVERY_ARCHIVE_BUCKET');
+    if (new Set([bucket, sourceArchiveBucket, backupBucket]).size !== 3) {
+      throw new Error('restore_target_bucket_not_isolated');
+    }
+    const endpoint = assertLoopbackS3Endpoint(requiredEnv('AI_OPS_LOCAL_RECOVERY_S3_ENDPOINT'));
+    return {
+      kind: 'local-recovery',
+      workdir: localTarget.workdir,
+      projectRef: localTarget.projectId,
+      bucket,
+      recoveryR2: localRecoveryR2Client(endpoint),
+    };
+  }
+
+  throw new Error('restore_target_must_be_isolated_staging_or_local');
 }
 
 async function bodyBytes(
@@ -433,51 +551,62 @@ async function loadBackup(backupKey: string, environment: 'staging' | 'productio
 async function restoreBackup(
   backupKey: string,
   environment: 'staging' | 'production',
+  target: RestoreTarget,
+  backup: Awaited<ReturnType<typeof loadBackup>>,
 ): Promise<void> {
   if (environment !== 'staging') throw new Error('production_backup_restore_forbidden');
-  if (requiredEnv('AI_OPS_RESTORE_TARGET_ENV') !== 'staging-recovery') {
-    throw new Error('restore_target_must_be_isolated_staging');
-  }
-  const targetProjectRef = requiredEnv('AI_OPS_STAGING_RECOVERY_PROJECT_REF');
   const sourceProjectRef = requiredEnv(`AI_OPS_${environment.toUpperCase()}_PROJECT_REF`);
-  const productionProjectRef = requiredEnv('AI_OPS_PRODUCTION_PROJECT_REF');
-  assertIsolatedRestoreTarget(sourceProjectRef, targetProjectRef, productionProjectRef);
-  const recoveryBucket = requiredEnv('AI_OPS_STAGING_RECOVERY_ARCHIVE_BUCKET');
-  const sourceArchiveBucket = requiredEnv(`AI_OPS_${environment.toUpperCase()}_ARCHIVE_BUCKET`);
-  const backupBucket = requiredEnv(`AI_OPS_${environment.toUpperCase()}_BACKUP_BUCKET`);
-  if (new Set([recoveryBucket, sourceArchiveBucket, backupBucket]).size !== 3) {
-    throw new Error('restore_target_bucket_not_isolated');
-  }
-  const recoveryR2 = r2Client(
-    'AI_OPS_R2_RECOVERY_ACCESS_KEY_ID',
-    'AI_OPS_R2_RECOVERY_SECRET_ACCESS_KEY',
-  );
-  const {
-    payload,
-    encrypted,
-    client,
-    backupBucket: verifiedBackupBucket,
-  } = await loadBackup(backupKey, environment);
+  const { payload, encrypted, backupBucket: verifiedBackupBucket } = backup;
   const backupSha = sha256Hex(encrypted);
   const keyVersion = requiredKeyVersion(environment);
   const temp = await mkdtemp(join(tmpdir(), 'ai-ops-restore-'));
   try {
-    await supabase(['db', 'push', '--project-ref', targetProjectRef, '--yes']);
-    const targetCounts = await queryRowCounts(targetProjectRef);
+    await assertRecoveryBucketEmpty(async (continuationToken) => {
+      const page = await target.recoveryR2.send(
+        new ListObjectsV2Command({
+          Bucket: target.bucket,
+          ...(continuationToken ? { ContinuationToken: continuationToken } : {}),
+        }),
+      );
+      return {
+        objectCount: page.Contents?.length ?? 0,
+        isTruncated: page.IsTruncated ?? false,
+        ...(page.NextContinuationToken
+          ? { nextContinuationToken: page.NextContinuationToken }
+          : {}),
+      };
+    });
+    if (target.kind === 'local-recovery') {
+      await localSupabase(target.workdir, ['db', 'push', '--local', '--yes']);
+    } else {
+      await supabase(['db', 'push', '--project-ref', target.projectRef, '--yes']);
+    }
+    const targetCounts = await queryRowCounts(
+      target.projectRef,
+      target.kind === 'local-recovery' ? target.workdir : undefined,
+    );
     if (Object.values(targetCounts).some((count) => count !== 0)) {
       throw new Error('restore_target_database_not_empty');
     }
     const dataPath = join(temp, 'database.sql');
     await writeFile(dataPath, Buffer.from(payload.databaseSqlBase64, 'base64'), { mode: 0o600 });
-    await supabase(
-      ['db', 'query', '--project-ref', targetProjectRef, '--file', dataPath],
-      512 * 1024 * 1024,
-    );
+    if (target.kind === 'local-recovery') {
+      await localSupabase(
+        target.workdir,
+        ['db', 'query', '--local', '--file', dataPath],
+        512 * 1024 * 1024,
+      );
+    } else {
+      await supabase(
+        ['db', 'query', '--project-ref', target.projectRef, '--file', dataPath],
+        512 * 1024 * 1024,
+      );
+    }
     for (const object of payload.manifest.objects) {
       const bytes = Buffer.from(payload.objectsBase64[object.key]!, 'base64');
-      await recoveryR2.send(
+      await target.recoveryR2.send(
         new PutObjectCommand({
-          Bucket: recoveryBucket,
+          Bucket: target.bucket,
           Key: object.key,
           Body: bytes,
           ContentLength: bytes.byteLength,
@@ -485,14 +614,17 @@ async function restoreBackup(
           Metadata: { sha256: object.sha256, source: 'ai-operations-restore' },
         }),
       );
-      const readback = await readObjectResponse(recoveryR2, recoveryBucket, object.key);
+      const readback = await readObjectResponse(target.recoveryR2, target.bucket, object.key);
       verifyArchiveObjectReadback(object, {
         bytes: await bodyBytes(readback.Body),
         ...(readback.ContentType ? { contentType: readback.ContentType } : {}),
         ...(readback.Metadata?.sha256 ? { metadataSha256: readback.Metadata.sha256 } : {}),
       });
     }
-    const restoredCounts = await queryRowCounts(targetProjectRef);
+    const restoredCounts = await queryRowCounts(
+      target.projectRef,
+      target.kind === 'local-recovery' ? target.workdir : undefined,
+    );
     const expectedCounts = payload.manifest.rowCounts;
     if (
       Object.keys(restoredCounts).length !== Object.keys(expectedCounts).length ||
@@ -529,9 +661,9 @@ async function restoreBackup(
     process.stdout.write(
       JSON.stringify({
         status: 'restored-and-verified',
-        targetEnvironment: 'staging-recovery',
-        targetProjectRef,
-        targetBucket: recoveryBucket,
+        targetEnvironment: target.kind,
+        targetProjectRef: target.projectRef,
+        targetBucket: target.bucket,
         backupBucket: verifiedBackupBucket,
         backupSha256: backupSha,
         objectCount,
@@ -541,8 +673,6 @@ async function restoreBackup(
     );
   } finally {
     await rm(temp, { recursive: true, force: true });
-    client.destroy();
-    recoveryR2.destroy();
   }
 }
 
@@ -553,8 +683,11 @@ async function main(): Promise<void> {
     const environment = environmentArg ?? process.env.AI_OPS_BACKUP_SOURCE_ENV;
     if (environment !== 'staging' && environment !== 'production')
       throw new Error('backup_source_environment_invalid');
-    const { payload, encrypted, client } = await loadBackup(backupKeyArg, environment);
+    const target = command === 'restore' ? await prepareRestoreTarget(environment) : undefined;
+    let backup: Awaited<ReturnType<typeof loadBackup>> | undefined;
     try {
+      backup = await loadBackup(backupKeyArg, environment);
+      const { payload, encrypted } = backup;
       const key = parseBackupKey(
         requiredEnv(`AI_OPS_${environment.toUpperCase()}_BACKUP_ENCRYPTION_KEY`),
       );
@@ -564,7 +697,10 @@ async function main(): Promise<void> {
         verified.manifest.keyVersion !== requiredKeyVersion(environment)
       )
         throw new Error('backup_manifest_mismatch');
-      if (command === 'restore') return await restoreBackup(backupKeyArg, environment);
+      if (command === 'restore') {
+        if (!target) throw new Error('restore_target_missing');
+        return await restoreBackup(backupKeyArg, environment, target, backup);
+      }
       process.stdout.write(
         JSON.stringify({
           status: 'verified',
@@ -578,7 +714,8 @@ async function main(): Promise<void> {
       );
       return;
     } finally {
-      client.destroy();
+      backup?.client.destroy();
+      target?.recoveryR2.destroy();
     }
   }
   throw new Error(
