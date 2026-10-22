@@ -27,6 +27,9 @@ This file records **confirmed** errors (not generic best practices). One row per
 | AI20-01 | Provider actual cost above estimate was clamped in the webhook and rejected by settlement, understating spend | DB-09; record full actual, cap/release the reservation, and test over-cap settlement plus replay | [PR #178](https://github.com/Matthew-Irving5/AI-Operations/pull/178), empty local reset + full DB suite 500/500 |
 | AI20-02 | Cache-write usage and the effective price version were not carried from reservation through webhook settlement | DB-12; persist the exact price ID and complete provider usage, then calculate against that immutable version | AI-20 empty local reset + full DB suite 500/500, verify:changed passed; exact-head CI pending |
 
+| AI44-09 | Next 16.4 security update built successfully but Worker login returned 500 because OpenNext 1.20.2 omitted preview-props.json | RUNTIME-01; compatible adapter/Wrangler pins and dependency-to-Worker impact routing | Actual Worker expired-session test; verify-changed dependency regression |
+| OPS-03 | WSL build retained a removed middleware test from another branch and failed TypeScript | RUNTIME-04; delete stale sources only after disposable-target guards | Worker test passed after clean sync; workspace guard regression |
+
 ## Update rule
 
 At each integration/infra fix: correct the existing domain rule or add a new stable ID, append a _verified_ incident row here, and commit alongside the code/regression. Before moving the Linear ticket to Done, review the entire ticket's integration incidents and record any missing knowledge. Don't expand this file with speculative causes or feature bugs that have no reusable integration lesson.

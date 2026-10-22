@@ -28,6 +28,12 @@ test('auth session boundary changes select production Worker browser proof', () 
   assert.ok(plan.profiles.includes('worker-preview'));
 });
 
+test('web runtime dependency changes select production Worker browser proof', () => {
+  const plan = buildImpactPlan(['apps/web/package.json']);
+  assert.equal(plan.workerPreview, true);
+  assert.ok(plan.profiles.includes('worker-preview'));
+});
+
 test('database security changes select DB and security proof', () => {
   const plan = buildImpactPlan(['supabase/migrations/20261001_rls_policy.sql']);
   assert.equal(plan.db, true);

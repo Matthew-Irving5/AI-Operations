@@ -200,6 +200,7 @@ export function buildImpactPlan(files: string[]): ImpactPlan {
   const workerPreview = normalized.some(
     (file) =>
       [
+        'apps/web/package.json',
         'apps/web/middleware.ts',
         'apps/web/lib/auth.ts',
         'apps/web/lib/supabase-server.ts',
