@@ -19,6 +19,10 @@ Read only rows touching the current ticket. The IDs are stable; update a rule wh
 - **RUNTIME-02 — Match toolchain and runtime settings.** Invoke repository-pinned `corepack pnpm` (10.18.2 at incident time), not global pnpm 11; align local WSL/CI Node, generated OpenNext manifests and Worker build-vs-runtime variables. Prefer isolated targeted reproduction over committing CI-only guesses. (AI-16 `de04d023`, `aed1f0de`)
 - **RUNTIME-03 — Parse actual CLI output, not guessed JSON substrings.** Supabase metadata CLI output may contain warnings/other JSON. Use stable machine-readable modes and a robust defined parse contract; test the Linux CI stdout shape. (AI-19 `f1ba2852` through `62ce7845`)
 
+## Mobile / device integration
+
+- **MOBILE-01 — Pairing token and ingestion endpoint must share a Supabase project.** A mobile token is issued by the app's environment-configured Supabase project and is only valid at that project's `mobile-snapshot-ingest` endpoint. Never hardcode the production project URL into a staging Shortcut or setup guide. Keep the endpoint scoped to the paired environment and add a contract check that parses and compares the exact Supabase hostname and function path. (AI-28 PR #180, commits `d612f4c` and `91fb4d4`)
+
 ## Provider / orchestration / acceptance contracts
 
 - **GITHUB-01 — Validate both requested and credential owners.** A fixed allowlisted repository URL does not prove that the caller-supplied target or configured token identity is approved. Reject injected owner aliases before rate-limit/MFA and GitHub work; verify the authenticated token with GitHub `/user`; only then construct repository URLs from the exact `Matthew-Irving5` owner. Treat `BrightSG` as a case-insensitive hard deny, audit only safe reason codes, and prove denied identities make zero repository calls. (AI-35 Career boundary regression)
