@@ -289,6 +289,9 @@ const MobileShortcutChecksSchema = z
 const MobileShortcutProofSchema = z
   .object({
     deviceId: SafeIdSchema,
+    shortcutRun: z.literal('operator-confirmed'),
+    pairingMfa: z.literal('user-completed'),
+    revocationMfa: z.literal('user-completed'),
     pairingRequestId: SafeIdSchema,
     validRequestId: SafeIdSchema,
     replayRequestId: SafeIdSchema,
@@ -331,7 +334,7 @@ const MobileShortcutStagingEvidenceSchema = z
     pullRequestNumber: z.number().int().positive(),
     deploymentRunId: RunIdSchema,
     stagingOrigin: StageOrigin,
-    humanMfa: z.literal('not-required'),
+    humanMfa: z.literal('user-completed'),
     checks: MobileShortcutChecksSchema,
     proof: MobileShortcutProofSchema,
     correlationIds: z.array(SafeIdSchema).length(10),
@@ -549,7 +552,7 @@ const AcceptanceEvidenceSchema = z
     const mobileAction = value.acceptanceProfile === 'mobile-shortcuts-action';
     const career = value.acceptanceProfile === 'career';
     const validMfa =
-      targeted || costRuntime || mobileShortcuts
+      targeted || costRuntime
         ? value.humanMfa === 'not-required'
         : value.humanMfa === 'user-completed';
     const validChecks = targeted
@@ -762,7 +765,7 @@ const StagingAcceptanceInputSchema = z.discriminatedUnion('acceptanceProfile', [
       deploymentRunId: RunIdSchema,
       stagingOrigin: StageOrigin,
       acceptanceProfile: z.literal('mobile-shortcuts'),
-      humanMfa: z.literal('not-required'),
+      humanMfa: z.literal('user-completed'),
       checks: MobileShortcutChecksSchema,
       mobileEvidence: MobileShortcutStagingEvidenceSchema,
       correlationIds: z.array(SafeIdSchema).length(10),

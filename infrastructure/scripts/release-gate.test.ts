@@ -17,6 +17,7 @@ import {
   createStagingReadyEvidence,
   createCandidateReadinessEvidence,
   createStagingAcceptanceStatus,
+  createHostedStagingSuiteEvidence,
   inspectStagingAcceptanceLease,
   recordProductionSmoke,
   releaseStagingSlot,
@@ -427,7 +428,7 @@ function mobileShortcutEvidence(overrides: Record<string, unknown> = {}) {
     pullRequestNumber: 152,
     deploymentRunId: '36474707377',
     stagingOrigin: origin,
-    humanMfa: 'not-required',
+    humanMfa: 'user-completed',
     checks: {
       supportedDevicePairing: 'passed',
       validSnapshotProvenance: 'passed',
@@ -440,6 +441,9 @@ function mobileShortcutEvidence(overrides: Record<string, unknown> = {}) {
     },
     proof: {
       deviceId: 'mobile-device-1',
+      shortcutRun: 'operator-confirmed',
+      pairingMfa: 'user-completed',
+      revocationMfa: 'user-completed',
       pairingRequestId: correlationIds[0],
       validRequestId: correlationIds[1],
       replayRequestId: correlationIds[2],
@@ -1179,6 +1183,27 @@ test('AI-28 mobile and AI-44 action acceptance require separate candidate-bound 
   assert.equal(accepted.acceptance?.acceptanceProfile, 'mobile-shortcuts-action');
   assert.equal(accepted.acceptance?.humanMfa, 'user-completed');
   assert.deepEqual(accepted.acceptance?.mobileActionEvidence, hostedSuite);
+
+  for (const falseMobileProof of [
+    {
+      ...hostedSuite.mobileEvidence,
+      proof: { ...hostedSuite.mobileEvidence.proof, shortcutRun: undefined },
+    },
+    { ...hostedSuite.mobileEvidence, humanMfa: 'not-required' },
+    {
+      ...hostedSuite.mobileEvidence,
+      proof: { ...hostedSuite.mobileEvidence.proof, pairingMfa: undefined },
+    },
+    {
+      ...hostedSuite.mobileEvidence,
+      proof: { ...hostedSuite.mobileEvidence.proof, revocationMfa: undefined },
+    },
+  ]) {
+    assert.throws(
+      () => createHostedStagingSuiteEvidence({ ...hostedSuite, mobileEvidence: falseMobileProof }),
+      /invalid_evidence/,
+    );
+  }
 
   const action = hostedSuite.actionEvidence;
   assert.throws(
