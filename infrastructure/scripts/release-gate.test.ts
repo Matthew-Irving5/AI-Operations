@@ -1,3 +1,4 @@
+import { combineMobileActionResults } from './mobile-action-staging-result.js';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
@@ -1170,6 +1171,20 @@ test('AI-35 Career acceptance requires its strict candidate-bound provider evide
 
 test('AI-28 mobile and AI-44 action acceptance require separate candidate-bound proofs', () => {
   const hostedSuite = mobileActionSuiteEvidence();
+  const combined = combineMobileActionResults(
+    hostedSuite.mobileEvidence,
+    hostedSuite.actionEvidence,
+  );
+  assert.equal(combined.acceptanceProfile, 'mobile-shortcuts-action');
+  assert.deepEqual(combined.correlationIds, hostedSuite.correlationIds);
+  assert.throws(
+    () =>
+      combineMobileActionResults(hostedSuite.mobileEvidence, {
+        ...hostedSuite.actionEvidence,
+        candidateSha: nextSha,
+      }),
+    /invalid_evidence/,
+  );
   const accepted = createStagingAcceptanceStatus({
     candidateSha,
     currentPullRequestHeadSha: candidateSha,
