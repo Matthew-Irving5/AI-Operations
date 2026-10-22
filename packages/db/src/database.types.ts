@@ -4865,6 +4865,7 @@ export type Database = {
         Row: {
           completed_at: string | null;
           created_at: string;
+          decision_record: Json | null;
           hard_cap_minor: number;
           id: string;
           manager_code: string;
@@ -4872,14 +4873,17 @@ export type Database = {
           report_id: string | null;
           request: NonNullable<Json>;
           reserved_minor: number;
+          revises_research_run_id: string | null;
           search_limit: number;
           searches_used: number;
           status: string;
           user_id: string;
+          workflow_run_id: string | null;
         };
         Insert: {
           completed_at?: string | null;
           created_at?: string;
+          decision_record?: Json | null;
           hard_cap_minor: number;
           id?: string;
           manager_code: string;
@@ -4887,14 +4891,17 @@ export type Database = {
           report_id?: string | null;
           request: NonNullable<Json>;
           reserved_minor?: number;
+          revises_research_run_id?: string | null;
           search_limit: number;
           searches_used?: number;
           status?: string;
           user_id: string;
+          workflow_run_id?: string | null;
         };
         Update: {
           completed_at?: string | null;
           created_at?: string;
+          decision_record?: Json | null;
           hard_cap_minor?: number;
           id?: string;
           manager_code?: string;
@@ -4902,10 +4909,12 @@ export type Database = {
           report_id?: string | null;
           request?: NonNullable<Json>;
           reserved_minor?: number;
+          revises_research_run_id?: string | null;
           search_limit?: number;
           searches_used?: number;
           status?: string;
           user_id?: string;
+          workflow_run_id?: string | null;
         };
         Relationships: [
           {
@@ -4916,10 +4925,24 @@ export type Database = {
             referencedColumns: ['id'];
           },
           {
+            foreignKeyName: 'on_demand_research_runs_revises_research_run_id_fkey';
+            columns: ['revises_research_run_id'];
+            isOneToOne: false;
+            referencedRelation: 'on_demand_research_runs';
+            referencedColumns: ['id'];
+          },
+          {
             foreignKeyName: 'on_demand_research_runs_user_id_fkey';
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'app_users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'on_demand_research_runs_workflow_run_id_fkey';
+            columns: ['workflow_run_id'];
+            isOneToOne: false;
+            referencedRelation: 'workflow_runs';
             referencedColumns: ['id'];
           },
         ];
@@ -5207,10 +5230,13 @@ export type Database = {
       };
       procurement_recommendations: {
         Row: {
+          candidate_id: string | null;
           citations: NonNullable<Json>;
           compliance_passed: boolean;
           created_at: string;
           currency: string | null;
+          decision_rank: number | null;
+          details: NonNullable<Json>;
           id: string;
           recommendation_kind: string;
           research_run_id: string;
@@ -5222,10 +5248,13 @@ export type Database = {
           warranty_summary: string | null;
         };
         Insert: {
+          candidate_id?: string | null;
           citations: NonNullable<Json>;
           compliance_passed: boolean;
           created_at?: string;
           currency?: string | null;
+          decision_rank?: number | null;
+          details?: NonNullable<Json>;
           id?: string;
           recommendation_kind: string;
           research_run_id: string;
@@ -5237,10 +5266,13 @@ export type Database = {
           warranty_summary?: string | null;
         };
         Update: {
+          candidate_id?: string | null;
           citations?: NonNullable<Json>;
           compliance_passed?: boolean;
           created_at?: string;
           currency?: string | null;
+          decision_rank?: number | null;
+          details?: NonNullable<Json>;
           id?: string;
           recommendation_kind?: string;
           research_run_id?: string;
@@ -6180,8 +6212,8 @@ export type Database = {
           ai_call_id: string | null;
           archive_reference: Json | null;
           build_version: string | null;
-          correlation_id: string;
           contract_version: number;
+          correlation_id: string;
           created_at: string;
           environment: string | null;
           event_type: string;
@@ -6199,8 +6231,8 @@ export type Database = {
           ai_call_id?: string | null;
           archive_reference?: Json | null;
           build_version?: string | null;
-          correlation_id: string;
           contract_version?: number;
+          correlation_id: string;
           created_at?: string;
           environment?: string | null;
           event_type: string;
@@ -6218,8 +6250,8 @@ export type Database = {
           ai_call_id?: string | null;
           archive_reference?: Json | null;
           build_version?: string | null;
-          correlation_id?: string;
           contract_version?: number;
+          correlation_id?: string;
           created_at?: string;
           environment?: string | null;
           event_type?: string;
@@ -6702,15 +6734,6 @@ export type Database = {
         Args: { p_snapshot_id: string; p_token_hash: string };
         Returns: Json;
       };
-      transition_ai14_contract_handoff: {
-        Args: {
-          p_aal2_verified: boolean;
-          p_handoff_id: string;
-          p_status: Database['public']['Enums']['handoff_status'];
-          p_user_id: string;
-        };
-        Returns: Database['public']['Tables']['conversation_handoffs']['Row'][];
-      };
       add_model_pricing: {
         Args: {
           p_cached_input: number;
@@ -6880,6 +6903,87 @@ export type Database = {
           isOneToOne: false;
           isSetofReturn: true;
         };
+      };
+      commit_instrumented_ai_procurement_report_with_queue: {
+        Args: {
+          p_actions: Json;
+          p_actual_cost: number;
+          p_cached_input_tokens: number;
+          p_call_id: string;
+          p_decision: Json;
+          p_input_tokens: number;
+          p_job_id: string;
+          p_markdown: string;
+          p_notification_policy: string;
+          p_output_tokens: number;
+          p_provider_usage: Json;
+          p_reasoning_tokens: number;
+          p_redacted_trace: Json;
+          p_report_type: string;
+          p_response_id: string;
+          p_run_id: string;
+          p_search_calls: number;
+          p_sections: Json;
+          p_sources: Json;
+          p_structured_metrics: Json;
+          p_summary: string;
+          p_title: string;
+        };
+        Returns: string;
+      };
+      commit_instrumented_ai_report: {
+        Args: {
+          p_actions: Json;
+          p_actual_cost: number;
+          p_cached_input_tokens: number;
+          p_call_id: string;
+          p_input_tokens: number;
+          p_markdown: string;
+          p_notification_policy: string;
+          p_output_tokens: number;
+          p_provider_usage: Json;
+          p_reasoning_tokens: number;
+          p_redacted_trace: Json;
+          p_report_type: string;
+          p_sections: Json;
+          p_structured_metrics: Json;
+          p_summary: string;
+          p_title: string;
+        };
+        Returns: string;
+      };
+      commit_instrumented_ai_report_with_queue: {
+        Args: {
+          p_actions: Json;
+          p_actual_cost: number;
+          p_cached_input_tokens: number;
+          p_call_id: string;
+          p_input_tokens: number;
+          p_job_id: string;
+          p_markdown: string;
+          p_notification_policy: string;
+          p_output_tokens: number;
+          p_provider_usage: Json;
+          p_reasoning_tokens: number;
+          p_redacted_trace: Json;
+          p_report_type: string;
+          p_response_id: string;
+          p_sections: Json;
+          p_structured_metrics: Json;
+          p_summary: string;
+          p_title: string;
+        };
+        Returns: string;
+      };
+      commit_procurement_decision: {
+        Args: {
+          p_decision: Json;
+          p_report_id: string;
+          p_run_id: string;
+          p_search_calls: number;
+          p_sources: Json;
+        };
+        Returns: string;
       };
       complete_deterministic_workflow_run: { Args: { p_run_id: string }; Returns: string };
       complete_job_queue:
@@ -7053,6 +7157,36 @@ export type Database = {
         };
         Returns: string;
       };
+      create_procurement_revision_request: {
+        Args: {
+          p_hard_cap: number;
+          p_idempotency_key: string;
+          p_manager_code: string;
+          p_model_ceiling: string;
+          p_request: Json;
+          p_revises_research_run_id: string;
+          p_search_ceiling: number;
+          p_user_id: string;
+          p_workflow_id: string;
+        };
+        Returns: string;
+      };
+      create_prompt_candidate: {
+        Args: {
+          p_developer_text: string;
+          p_json_schema: Json;
+          p_model_route: string;
+          p_schema_version: number;
+          p_system_text: string;
+          p_template_id: string;
+          p_tool_policy: Json;
+          p_tool_policy_version: number;
+        };
+        Returns: {
+          id: string;
+          version: number;
+        }[];
+      };
       create_worker_device_from_mfa_gate: {
         Args: {
           p_gate_id: string;
@@ -7103,6 +7237,22 @@ export type Database = {
       execute_health_finance_workflow: { Args: { p_run_id: string }; Returns: string };
       execute_personal_workflow: { Args: { p_run_id: string }; Returns: string };
       execute_systems_workflow: { Args: { p_run_id: string }; Returns: string };
+      fail_instrumented_ai_provider_response: {
+        Args: {
+          p_actual_cost: number;
+          p_cached_input_tokens: number;
+          p_call_id: string;
+          p_error_code: string;
+          p_input_tokens: number;
+          p_job_id: string;
+          p_output_tokens: number;
+          p_provider_usage: Json;
+          p_reasoning_tokens: number;
+          p_redacted_trace: Json;
+          p_response_id: string;
+        };
+        Returns: boolean;
+      };
       ingest_apple_bridge_snapshot: {
         Args: {
           p_events: Json;
@@ -7160,6 +7310,10 @@ export type Database = {
         Args: { p_call_id: string; p_error_code: string; p_redacted_trace?: Json };
         Returns: undefined;
       };
+      record_prompt_evaluation: {
+        Args: { p_evaluation_result: Json; p_prompt_version_id: string };
+        Returns: undefined;
+      };
       record_provider_usage_reconciliation: {
         Args: {
           p_period_end: string;
@@ -7187,23 +7341,6 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
-      };
-      record_prompt_evaluation: {
-        Args: { p_evaluation_result: Json; p_prompt_version_id: string };
-        Returns: undefined;
-      };
-      create_prompt_candidate: {
-        Args: {
-          p_developer_text: string;
-          p_json_schema: Json;
-          p_model_route: string;
-          p_schema_version: number;
-          p_system_text: string;
-          p_template_id: string;
-          p_tool_policy: Json;
-          p_tool_policy_version: number;
-        };
-        Returns: { id: string; version: number }[];
       };
       record_source_freshness: {
         Args: {
@@ -7234,6 +7371,18 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
+      };
+      record_workflow_stage: {
+        Args: {
+          p_input_reference?: string;
+          p_output_reference?: string;
+          p_redacted_error?: string;
+          p_run_id: string;
+          p_sequence: number;
+          p_status: string;
+          p_step_code: string;
+        };
+        Returns: undefined;
       };
       reserve_instrumented_ai_call: {
         Args: {
@@ -7331,18 +7480,34 @@ export type Database = {
           isSetofReturn: false;
         };
       };
-      update_google_source_selection: {
+      transition_ai14_contract_handoff: {
         Args: {
-          p_connection_id: string;
-          p_gate_id: string;
-          p_selected_calendar_ids: string[];
-          p_selected_drive_file_ids: string[];
+          p_aal2_verified: boolean;
+          p_handoff_id: string;
+          p_status: Database['public']['Enums']['handoff_status'];
+          p_user_id: string;
         };
-        Returns: Json;
-      };
-      update_onboarding_checklist_item: {
-        Args: { p_code: string; p_completed_at: string; p_metadata?: Json; p_user_id: string };
-        Returns: undefined;
+        Returns: {
+          accepted_at: string | null;
+          contract_version: number;
+          conversation_id: string;
+          correlation_id: string;
+          from_manager_code: string;
+          id: string;
+          idempotency_key: string;
+          initiated_at: string;
+          reason: string;
+          source_message_id: string | null;
+          status: Database['public']['Enums']['handoff_status'];
+          to_manager_code: string;
+          user_id: string;
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'conversation_handoffs';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
       };
       transition_prompt_version: {
         Args: {
@@ -7355,76 +7520,17 @@ export type Database = {
         };
         Returns: Json;
       };
-      commit_instrumented_ai_report: {
+      update_google_source_selection: {
         Args: {
-          p_actions: Json;
-          p_actual_cost: number;
-          p_cached_input_tokens: number;
-          p_call_id: string;
-          p_input_tokens: number;
-          p_markdown: string;
-          p_notification_policy: string;
-          p_output_tokens: number;
-          p_provider_usage: Json;
-          p_reasoning_tokens: number;
-          p_redacted_trace: Json;
-          p_report_type: string;
-          p_sections: Json;
-          p_structured_metrics: Json;
-          p_summary: string;
-          p_title: string;
+          p_connection_id: string;
+          p_gate_id: string;
+          p_selected_calendar_ids: string[];
+          p_selected_drive_file_ids: string[];
         };
-        Returns: string;
+        Returns: Json;
       };
-      commit_instrumented_ai_report_with_queue: {
-        Args: {
-          p_actions: Json;
-          p_actual_cost: number;
-          p_cached_input_tokens: number;
-          p_call_id: string;
-          p_input_tokens: number;
-          p_job_id: string;
-          p_markdown: string;
-          p_notification_policy: string;
-          p_output_tokens: number;
-          p_provider_usage: Json;
-          p_reasoning_tokens: number;
-          p_redacted_trace: Json;
-          p_report_type: string;
-          p_response_id: string;
-          p_sections: Json;
-          p_structured_metrics: Json;
-          p_summary: string;
-          p_title: string;
-        };
-        Returns: string;
-      };
-      fail_instrumented_ai_provider_response: {
-        Args: {
-          p_actual_cost: number;
-          p_cached_input_tokens: number;
-          p_call_id: string;
-          p_error_code: string;
-          p_input_tokens: number;
-          p_job_id: string;
-          p_output_tokens: number;
-          p_provider_usage: Json;
-          p_reasoning_tokens: number;
-          p_redacted_trace: Json;
-          p_response_id: string;
-        };
-        Returns: boolean;
-      };
-      record_workflow_stage: {
-        Args: {
-          p_input_reference?: string;
-          p_output_reference?: string;
-          p_redacted_error?: string;
-          p_run_id: string;
-          p_sequence: number;
-          p_status: string;
-          p_step_code: string;
-        };
+      update_onboarding_checklist_item: {
+        Args: { p_code: string; p_completed_at: string; p_metadata?: Json; p_user_id: string };
         Returns: undefined;
       };
     };

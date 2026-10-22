@@ -15,7 +15,7 @@ const workflowModes: Readonly<Record<string, "deterministic" | "ai">> = {
   "career-monthly-market-value": "deterministic",
   "career-quarterly-strategy": "deterministic",
   "travel-on-demand-plan": "deterministic",
-  "procurement-on-demand-research": "deterministic",
+  "procurement-on-demand-research": "ai",
   "digital-estate-lightweight": "deterministic",
   "digital-estate-deep-scan": "deterministic",
   "digital-estate-archive-maintenance": "deterministic",

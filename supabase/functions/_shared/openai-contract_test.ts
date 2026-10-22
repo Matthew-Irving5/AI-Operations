@@ -1,5 +1,7 @@
 import {
   extractResponseOutputText,
+  extractWebSearchCalls,
+  extractWebSearchCitations,
   redactedProviderUsage,
   reportOutputSchema,
   validateReportOutput,
@@ -189,4 +191,40 @@ Deno.test("raw Responses output is extracted without persisting provider payload
     }),
     "Validated output.",
   );
+});
+
+Deno.test("web-search usage and cited URLs are extracted from the provider response", () => {
+  const response = {
+    output: [
+      { type: "web_search_call", id: "search-1" },
+      {
+        type: "message",
+        content: [{
+          type: "output_text",
+          text: "One source.",
+          annotations: [
+            {
+              type: "url_citation",
+              title: "Retailer",
+              url: "https://shop.example/item",
+            },
+            {
+              type: "url_citation",
+              title: "Unsafe",
+              url: "http://unsafe.example/item",
+            },
+            {
+              type: "url_citation",
+              title: "Retailer",
+              url: "https://shop.example/item",
+            },
+          ],
+        }],
+      },
+    ],
+  };
+  assertEquals(extractWebSearchCalls(response), 1);
+  assertEquals(extractWebSearchCitations(response), [
+    { title: "Retailer", url: "https://shop.example/item" },
+  ]);
 });

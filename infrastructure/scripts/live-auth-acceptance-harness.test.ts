@@ -104,6 +104,20 @@ describe('live auth acceptance harness', () => {
     assert.match(journey, /rollbackIdempotencyKey: rollbackKey/);
   });
 
+  it('dispatches AI-39 to its Procurement-only headed runner, never the generic AI-16/19 suite', async () => {
+    const [runner, safety] = await Promise.all([
+      readFile(runnerPath, 'utf8'),
+      readFile(resolve('apps/web/lib/live-e2e-safety.ts'), 'utf8'),
+    ]);
+    const dispatchStart = runner.indexOf('const acceptanceSpecs');
+    const procurementBranchEnd = runner.indexOf(": mode === 'auth-acceptance'", dispatchStart);
+    const dispatch = runner.slice(dispatchStart, procurementBranchEnd);
+    assert.match(dispatch, /tests\/e2e-live\/procurement-acceptance\.spec\.ts/);
+    assert.doesNotMatch(dispatch, /staging\.spec\.ts|--grep=@ai16-ai19-acceptance/);
+    assert.match(runner, /mode === 'procurement-acceptance'[\s\S]*?LIVE_E2E_MANUAL_MFA !== 'true'/);
+    assert.match(safety, /'procurement-acceptance'/);
+  });
+
   it('never uses the service role to read user-owned schedules', async () => {
     const runner = await readFile(runnerPath, 'utf8');
     const journey = await readFile(journeyPath, 'utf8');

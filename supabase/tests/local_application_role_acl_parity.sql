@@ -58,7 +58,12 @@ WITH grants AS (
       -- grants by rpc_security.sql; the captured staging fingerprint predates them.
       to_regprocedure('public.record_prompt_evaluation(uuid,jsonb)'),
       to_regprocedure('public.transition_prompt_version(uuid,integer,integer,uuid,text,text)'),
-      to_regprocedure('public.create_prompt_candidate(uuid,text,text,jsonb,text,integer,integer,jsonb)')
+      to_regprocedure('public.create_prompt_candidate(uuid,text,text,jsonb,text,integer,integer,jsonb)'),
+      -- AI-39 Procurement write RPCs have their exact grants checked in rpc_security.sql.
+      to_regprocedure('public.sync_procurement_research_run_status()'),
+      to_regprocedure('public.create_procurement_revision_request(uuid,uuid,text,numeric,text,integer,text,jsonb,uuid)'),
+      to_regprocedure('public.commit_procurement_decision(uuid,uuid,integer,jsonb,jsonb)'),
+      to_regprocedure('public.commit_instrumented_ai_procurement_report_with_queue(uuid,text,uuid,uuid,integer,jsonb,jsonb,text,text,text,text,text,jsonb,jsonb,jsonb,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)')
     )
 )
 SELECT is(

@@ -1,10 +1,14 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
+import { procurementResearchOutputSchema } from "@ai-operations/contracts";
 import { verifyOpenAiWebhookSignature } from "../_shared/openai-webhook-security.ts";
 import {
   extractResponseOutputText,
+  extractWebSearchCalls,
+  extractWebSearchCitations,
   redactedProviderUsage,
   validateReportOutput,
 } from "../_shared/openai-contract.ts";
+import { prepareProcurementDecision } from "./procurement.ts";
 
 const service = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
@@ -198,7 +202,11 @@ Deno.serve(async (request) => {
     isRecord(responseResult) &&
     ["failed", "incomplete"].includes(String(responseResult.status))
   ) {
-    const failedUsage = redactedProviderUsage(responseResult);
+    const failedSearchCalls = extractWebSearchCalls(responseResult);
+    const failedUsage: Record<string, number> = {
+      ...redactedProviderUsage(responseResult),
+      web_search_calls: failedSearchCalls,
+    };
     const failedCostResult = await service.rpc(
       "calculate_instrumented_ai_cost",
       {
@@ -206,7 +214,7 @@ Deno.serve(async (request) => {
         p_input_tokens: failedUsage.input_tokens,
         p_output_tokens: failedUsage.output_tokens,
         p_cached_input_tokens: failedUsage.cached_input_tokens,
-        p_search_calls: 0,
+        p_search_calls: failedSearchCalls,
       },
     );
     if (failedCostResult.error || typeof failedCostResult.data !== "number") {
@@ -220,6 +228,8 @@ Deno.serve(async (request) => {
       response_sha256: null,
       background: true,
       validation_passed: false,
+      web_search: failedSearchCalls > 0,
+      web_search_calls: failedSearchCalls,
     };
     const settled = await failProviderResult(
       providerJob.id,
@@ -254,17 +264,57 @@ Deno.serve(async (request) => {
   try {
     parsed = outputText ? JSON.parse(outputText) : null;
   } catch { /* invalid output is settled below */ }
-  const validated = validateReportOutput(parsed, new Set(evidenceIds));
-  const actionsAllowed = validated?.actions.every((action) =>
-    allowedActionTypes.includes(action.type)
-  ) ?? false;
-  const usage = redactedProviderUsage(responseResult);
+  const isProcurement = trace.workflow === "procurement-on-demand-research";
+  const validated = isProcurement
+    ? null
+    : validateReportOutput(parsed, new Set(evidenceIds));
+  const procurementOutput = isProcurement
+    ? procurementResearchOutputSchema.safeParse(parsed)
+    : null;
+  const actionsAllowed = isProcurement
+    ? true
+    : validated?.actions.every((action) =>
+      allowedActionTypes.includes(action.type)
+    ) ?? false;
+  const searchCalls = extractWebSearchCalls(responseResult);
+  const usage: Record<string, number> = {
+    ...redactedProviderUsage(responseResult),
+    web_search_calls: searchCalls,
+  };
+  let procurementResearch: { request: unknown; searchLimit: number } | null =
+    null;
+  let procurementDecision: ReturnType<typeof prepareProcurementDecision> = null;
+  if (isProcurement) {
+    const research = await service.from("on_demand_research_runs")
+      .select("user_id,request,search_limit")
+      .eq("workflow_run_id", callData.run_id)
+      .maybeSingle();
+    if (
+      research.error || !research.data ||
+      research.data.user_id !== callData.user_id
+    ) {
+      await markEvent(eventId, "retrying");
+      return json({ code: "procurement_request_lookup_retry_required" }, 500);
+    }
+    procurementResearch = {
+      request: research.data.request,
+      searchLimit: research.data.search_limit,
+    };
+    procurementDecision = procurementOutput?.success
+      ? prepareProcurementDecision(
+        research.data.request,
+        procurementOutput.data,
+        extractWebSearchCitations(responseResult),
+        new Date().toISOString(),
+      )
+      : null;
+  }
   const actualCost = await service.rpc("calculate_instrumented_ai_cost", {
     p_model_id: callData.model_id,
     p_input_tokens: usage.input_tokens,
     p_output_tokens: usage.output_tokens,
     p_cached_input_tokens: usage.cached_input_tokens,
-    p_search_calls: 0,
+    p_search_calls: searchCalls,
   });
   if (actualCost.error || typeof actualCost.data !== "number") {
     await service.rpc("record_instrumented_ai_reconciliation_failure", {
@@ -274,6 +324,37 @@ Deno.serve(async (request) => {
     });
     await markEvent(eventId, "retrying");
     return json({ code: "reconciliation_retry_required" }, 500);
+  }
+  if (
+    isProcurement && (
+      searchCalls < 1 || searchCalls > (procurementResearch?.searchLimit ?? 0)
+    )
+  ) {
+    const settled = await failProviderResult(
+      providerJob.id,
+      responseId,
+      callData.id,
+      "provider_search_ceiling_exceeded",
+      Math.min(callData.estimated_cost, actualCost.data),
+      usage,
+      {
+        request_id: callData.request_id,
+        response_id: responseId,
+        response_sha256: outputText ? await sha256(outputText) : null,
+        validation_passed: false,
+        search_calls: searchCalls,
+        search_ceiling: procurementResearch?.searchLimit ?? 0,
+      },
+    );
+    if (!settled) {
+      await markEvent(eventId, "retrying");
+      return json(
+        { code: "search_ceiling_failure_settlement_retry_required" },
+        500,
+      );
+    }
+    await markEvent(eventId, "processed");
+    return json({ accepted: true, reconciliation: "failed" });
   }
   if (actualCost.data > callData.estimated_cost) {
     const settled = await failProviderResult(
@@ -299,8 +380,13 @@ Deno.serve(async (request) => {
     await markEvent(eventId, "processed");
     return json({ accepted: true, reconciliation: "failed" });
   }
-  if (!validated || !actionsAllowed) {
-    const validationErrorCode = validated
+  if (
+    (!isProcurement && !validated) || (isProcurement && !procurementDecision) ||
+    !actionsAllowed
+  ) {
+    const validationErrorCode = isProcurement
+      ? "procurement_output_or_citation_invalid"
+      : validated
       ? "workflow_action_capability_missing"
       : "structured_output_invalid";
     const settled = await failProviderResult(
@@ -317,6 +403,8 @@ Deno.serve(async (request) => {
         validation_passed: false,
         validation_error_code: validationErrorCode,
         background: true,
+        web_search: searchCalls > 0,
+        web_search_calls: searchCalls,
       },
     );
     if (!settled) {
@@ -335,57 +423,106 @@ Deno.serve(async (request) => {
     await markEvent(eventId, "retrying");
     return json({ code: "run_context_unavailable" }, 500);
   }
-  const sections = validated.report_sections.map((section, index) => ({
-    code: section.code,
-    title: section.title,
-    display_order: index,
-    content: section.content,
-    structured_data: { findings: validated.findings },
-    evidence_references: validated.evidence,
-  }));
-  const committed = await service.rpc(
-    "commit_instrumented_ai_report_with_queue",
-    {
-      p_job_id: providerJob.id,
-      p_response_id: responseId,
-      p_call_id: callData.id,
-      p_report_type: typeof trace.workflow === "string"
-        ? trace.workflow
-        : "background-ai-report",
-      p_notification_policy: trace.notification_policy,
-      p_title: "Validated AI Operations report",
-      p_summary: validated.summary,
-      p_markdown: `## Validated AI Operations report\n\n${validated.summary}`,
-      p_structured_metrics: {
-        ai_call_id: callData.id,
-        response_id: responseId,
-        validation: "passed",
-        evidence_ids: evidenceIds,
-        notification_policy: trace.notification_policy,
-        actual_cost: actualCost.data,
-      },
-      p_sections: sections,
-      p_actions: validated.actions.map((action) => ({
-        action_type: action.type,
-        title: action.title,
-        risk_class: action.risk,
-      })),
-      p_actual_cost: actualCost.data,
-      p_input_tokens: usage.input_tokens,
-      p_output_tokens: usage.output_tokens,
-      p_cached_input_tokens: usage.cached_input_tokens,
-      p_reasoning_tokens: usage.reasoning_tokens,
-      p_provider_usage: usage,
-      p_redacted_trace: {
-        request_id: callData.request_id,
-        response_id: responseId,
-        response_sha256: outputText ? await sha256(outputText) : null,
-        validation_passed: true,
-        background: true,
-        web_search: false,
-      },
+  const sections = isProcurement
+    ? [{
+      code: "procurement-comparison",
+      title: "Requirement-first comparison",
+      display_order: 0,
+      content: procurementDecision!.summary,
+      structured_data: procurementDecision!.decision,
+      evidence_references: procurementDecision!.evidenceReferences,
+    }]
+    : validated!.report_sections.map((section, index) => ({
+      code: section.code,
+      title: section.title,
+      display_order: index,
+      content: section.content,
+      structured_data: { findings: validated!.findings },
+      evidence_references: validated!.evidence,
+    }));
+  const requestRecord = isRecord(procurementResearch?.request)
+    ? procurementResearch.request
+    : {};
+  const reportType = isProcurement
+    ? "procurement-on-demand-research"
+    : typeof trace.workflow === "string"
+    ? trace.workflow
+    : "background-ai-report";
+  const reportTitle = isProcurement
+    ? `Procurement comparison: ${
+      String(requestRecord.item ?? "requested item").slice(0, 160)
+    }`
+    : "Validated AI Operations report";
+  const reportSummary = isProcurement
+    ? procurementDecision!.summary
+    : validated!.summary;
+  const reportMarkdown = isProcurement
+    ? procurementDecision!.markdown
+    : `## Validated AI Operations report\n\n${validated!.summary}`;
+  const structuredMetrics = isProcurement
+    ? {
+      ai_call_id: callData.id,
+      response_id: responseId,
+      validation: "passed",
+      selected_candidate_id: procurementDecision!.decision.selectedCandidateId,
+      candidate_count: Array.isArray(procurementDecision!.decision.candidates)
+        ? procurementDecision!.decision.candidates.length
+        : 0,
+      search_calls: searchCalls,
+      actual_cost: actualCost.data,
+    }
+    : {
+      ai_call_id: callData.id,
+      response_id: responseId,
+      validation: "passed",
+      evidence_ids: evidenceIds,
+      notification_policy: trace.notification_policy,
+      actual_cost: actualCost.data,
+    };
+  const commitName = isProcurement
+    ? "commit_instrumented_ai_procurement_report_with_queue"
+    : "commit_instrumented_ai_report_with_queue";
+  const commitArgs = {
+    p_job_id: providerJob.id,
+    p_response_id: responseId,
+    p_call_id: callData.id,
+    ...(isProcurement
+      ? {
+        p_run_id: callData.run_id,
+        p_search_calls: searchCalls,
+        p_decision: procurementDecision!.decision,
+        p_sources: procurementDecision!.sources,
+      }
+      : {}),
+    p_report_type: reportType,
+    p_notification_policy: trace.notification_policy,
+    p_title: reportTitle,
+    p_summary: reportSummary,
+    p_markdown: reportMarkdown,
+    p_structured_metrics: structuredMetrics,
+    p_sections: sections,
+    p_actions: isProcurement ? [] : validated!.actions.map((action) => ({
+      action_type: action.type,
+      title: action.title,
+      risk_class: action.risk,
+    })),
+    p_actual_cost: actualCost.data,
+    p_input_tokens: usage.input_tokens,
+    p_output_tokens: usage.output_tokens,
+    p_cached_input_tokens: usage.cached_input_tokens,
+    p_reasoning_tokens: usage.reasoning_tokens,
+    p_provider_usage: usage,
+    p_redacted_trace: {
+      request_id: callData.request_id,
+      response_id: responseId,
+      response_sha256: outputText ? await sha256(outputText) : null,
+      validation_passed: true,
+      background: true,
+      web_search: searchCalls > 0,
+      web_search_calls: searchCalls,
     },
-  );
+  };
+  const committed = await service.rpc(commitName, commitArgs);
   if (committed.error) {
     await markEvent(eventId, "retrying");
     return json({ code: "report_commit_retry_required" }, 500);

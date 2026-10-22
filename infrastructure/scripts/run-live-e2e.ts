@@ -1,9 +1,11 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, readdir, unlink } from 'node:fs/promises';
+import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseLiveE2eEnvironment, stagingTarget } from '../../apps/web/lib/live-e2e-safety';
 import { createHostedStagingSuiteEvidence } from './release-gate.js';
 import { resolveGitTreeSha } from './live-acceptance-evidence.js';
+import { ProcurementStagingAcceptanceEvidenceSchema } from './procurement-live-acceptance.js';
+import { createProcurementHostedAcceptanceInput } from './procurement-hosted-acceptance.js';
 
 async function containsFailureArtifacts(directory: string): Promise<boolean> {
   let entries;
@@ -27,12 +29,13 @@ async function main(): Promise<void> {
   if (
     mode !== 'suite' &&
     mode !== 'auth-acceptance' &&
+    mode !== 'procurement-acceptance' &&
     mode !== 'fixtures' &&
     mode !== 'fixture-mismatch' &&
     mode !== 'mismatch'
   ) {
     throw new Error(
-      'Choose one live E2E mode: suite, auth-acceptance, fixtures, fixture-mismatch, or mismatch.',
+      'Choose one live E2E mode: suite, auth-acceptance, procurement-acceptance, fixtures, fixture-mismatch, or mismatch.',
     );
   }
 
@@ -67,7 +70,7 @@ async function main(): Promise<void> {
   }
 
   if (
-    (mode === 'suite' || mode === 'auth-acceptance') &&
+    (mode === 'suite' || mode === 'auth-acceptance' || mode === 'procurement-acceptance') &&
     process.env.LIVE_E2E_MANUAL_MFA !== 'true'
   ) {
     throw new Error(
@@ -81,7 +84,7 @@ async function main(): Promise<void> {
   let acceptanceDeploymentRunId: string | undefined;
   let acceptanceCandidateTreeSha: string | undefined;
   let acceptancePullRequestNumber: number | undefined;
-  if (mode === 'suite' || mode === 'auth-acceptance') {
+  if (mode === 'suite' || mode === 'auth-acceptance' || mode === 'procurement-acceptance') {
     acceptanceCandidateSha = process.env.LIVE_E2E_CANDIDATE_SHA;
     acceptanceDeploymentRunId = process.env.LIVE_E2E_DEPLOYMENT_RUN_ID;
     acceptanceCandidateTreeSha = process.env.LIVE_E2E_CANDIDATE_TREE_SHA;
@@ -134,7 +137,7 @@ async function main(): Promise<void> {
       process.env.LIVE_E2E_ACCEPTANCE_OUTPUT_PATH = acceptanceOutputPath;
     }
   }
-  if (mode === 'auth-acceptance') {
+  if (mode === 'auth-acceptance' || mode === 'procurement-acceptance') {
     const profileQuery = new URLSearchParams({ select: 'id,is_allowed', is_allowed: 'eq.true' });
     if (env.LIVE_E2E_EMAIL) profileQuery.set('email', `eq.${env.LIVE_E2E_EMAIL}`);
     const profileResponse = await fetch(
@@ -305,11 +308,13 @@ async function main(): Promise<void> {
 
   try {
     const acceptanceSpecs =
-      mode === 'auth-acceptance'
-        ? ['tests/e2e-live/auth-acceptance.spec.ts']
-        : mode === 'suite'
-          ? ['tests/e2e-live/staging.spec.ts', '--grep=@ai16-ai19-acceptance']
-          : [];
+      mode === 'procurement-acceptance'
+        ? ['tests/e2e-live/procurement-acceptance.spec.ts']
+        : mode === 'auth-acceptance'
+          ? ['tests/e2e-live/auth-acceptance.spec.ts']
+          : mode === 'suite'
+            ? ['tests/e2e-live/staging.spec.ts', '--grep=@ai16-ai19-acceptance']
+            : [];
     const liveArgs = [
       'pnpm',
       'exec',
@@ -331,7 +336,11 @@ async function main(): Promise<void> {
       acceptancePullRequestNumber
     ) {
       const rawEvidence: unknown = JSON.parse(await readFile(acceptanceOutputPath, 'utf8'));
-      const evidence = createHostedStagingSuiteEvidence(rawEvidence);
+      const procurementEvidence =
+        mode === 'procurement-acceptance'
+          ? ProcurementStagingAcceptanceEvidenceSchema.parse(rawEvidence)
+          : undefined;
+      const evidence = procurementEvidence ?? createHostedStagingSuiteEvidence(rawEvidence);
       if (evidence.candidateSha !== acceptanceCandidateSha)
         throw new Error(
           'Hosted acceptance evidence candidate SHA did not match the requested candidate.',
@@ -348,6 +357,16 @@ async function main(): Promise<void> {
         throw new Error(
           'Hosted acceptance evidence PR number did not match the requested candidate.',
         );
+      if (procurementEvidence) {
+        const hostedAcceptanceInput = createProcurementHostedAcceptanceInput(procurementEvidence);
+        await writeFile(
+          acceptanceOutputPath,
+          `${JSON.stringify(hostedAcceptanceInput, null, 2)}\n`,
+          {
+            encoding: 'utf8',
+          },
+        );
+      }
       process.stdout.write(
         `Hosted staging acceptance evidence written to ${acceptanceOutputPath}.\n`,
       );
