@@ -23,6 +23,7 @@ import {
   readIsolatedLocalRecoveryTarget,
   readIsolatedLocalSourceProject,
 } from './restore-target.js';
+import { parseJsonObjectsFromCliOutput } from './cli-json-output.js';
 
 const execFile = promisify(execFileCallback);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -117,14 +118,9 @@ async function localSupabase(
   return runSupabase(args, maxBuffer, workdir);
 }
 
-function rowsMatching(stdout: string, requiredColumns: string[]): QueryRow[] {
-  let parsed: unknown;
-  try {
-    const firstJson = stdout.indexOf('{');
-    parsed = JSON.parse(firstJson >= 0 ? stdout.slice(firstJson) : stdout);
-  } catch {
-    throw new Error('backup_database_query_invalid_json');
-  }
+export function rowsMatching(stdout: string, requiredColumns: string[]): QueryRow[] {
+  const parsedObjects = parseJsonObjectsFromCliOutput(stdout);
+  if (parsedObjects.length === 0) throw new Error('backup_database_query_invalid_json');
   const arrays: QueryRow[][] = [];
   const visit = (value: unknown): void => {
     if (Array.isArray(value)) {
@@ -138,7 +134,7 @@ function rowsMatching(stdout: string, requiredColumns: string[]): QueryRow[] {
       for (const item of Object.values(value)) visit(item);
     }
   };
-  visit(parsed);
+  for (const parsed of parsedObjects) visit(parsed);
   const rows = arrays.find(
     (items) => items.length > 0 && requiredColumns.every((key) => key in items[0]!),
   );
