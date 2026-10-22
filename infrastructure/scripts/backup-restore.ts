@@ -27,7 +27,11 @@ import { parseJsonObjectsFromCliOutput } from './cli-json-output.js';
 
 const execFile = promisify(execFileCallback);
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-const OBJECT_QUERY = `
+export function singleLineSqlArgument(sql: string): string {
+  return sql.replace(/\s+/g, ' ').trim();
+}
+
+const OBJECT_QUERY = singleLineSqlArgument(`
   select distinct object_key, sha256, size_bytes, content_type
   from (
     select r2_key as object_key, sha256, size_bytes, mime_type as content_type from public.source_objects
@@ -37,7 +41,7 @@ const OBJECT_QUERY = `
     select archive_reference->>'objectKey', archive_reference->>'sha256',
       (archive_reference->>'sizeBytes')::bigint, archive_reference->>'contentType'
     from public.trace_events where archive_reference is not null
-  ) refs where object_key is not null order by object_key`;
+  ) refs where object_key is not null order by object_key`);
 const MIGRATION_QUERY =
   "select coalesce(max(version)::text, '0') as migration_version from supabase_migrations.schema_migrations";
 const ROW_COUNT_QUERY = `select jsonb_build_object(
