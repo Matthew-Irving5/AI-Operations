@@ -102,3 +102,25 @@ Deno.test("empty five-source transport arrays remain valid", () => {
     }).success,
   );
 });
+
+Deno.test("Shortcut documentation scopes the endpoint to its paired Supabase project", async () => {
+  const guides = await Promise.all(
+    [
+      "../../../docs/onboarding/apple-shortcuts.md",
+      "../../../docs/onboarding/mobile-source-contracts.md",
+    ].map((path) => Deno.readTextFile(new URL(path, import.meta.url))),
+  );
+  for (const guide of guides) {
+    assert(
+      guide.includes(
+        "<SUPABASE_PROJECT_URL>/functions/v1/mobile-snapshot-ingest",
+      ),
+    );
+    assert(guide.includes("same Supabase project"));
+    assert(
+      !guide.includes(
+        "https://epmgvknrydadzitzupzx.supabase.co/functions/v1/mobile-snapshot-ingest",
+      ),
+    );
+  }
+});

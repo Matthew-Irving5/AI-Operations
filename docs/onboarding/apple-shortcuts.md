@@ -7,9 +7,13 @@ request broad device access.
    the allowed Reminder lists: `Fitness Plan`, `Household & Personal`, and, where needed, `AI Actions`.
 2. Copy the returned token immediately. It is displayed once; the service stores only a SHA-256 hash.
 3. For the universal collector, POST the versioned JSON envelope to
-   `https://epmgvknrydadzitzupzx.supabase.co/functions/v1/mobile-snapshot-ingest` with
+   `<SUPABASE_PROJECT_URL>/functions/v1/mobile-snapshot-ingest` with
    `Authorization: Bearer <device token>`. Keep the token in your private Shortcut and never put it
    inside the JSON, screenshots, logs, or an exported Shortcut.
+   Use the same Supabase project as the device token was issued from. For this repository, the
+   staging app uses `https://jqtssfrfocnibffdkqch.supabase.co` and production uses
+   `https://epmgvknrydadzitzupzx.supabase.co`. A token issued in staging cannot authenticate to
+   production, or vice versa.
 4. In the universal collector, include Reminder contract version `2` and the exact source list name in every Reminder record. The database checks that list against the device's paired scope and rejects the entire snapshot before retaining any payload if the list is missing or disabled.
 5. To receive approved actions, call `apple-bridge-actions` with the same token. The endpoint exposes
    only actions in the `AI Actions` list that have already passed approval.

@@ -1,8 +1,11 @@
 # Passive mobile source contracts
 
 The universal iOS Shortcut sends all passive records to
-`https://epmgvknrydadzitzupzx.supabase.co/functions/v1/mobile-snapshot-ingest`
-using the ADR 0007 envelope. Authentication remains
+`<SUPABASE_PROJECT_URL>/functions/v1/mobile-snapshot-ingest` using the ADR 0007
+envelope. Select the Supabase project that issued the paired device token: this
+repository's staging project is `https://jqtssfrfocnibffdkqch.supabase.co`, and
+production is `https://epmgvknrydadzitzupzx.supabase.co`. A token and its
+requests must stay in the same Supabase project. Authentication remains
 `Authorization: Bearer <DEVICE_TOKEN>`; never put the token in the JSON or an
 exported Shortcut.
 
