@@ -7,6 +7,7 @@ import {
   ProcurementStagingAcceptanceEvidenceSchema,
   writeProcurementStagingAcceptanceEvidence,
 } from './procurement-live-acceptance.js';
+import { createProcurementHostedAcceptanceInput } from './procurement-hosted-acceptance.js';
 
 const evidence = {
   schemaVersion: 1,
@@ -107,6 +108,32 @@ describe('AI-39 procurement staging evidence', () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it('wraps procurement proof with exactly the strict hosted acceptance fields', () => {
+    const proof = ProcurementStagingAcceptanceEvidenceSchema.parse(evidence);
+    const hostedInput = createProcurementHostedAcceptanceInput(proof);
+
+    assert.deepEqual(Object.keys(hostedInput).sort(), [
+      'acceptanceProfile',
+      'acceptedAt',
+      'candidateSha',
+      'checks',
+      'correlationIds',
+      'deploymentRunId',
+      'humanMfa',
+      'procurementEvidence',
+      'stagingOrigin',
+    ]);
+    assert.equal(hostedInput.candidateSha, proof.candidateSha);
+    assert.equal(hostedInput.deploymentRunId, proof.deploymentRunId);
+    assert.equal(hostedInput.stagingOrigin, proof.stagingOrigin);
+    assert.equal(hostedInput.acceptanceProfile, proof.acceptanceProfile);
+    assert.equal(hostedInput.humanMfa, proof.humanMfa);
+    assert.deepEqual(hostedInput.checks, proof.checks);
+    assert.equal(hostedInput.acceptedAt, proof.acceptedAt);
+    assert.deepEqual(hostedInput.correlationIds, proof.correlationIds);
+    assert.deepEqual(hostedInput.procurementEvidence, proof);
   });
 
   it('rejects incomplete checks, a budget overrun, mismatched revision lineage, invalid totals, and purchase success', () => {

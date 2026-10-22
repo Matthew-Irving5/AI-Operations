@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, readdir, unlink } from 'node:fs/promises';
+import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseLiveE2eEnvironment, stagingTarget } from '../../apps/web/lib/live-e2e-safety';
 import { createHostedStagingSuiteEvidence } from './release-gate.js';
 import { resolveGitTreeSha } from './live-acceptance-evidence.js';
 import { ProcurementStagingAcceptanceEvidenceSchema } from './procurement-live-acceptance.js';
+import { createProcurementHostedAcceptanceInput } from './procurement-hosted-acceptance.js';
 
 async function containsFailureArtifacts(directory: string): Promise<boolean> {
   let entries;
@@ -335,10 +336,11 @@ async function main(): Promise<void> {
       acceptancePullRequestNumber
     ) {
       const rawEvidence: unknown = JSON.parse(await readFile(acceptanceOutputPath, 'utf8'));
-      const evidence =
+      const procurementEvidence =
         mode === 'procurement-acceptance'
           ? ProcurementStagingAcceptanceEvidenceSchema.parse(rawEvidence)
-          : createHostedStagingSuiteEvidence(rawEvidence);
+          : undefined;
+      const evidence = procurementEvidence ?? createHostedStagingSuiteEvidence(rawEvidence);
       if (evidence.candidateSha !== acceptanceCandidateSha)
         throw new Error(
           'Hosted acceptance evidence candidate SHA did not match the requested candidate.',
@@ -355,6 +357,16 @@ async function main(): Promise<void> {
         throw new Error(
           'Hosted acceptance evidence PR number did not match the requested candidate.',
         );
+      if (procurementEvidence) {
+        const hostedAcceptanceInput = createProcurementHostedAcceptanceInput(procurementEvidence);
+        await writeFile(
+          acceptanceOutputPath,
+          `${JSON.stringify(hostedAcceptanceInput, null, 2)}\n`,
+          {
+            encoding: 'utf8',
+          },
+        );
+      }
       process.stdout.write(
         `Hosted staging acceptance evidence written to ${acceptanceOutputPath}.\n`,
       );
