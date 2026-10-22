@@ -30,3 +30,5 @@ This file records **confirmed** errors (not generic best practices). One row per
 ## Update rule
 
 At each integration/infra fix: correct the existing domain rule or add a new stable ID, append a _verified_ incident row here, and commit alongside the code/regression. Before moving the Linear ticket to Done, review the entire ticket's integration incidents and record any missing knowledge. Don't expand this file with speculative causes or feature bugs that have no reusable integration lesson.
+| AI17-01  | AI-14's inter-agent transition guard rejected completed/rejected replies after a request entered `waiting_for_dependency` | DB-13; exercise both terminal return paths through the database trigger in pgTAP | AI-17 migration `20261021155523_ai17_inter_agent_runtime.sql`; `supabase/tests/ai17_inter_agent_transitions.sql` |
+| AI17-02  | Supabase `.rpc()` thenables did not satisfy the persistence adapters' native Promise interface, so both deployed Edge indexes failed Deno typechecking | EDGE-03; adapt the RPC client at the Edge boundary and typecheck deployed entrypoints | AI-17 `deno check` on `inter-agent-delegation/index.ts` and `inter-agent-handoff/index.ts` |

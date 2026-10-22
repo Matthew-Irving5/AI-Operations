@@ -91,6 +91,7 @@ function executionSource(): WorkflowExecutionSource {
         id: result.data.id,
         userId: result.data.user_id,
         workflowDefinitionId: result.data.workflow_definition_id,
+        costRootRunId: result.data.cost_root_run_id,
         managerCode: manager.code,
         status: result.data.status,
         trigger: result.data.trigger,
@@ -136,6 +137,8 @@ function executionSource(): WorkflowExecutionSource {
         .select("payload")
         .eq("run_id", runId)
         .eq("job_type", "workflow_execute")
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
       if (result.error || !result.data) return null;
       const payload: unknown = result.data.payload;
@@ -346,7 +349,7 @@ async function executeAiWorkflow(
     .select(
       "id,hard_cap,reserved_amount,model_ceiling,status,expires_at,search_ceiling",
     )
-    .eq("run_id", run.id)
+    .eq("run_id", run.costRootRunId ?? run.id)
     .maybeSingle();
   if (budgetResult.error) {
     return outcomeFor(run.id, "terminal_failure", "execution_budget_missing");

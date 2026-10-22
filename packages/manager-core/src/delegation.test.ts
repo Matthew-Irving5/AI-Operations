@@ -7,6 +7,7 @@ const base = {
   sourceMessageId: '22222222-2222-4222-8222-222222222222',
   sourceManagerCode: 'personal' as const,
   destinationManagerCode: 'travel' as const,
+  destinationWorkflowCode: 'travel-on-demand-plan',
   objective: 'Plan a bounded trip comparison',
   requiredOutputContract: {
     type: 'object',
@@ -19,7 +20,12 @@ const base = {
 
 it('plans a deterministic first hop without forcing a Planner origin', async () => {
   const directSpecialist = await planInterAgentDelegation({
-    request: { ...base, sourceManagerCode: 'travel', destinationManagerCode: 'finance' },
+    request: {
+      ...base,
+      sourceManagerCode: 'travel',
+      destinationManagerCode: 'finance',
+      destinationWorkflowCode: 'finance-on-demand-plan',
+    },
     routingPath: ['travel'],
   });
 
@@ -86,4 +92,11 @@ it('deduplicates equivalent requests and changes the key for a new source run', 
 
   expect(sameRequest.idempotencyKey).toBe(first.idempotencyKey);
   expect(newRun.idempotencyKey).not.toBe(first.idempotencyKey);
+});
+
+it('requires an explicit destination workflow code', async () => {
+  await expect(planInterAgentDelegation({
+    request: { ...base, destinationWorkflowCode: '  ' },
+    routingPath: base.routingPath,
+  })).rejects.toMatchObject({ code: 'inter_agent_destination_workflow_required' });
 });
