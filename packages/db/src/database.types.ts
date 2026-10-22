@@ -28,7 +28,6 @@ export type Database = {
           updated_at: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           action_type: string;
           approval_required?: boolean;
@@ -142,7 +141,6 @@ export type Database = {
           user_id: string;
           validation_status: string;
         };
-        ComputedFields: never;
         Insert: {
           actual_cost?: number | null;
           actual_input_tokens?: number | null;
@@ -239,7 +237,6 @@ export type Database = {
           supported_tools: string[];
           tier: string;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           default_reasoning?: string | null;
@@ -276,7 +273,6 @@ export type Database = {
           timezone: string;
           updated_at: string;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           display_name?: string | null;
@@ -309,7 +305,6 @@ export type Database = {
           token_prefix: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           enabled_lists?: string[];
@@ -350,7 +345,6 @@ export type Database = {
           payload_hash: string;
           received_at: string;
         };
-        ComputedFields: never;
         Insert: {
           device_id: string;
           id?: string;
@@ -386,7 +380,6 @@ export type Database = {
           required_aal: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           action_id?: string | null;
           decided_at?: string | null;
@@ -439,7 +432,6 @@ export type Database = {
           user_id: string;
           verified_at: string | null;
         };
-        ComputedFields: never;
         Insert: {
           compression: string;
           created_at?: string;
@@ -503,7 +495,6 @@ export type Database = {
           urgency: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           acknowledged_at?: string | null;
           acknowledgement_required?: boolean;
@@ -598,7 +589,6 @@ export type Database = {
           target_type: string;
           user_id: string | null;
         };
-        ComputedFields: never;
         Insert: {
           aal?: string | null;
           action_type: string;
@@ -648,7 +638,6 @@ export type Database = {
           restored_at: string | null;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           backup_key: string;
           backup_sha256: string;
@@ -701,7 +690,6 @@ export type Database = {
           updated_at: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           all_day?: boolean;
           calendar_external_id: string;
@@ -775,7 +763,6 @@ export type Database = {
           source_url: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           evidence_kind: string;
@@ -823,7 +810,6 @@ export type Database = {
           title: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           evidence_plan?: NonNullable<Json>;
@@ -866,7 +852,6 @@ export type Database = {
           title: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           fit_confidence?: number | null;
@@ -908,7 +893,6 @@ export type Database = {
           skill_code: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           assessed_at?: string;
           confidence: number;
@@ -945,7 +929,6 @@ export type Database = {
           title: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           due_at?: string | null;
@@ -982,7 +965,6 @@ export type Database = {
           token_expires_at: string | null;
           updated_at: string;
         };
-        ComputedFields: never;
         Insert: {
           connection_id: string;
           encrypted_refresh_token: string;
@@ -1022,7 +1004,6 @@ export type Database = {
           sync_enabled: boolean;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           account_label: string;
           account_role?: string;
@@ -1076,7 +1057,6 @@ export type Database = {
           source_object_id: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           contract_version?: number;
           created_at?: string;
@@ -1141,7 +1121,6 @@ export type Database = {
           relation: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           contract_version?: number;
           conversation_id: string;
@@ -1199,7 +1178,6 @@ export type Database = {
           status: Database['public']['Enums']['handoff_status'];
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           actor_manager_code?: string | null;
           contract_version?: number;
@@ -1260,7 +1238,6 @@ export type Database = {
           to_manager_code: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           accepted_at?: string | null;
           contract_version?: number;
@@ -1355,7 +1332,6 @@ export type Database = {
           sender_kind: Database['public']['Enums']['conversation_sender_kind'];
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           authority: Database['public']['Enums']['conversation_authority'];
           body_reference?: string | null;
@@ -1444,7 +1420,6 @@ export type Database = {
           role: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           contract_version?: number;
           conversation_id: string;
@@ -1513,7 +1488,6 @@ export type Database = {
           updated_at: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           contract_version?: number;
           correlation_id?: string;
@@ -1585,7 +1559,6 @@ export type Database = {
           status: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           category: string;
           consumed_amount?: number;
@@ -1640,7 +1613,6 @@ export type Database = {
           state: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           expected_cadence?: string | null;
           id?: string;
@@ -1686,7 +1658,6 @@ export type Database = {
           summary: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           category: string;
           created_at?: string;
@@ -1742,7 +1713,6 @@ export type Database = {
           size_bytes: number;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           classification?: string;
           created_at?: string;
@@ -1806,7 +1776,6 @@ export type Database = {
           status: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           approved_at?: string | null;
           created_at?: string;
@@ -1869,7 +1838,6 @@ export type Database = {
           status: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           approved_roots: NonNullable<Json>;
           completed_at?: string | null;
@@ -1931,7 +1899,6 @@ export type Database = {
           user_id: string;
           window_started_at: string;
         };
-        ComputedFields: never;
         Insert: {
           operation: string;
           request_count?: number;
@@ -1965,7 +1932,6 @@ export type Database = {
           relation: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           contract_version?: number;
           created_at?: string;
@@ -2037,7 +2003,6 @@ export type Database = {
           verification_method: string;
           workflow_run_id: string | null;
         };
-        ComputedFields: never;
         Insert: {
           ai_call_id?: string | null;
           captured_at?: string | null;
@@ -2131,7 +2096,6 @@ export type Database = {
           summary: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           action_id?: string | null;
           contract_version?: number;
@@ -2229,7 +2193,6 @@ export type Database = {
           user_id: string;
           workflow_run_id: string | null;
         };
-        ComputedFields: never;
         Insert: {
           action_id?: string | null;
           approval_id?: string | null;
@@ -2359,7 +2322,6 @@ export type Database = {
           status: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           categories?: string[];
           comment?: string | null;
@@ -2405,7 +2367,6 @@ export type Database = {
           section_code: string | null;
           workflow_code: string;
         };
-        ComputedFields: never;
         Insert: {
           active?: boolean;
           id?: string;
@@ -2434,7 +2395,6 @@ export type Database = {
           institution_name: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           account_label: string;
           account_type: string;
@@ -2476,7 +2436,6 @@ export type Database = {
           parent_id: string | null;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           active?: boolean;
           created_at?: string;
@@ -2523,7 +2482,6 @@ export type Database = {
           report_id: string | null;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           blockers?: NonNullable<Json>;
           close_kind: string;
@@ -2574,7 +2532,6 @@ export type Database = {
           spreadsheet_external_id: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           configuration?: NonNullable<Json>;
           created_at?: string;
@@ -2618,7 +2575,6 @@ export type Database = {
           status: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           account_id?: string | null;
           closing_balance?: number | null;
@@ -2695,7 +2651,6 @@ export type Database = {
           transaction_hash: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           account_id: string;
           amount: number;
@@ -2787,7 +2742,6 @@ export type Database = {
           updated_at: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           checksum?: string | null;
           connection_id: string;
@@ -2841,7 +2795,6 @@ export type Database = {
           message_id: string;
           source_object_id: string | null;
         };
-        ComputedFields: never;
         Insert: {
           attachment_id: string;
           filename: string;
@@ -2887,7 +2840,6 @@ export type Database = {
           thread_id: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           connection_id: string;
           created_at?: string;
@@ -2944,7 +2896,6 @@ export type Database = {
           status: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           completed_at?: string | null;
           connection_id: string;
@@ -2996,7 +2947,6 @@ export type Database = {
           summary_date: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           calculated_at?: string;
           completeness: number;
@@ -3036,7 +2986,6 @@ export type Database = {
           unit: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           id?: string;
@@ -3081,7 +3030,6 @@ export type Database = {
           status: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           collected_from?: string | null;
           collected_to?: string | null;
@@ -3136,7 +3084,6 @@ export type Database = {
           starts_on: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           content?: NonNullable<Json>;
           created_at?: string;
@@ -3176,7 +3123,6 @@ export type Database = {
           record_index: number;
           redacted_record: NonNullable<Json>;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           id?: string;
@@ -3222,7 +3168,6 @@ export type Database = {
           user_id: string;
           value: number;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           deleted_at?: string | null;
@@ -3286,7 +3231,6 @@ export type Database = {
           status: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           checksum: string;
           created_at?: string;
@@ -3332,7 +3276,6 @@ export type Database = {
           updated_at: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           connection_id: string;
           cursor?: string | null;
@@ -3382,7 +3325,6 @@ export type Database = {
           result_reference: string | null;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           contract_version?: number;
           correlation_id: string;
@@ -3457,7 +3399,6 @@ export type Database = {
           updated_at: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           completed_at?: string | null;
           context_evidence_ids?: string[];
@@ -3560,7 +3501,6 @@ export type Database = {
           status: string;
           submitted_at: string;
         };
-        ComputedFields: never;
         Insert: {
           attempt_count: number;
           completed_at?: string | null;
@@ -3609,7 +3549,6 @@ export type Database = {
           status: Database['public']['Enums']['job_status'];
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           attempt_count?: number;
           available_at?: string;
@@ -3671,7 +3610,6 @@ export type Database = {
           updated_at: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           id?: string;
@@ -3723,7 +3661,6 @@ export type Database = {
           updated_at: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           buffer_percent?: number;
           created_at?: string;
@@ -3788,7 +3725,6 @@ export type Database = {
           manager_id: string;
           permissions: string[];
         };
-        ComputedFields: never;
         Insert: {
           capability_code: string;
           contract_version: number;
@@ -3830,7 +3766,6 @@ export type Database = {
           risk_class: Database['public']['Enums']['risk_class'];
           updated_at: string;
         };
-        ComputedFields: never;
         Insert: {
           code: string;
           configuration?: NonNullable<Json>;
@@ -3866,7 +3801,6 @@ export type Database = {
           id: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           action_key: string;
           consumed_at?: string | null;
@@ -3901,7 +3835,6 @@ export type Database = {
           user_id: string;
           verified_at: string;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           id?: string;
@@ -3942,7 +3875,6 @@ export type Database = {
           url: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           adapter_version: string;
           all_day: boolean;
@@ -4006,7 +3938,6 @@ export type Database = {
           start_at: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           adapter_version: string;
           created_at?: string;
@@ -4066,7 +3997,6 @@ export type Database = {
           status: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           canonical_metric?: string | null;
           created_at?: string;
@@ -4118,7 +4048,6 @@ export type Database = {
           upload_reference: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           attachment_id: string;
           byte_size: number;
@@ -4183,7 +4112,6 @@ export type Database = {
           source_modified_at: string | null;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           canonical_hash: string;
           external_id?: string | null;
@@ -4252,7 +4180,6 @@ export type Database = {
           street: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           adapter_version: string;
           altitude: number;
@@ -4316,7 +4243,6 @@ export type Database = {
           status: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           adapter_name: string;
           adapter_version: string;
@@ -4378,7 +4304,6 @@ export type Database = {
           url: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           adapter_version: string;
           completion_at?: string | null;
@@ -4439,7 +4364,6 @@ export type Database = {
           raw_text: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           adapter_version: string;
           created_at?: string;
@@ -4488,7 +4412,6 @@ export type Database = {
           source: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           client_captured: boolean;
           client_captured_at?: string | null;
@@ -4555,7 +4478,6 @@ export type Database = {
           status: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           accepted_count: number;
           captured_at: string;
@@ -4625,7 +4547,6 @@ export type Database = {
           id: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           adapter_name: string;
           adapter_version: string;
@@ -4679,7 +4600,6 @@ export type Database = {
           verified_at: string;
           web_search_per_call: number;
         };
-        ComputedFields: never;
         Insert: {
           cache_write_multiplier?: number;
           cached_input_per_million: number;
@@ -4730,7 +4650,6 @@ export type Database = {
           reserve_percentage: number;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           actual_on_demand?: number;
           actual_recurring?: number;
@@ -4787,7 +4706,6 @@ export type Database = {
           type: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           attempt_count?: number;
           available_at?: string;
@@ -4851,7 +4769,6 @@ export type Database = {
           state_hash: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           account_role?: string;
           consumed_at?: string | null;
@@ -4904,7 +4821,6 @@ export type Database = {
           status: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           actual_amount?: number;
           expires_at: string;
@@ -4964,7 +4880,6 @@ export type Database = {
           status: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           completed_at?: string | null;
           created_at?: string;
@@ -5022,7 +4937,6 @@ export type Database = {
           updated_at: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           code: string;
           completed_at?: string | null;
@@ -5062,7 +4976,6 @@ export type Database = {
           location_kind: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           default_preparation_minutes?: number;
@@ -5103,7 +5016,6 @@ export type Database = {
           report_id: string | null;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           id?: string;
@@ -5152,7 +5064,6 @@ export type Database = {
           user_id: string;
           work_location_id: string | null;
         };
-        ComputedFields: never;
         Insert: {
           career_summary?: string | null;
           created_at?: string;
@@ -5210,7 +5121,6 @@ export type Database = {
           occurred_at: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           details?: NonNullable<Json>;
           exception_type: string;
@@ -5250,7 +5160,6 @@ export type Database = {
           vendor: string;
           warranty_expires_at: string | null;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           id?: string;
@@ -5315,7 +5224,6 @@ export type Database = {
           user_id: string;
           warranty_summary: string | null;
         };
-        ComputedFields: never;
         Insert: {
           citations: NonNullable<Json>;
           compliance_passed: boolean;
@@ -5371,7 +5279,6 @@ export type Database = {
           created_at: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           accepted_at: string;
           accepted_version: string;
@@ -5411,7 +5318,6 @@ export type Database = {
           id: string;
           manager_id: string | null;
         };
-        ComputedFields: never;
         Insert: {
           active_version?: number | null;
           code: string;
@@ -5448,7 +5354,6 @@ export type Database = {
           previous_version: number | null;
           template_id: string;
         };
-        ComputedFields: never;
         Insert: {
           active_version: number;
           actor_user_id: string;
@@ -5496,7 +5401,6 @@ export type Database = {
           tool_policy_version: number;
           version: number;
         };
-        ComputedFields: never;
         Insert: {
           developer_text: string;
           evaluation_result?: Json | null;
@@ -5549,7 +5453,6 @@ export type Database = {
           user_id: string;
           variance_amount: number | null;
         };
-        ComputedFields: never;
         Insert: {
           calculated_cost: number;
           id?: string;
@@ -5599,7 +5502,6 @@ export type Database = {
           sha256: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           device_id: string;
           id?: string;
@@ -5666,7 +5568,6 @@ export type Database = {
           updated_at: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           completed_at?: string | null;
           created_at?: string;
@@ -5722,7 +5623,6 @@ export type Database = {
           structured_data: NonNullable<Json>;
           title: string;
         };
-        ComputedFields: never;
         Insert: {
           code: string;
           content: string;
@@ -5766,7 +5666,6 @@ export type Database = {
           title: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           id?: string;
@@ -5822,7 +5721,6 @@ export type Database = {
           title: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           citation_text: string;
           created_at?: string;
@@ -5869,7 +5767,6 @@ export type Database = {
           title: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           active?: boolean;
           cadence: string;
@@ -5911,7 +5808,6 @@ export type Database = {
           step_code: string;
           trace_id: string | null;
         };
-        ComputedFields: never;
         Insert: {
           attempt_number: number;
           completed_at?: string | null;
@@ -5962,7 +5858,6 @@ export type Database = {
           step_code: string;
           trace_id: string | null;
         };
-        ComputedFields: never;
         Insert: {
           attempt_count?: number;
           completed_at?: string | null;
@@ -6011,7 +5906,6 @@ export type Database = {
           status: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           id?: string;
@@ -6056,7 +5950,6 @@ export type Database = {
           source: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           captured_at: string;
           created_at?: string;
@@ -6106,7 +5999,6 @@ export type Database = {
           user_id: string;
           variance_factor: number;
         };
-        ComputedFields: never;
         Insert: {
           actual_spend: number;
           adjusted_month_end: number;
@@ -6155,7 +6047,6 @@ export type Database = {
           recorded_at: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           archive_bytes: number;
           estimated_monthly_cost_usd: number;
@@ -6195,7 +6086,6 @@ export type Database = {
           starts_at: string;
           title: string;
         };
-        ComputedFields: never;
         Insert: {
           block_kind: string;
           ends_at: string;
@@ -6244,7 +6134,6 @@ export type Database = {
           user_id: string;
           weekday: number;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           guaranteed_busy_windows?: NonNullable<Json>;
@@ -6309,7 +6198,6 @@ export type Database = {
           step_id: string | null;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           ai_call_id?: string | null;
           archive_reference?: Json | null;
@@ -6371,7 +6259,6 @@ export type Database = {
           user_id: string;
           watch_kind: string;
         };
-        ComputedFields: never;
         Insert: {
           active?: boolean;
           cadence: string;
@@ -6423,7 +6310,6 @@ export type Database = {
           title: string;
           user_id: string;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           due_at?: string | null;
@@ -6462,7 +6348,6 @@ export type Database = {
           signature_verified: boolean;
           status: string;
         };
-        ComputedFields: never;
         Insert: {
           external_id: string;
           id?: string;
@@ -6496,7 +6381,6 @@ export type Database = {
           plan_id: string;
           signature_b64: string;
         };
-        ComputedFields: never;
         Insert: {
           consumed_at?: string | null;
           created_at?: string;
@@ -6553,7 +6437,6 @@ export type Database = {
           user_id: string;
           worker_secret_hash: string | null;
         };
-        ComputedFields: never;
         Insert: {
           created_at?: string;
           id?: string;
@@ -6600,7 +6483,6 @@ export type Database = {
           status: NonNullable<Json>;
           worker_version: string | null;
         };
-        ComputedFields: never;
         Insert: {
           device_id: string;
           id?: string;
@@ -6643,7 +6525,6 @@ export type Database = {
           trigger_type: string;
           version: number;
         };
-        ComputedFields: never;
         Insert: {
           active?: boolean;
           approval_policy: string;
@@ -6706,7 +6587,6 @@ export type Database = {
           user_id: string;
           workflow_definition_id: string;
         };
-        ComputedFields: never;
         Insert: {
           budget_reservation_id?: string | null;
           cancelled_at?: string | null;
@@ -6772,7 +6652,6 @@ export type Database = {
           user_id: string;
           workflow_definition_id: string;
         };
-        ComputedFields: never;
         Insert: {
           catch_up_policy?: string;
           created_at?: string;

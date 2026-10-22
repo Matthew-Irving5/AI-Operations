@@ -25,6 +25,7 @@ This file records **confirmed** errors (not generic best practices). One row per
 | AI35-02  | Proxy hid owner denials from the Edge audit handler                                                                                                    | GITHUB-02; forward owner-denial variants to authenticated Edge; reject unknown fields                         | AI-35 run `39639201782`; owner probes returned 400; route regression (3/3)                                                                                                             |
 
 | AI28-01 | SQL scope compared normalized Edge source/kind with untrimmed raw identifiers; replay also reinserted the existing same-record/version adaptation | DB-10; normalize canonical/raw identity consistently and return `duplicate` before replay writes | [Updated migration](../../../../supabase/migrations/20261021155521_ai28_scoped_reminder_v2.sql), [scope regression](../../../../supabase/tests/mobile_reminder_scope.sql), [adapter replay regression](../../../../supabase/tests/mobile_adapters.sql) — exact focused run passed 72/72
+| AI28-02 | QA doctor accepted Supabase CLI 2.120.0 while the lockfile pinned 2.118.0, producing generated-type drift against the migrated schema | DB-04; enforce lockfile-pinned CLI and restore it with a frozen install before generation | [CI 39644833934](https://github.com/Matthew-Irving5/AI-Operations/actions/runs/39644833934); AI-28 pinned-CLI repo-local parity and QA-doctor regression |
 
 ## Update rule
 
