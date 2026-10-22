@@ -271,6 +271,6 @@ test('Supabase database query parser ignores CLI diagnostics around the JSON env
     { migration_version: '20261021141700' },
   ]);
   assert.throws(() => rowsMatching('query returned no JSON rows', ['migration_version']), {
-    message: 'backup_database_query_invalid_json',
+    message: 'backup_database_query_invalid_json:expected=migration_version',
   });
 });

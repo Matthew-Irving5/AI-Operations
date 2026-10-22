@@ -120,7 +120,9 @@ async function localSupabase(
 
 export function rowsMatching(stdout: string, requiredColumns: string[]): QueryRow[] {
   const parsedObjects = parseJsonObjectsFromCliOutput(stdout);
-  if (parsedObjects.length === 0) throw new Error('backup_database_query_invalid_json');
+  if (parsedObjects.length === 0) {
+    throw new Error(`backup_database_query_invalid_json:expected=${requiredColumns.join(',')}`);
+  }
   const arrays: QueryRow[][] = [];
   const visit = (value: unknown): void => {
     if (Array.isArray(value)) {
