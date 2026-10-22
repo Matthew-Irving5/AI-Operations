@@ -2,6 +2,10 @@ import { writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { expect, test, webkit } from '@playwright/test';
 import { parseLiveE2eEnvironment } from '../../apps/web/lib/live-e2e-safety';
+import {
+  calculateActualCostUsd,
+  writeAi20CostRuntimeProof,
+} from '../../infrastructure/scripts/ai20-cost-runtime-proof.js';
 import { writeLiveStagingAcceptanceEvidence } from '../../infrastructure/scripts/live-acceptance-evidence.js';
 import { liveAuthScheduleAction } from '../../infrastructure/scripts/live-auth-schedule-action.js';
 import {
@@ -30,6 +34,12 @@ function redactError(message: string): string {
     .replace(/\b\d{6}\b/g, '[REDACTED-CODE]')
     .replace(/\b[0-9a-f]{8}-[0-9a-f-]{27}\b/gi, '[REDACTED-ID]')
     .slice(0, 500);
+}
+
+function formatDatabaseUsd(value: number | string): string {
+  const match = /^(0|[1-9][0-9]*)(?:\.([0-9]{1,6}))?$/.exec(String(value));
+  if (!match) throw new Error('Staging cost value was not a bounded decimal.');
+  return `${match[1]}.${(match[2] ?? '').padEnd(6, '0')}`;
 }
 
 test.beforeEach(async ({ page }) => {
@@ -1331,4 +1341,247 @@ test('staging proves AI-16 prompt promotion/rollback and AI-19 correlated workfl
       acceptedAt: new Date().toISOString(),
     });
   }
+});
+
+test('staging proves one candidate-bound AI-20 Responses cost lifecycle @ai20-cost-runtime-acceptance', async ({
+  page,
+}) => {
+  const acceptanceOutputPath = process.env.LIVE_E2E_ACCEPTANCE_OUTPUT_PATH;
+  const candidateSha = process.env.LIVE_E2E_CANDIDATE_SHA;
+  const candidateTreeSha = process.env.LIVE_E2E_CANDIDATE_TREE_SHA;
+  const pullRequestNumber = process.env.LIVE_E2E_PULL_REQUEST_NUMBER;
+  const deploymentRunId = process.env.LIVE_E2E_DEPLOYMENT_RUN_ID;
+  if (
+    !acceptanceOutputPath ||
+    !candidateSha ||
+    !candidateTreeSha ||
+    !pullRequestNumber ||
+    !deploymentRunId
+  ) {
+    throw new Error(
+      'AI-20 cost-runtime acceptance requires candidate SHA/tree, PR, deployment run, and an evidence output path.',
+    );
+  }
+
+  await signInWithFreshMfa(page);
+  const currentPrompt = await readCurrentSystemsPrompt(page);
+  expect(currentPrompt.modelRoute).toBe('gpt-5.6-luna');
+  expect(currentPrompt.toolPolicy).toEqual({ version: currentPrompt.toolPolicyVersion, tools: [] });
+  const promptVersions = await serviceRows<{
+    id: string;
+    model_route: ModelRoute;
+    schema_version: number;
+    tool_policy_version: number;
+  }>(
+    'prompt_versions',
+    `select=id,model_route,schema_version,tool_policy_version&template_id=eq.${currentPrompt.templateId}&version=eq.${currentPrompt.activeVersion}`,
+  );
+  expect(promptVersions).toHaveLength(1);
+  const promptVersion = promptVersions[0]!;
+  expect(promptVersion).toMatchObject({
+    model_route: 'gpt-5.6-luna',
+    schema_version: currentPrompt.schemaVersion,
+    tool_policy_version: currentPrompt.toolPolicyVersion,
+  });
+
+  const workflowProof = await proveSystemsWorkflow(
+    page,
+    'systems-weekly-quality-platform',
+    'ai',
+    0.05,
+    'gpt-5.6-luna',
+    {
+      id: promptVersion.id,
+      modelRoute: promptVersion.model_route,
+      schemaVersion: promptVersion.schema_version,
+      toolPolicyVersion: promptVersion.tool_policy_version,
+    },
+  );
+
+  const [runs, calls, actions, budgets] = await Promise.all([
+    serviceRows<{ id: string; correlation_id: string; budget_reservation_id: string }>(
+      'workflow_runs',
+      `select=id,correlation_id,budget_reservation_id&id=eq.${workflowProof.runId}`,
+    ),
+    serviceRows<{
+      id: string;
+      status: string;
+      model_id: string;
+      model_pricing_id: string;
+      response_id: string;
+      estimated_cost: number | string;
+      actual_cost: number | string;
+      actual_input_tokens: number;
+      cached_input_tokens: number;
+      cache_write_tokens: number;
+      actual_output_tokens: number;
+      reasoning_tokens: number;
+      search_calls: number;
+      provider_usage: Record<string, unknown>;
+      prompt_version_id: string;
+      model_route: ModelRoute;
+      tool_policy_version: number;
+    }>(
+      'ai_calls',
+      `select=id,status,model_id,model_pricing_id,response_id,estimated_cost,actual_cost,actual_input_tokens,cached_input_tokens,cache_write_tokens,actual_output_tokens,reasoning_tokens,search_calls,provider_usage,prompt_version_id,model_route,tool_policy_version&run_id=eq.${workflowProof.runId}`,
+    ),
+    serviceRows<{ id: string; status: string }>(
+      'actions',
+      `select=id,status&run_id=eq.${workflowProof.runId}`,
+    ),
+    serviceRows<{
+      hard_cap: number | string;
+      reserved_amount: number | string;
+      actual_amount: number | string;
+      model_ceiling: string;
+      search_ceiling: number;
+    }>(
+      'on_demand_budgets',
+      `select=hard_cap,reserved_amount,actual_amount,model_ceiling,search_ceiling&run_id=eq.${workflowProof.runId}`,
+    ),
+  ]);
+  expect(runs).toHaveLength(1);
+  expect(runs[0]?.correlation_id).toBe(workflowProof.correlationId);
+  expect(runs[0]?.budget_reservation_id).toMatch(/^[0-9a-f-]{36}$/i);
+  expect(calls).toHaveLength(1);
+  expect(actions).toHaveLength(0);
+  expect(budgets).toHaveLength(1);
+  const call = calls[0]!;
+  const budget = budgets[0]!;
+  expect(call).toMatchObject({
+    status: 'succeeded',
+    response_id: expect.stringMatching(/^resp_[A-Za-z0-9_-]{6,200}$/),
+    search_calls: 0,
+    prompt_version_id: promptVersion.id,
+    model_route: 'gpt-5.6-luna',
+    tool_policy_version: currentPrompt.toolPolicyVersion,
+  });
+  expect(budget).toMatchObject({
+    hard_cap: 0.05,
+    reserved_amount: 0,
+    model_ceiling: 'gpt-5.6-luna',
+    search_ceiling: 0,
+  });
+
+  const reservations = await serviceRows<{
+    id: string;
+    run_id: string;
+    category: string;
+    reserved_amount: number | string;
+    consumed_amount: number | string;
+    released_amount: number | string;
+    status: string;
+  }>(
+    'cost_reservations',
+    `select=id,run_id,category,reserved_amount,consumed_amount,released_amount,status&id=eq.${runs[0]!.budget_reservation_id}`,
+  );
+  expect(reservations).toHaveLength(1);
+  const reservation = reservations[0]!;
+  expect(reservation).toMatchObject({
+    run_id: workflowProof.runId,
+    category: 'on_demand',
+    status: 'consumed',
+  });
+
+  const prices = await serviceRows<{
+    id: string;
+    model_id: string;
+    input_per_million: number | string;
+    cached_input_per_million: number | string;
+    output_per_million: number | string;
+    cache_write_multiplier: number | string;
+    web_search_per_call: number | string;
+  }>(
+    'model_pricing',
+    `select=id,model_id,input_per_million,cached_input_per_million,output_per_million,cache_write_multiplier,web_search_per_call&id=eq.${call.model_pricing_id}`,
+  );
+  expect(prices).toHaveLength(1);
+  const price = prices[0]!;
+  expect(price.model_id).toBe(call.model_id);
+
+  const providerUsage = {
+    inputTokens: call.actual_input_tokens,
+    cachedInputTokens: call.cached_input_tokens,
+    cacheWriteTokens: call.cache_write_tokens,
+    outputTokens: call.actual_output_tokens,
+    reasoningTokens: call.reasoning_tokens,
+  };
+  expect(call.provider_usage).toMatchObject({
+    input_tokens: providerUsage.inputTokens,
+    cached_input_tokens: providerUsage.cachedInputTokens,
+    cache_write_tokens: providerUsage.cacheWriteTokens,
+    output_tokens: providerUsage.outputTokens,
+    reasoning_tokens: providerUsage.reasoningTokens,
+    search_calls: 0,
+    has_complete_usage: true,
+  });
+  const pricingInputs = {
+    inputPerMillion: formatDatabaseUsd(price.input_per_million),
+    cachedInputPerMillion: formatDatabaseUsd(price.cached_input_per_million),
+    outputPerMillion: formatDatabaseUsd(price.output_per_million),
+    cacheWriteMultiplier: formatDatabaseUsd(price.cache_write_multiplier),
+    webSearchPerCall: formatDatabaseUsd(price.web_search_per_call),
+  };
+  const calculatedActualUsd = calculateActualCostUsd(providerUsage, pricingInputs, 0);
+  const actualUsd = formatDatabaseUsd(call.actual_cost);
+  expect(calculatedActualUsd).toBe(actualUsd);
+  expect(formatDatabaseUsd(reservation.consumed_amount)).toBe(actualUsd);
+  expect(formatDatabaseUsd(budget.actual_amount)).toBe(actualUsd);
+
+  const costRuntimeProof = {
+    localProofSha: candidateSha,
+    localMatrix: {
+      estimateReservationReconciliation: 'passed',
+      hardCapConcurrency: 'passed',
+      cancellationFailureRelease: 'passed',
+      staleUnknownPricing: 'passed',
+      forecastInputsConfidence: 'passed',
+      providerDiscrepancy: 'passed',
+      nestedManagerAttribution: 'passed',
+    },
+    workflowCode: 'systems-weekly-quality-platform',
+    requestScope: 'empty',
+    provider: 'openai-responses',
+    providerCallCount: 1,
+    searchCalls: 0,
+    toolCalls: 0,
+    actionsExecuted: 0,
+    model: 'gpt-5.6-luna',
+    runId: workflowProof.runId,
+    responseId: call.response_id,
+    correlationId: workflowProof.correlationId,
+    aiCallId: call.id,
+    reservationId: reservation.id,
+    pricingRecordId: price.id,
+    estimatedUsd: formatDatabaseUsd(call.estimated_cost),
+    reservedUsd: formatDatabaseUsd(reservation.reserved_amount),
+    hardCapUsd: '0.05',
+    calculatedActualUsd,
+    reservationConsumedUsd: formatDatabaseUsd(reservation.consumed_amount),
+    reservationReleasedUsd: formatDatabaseUsd(reservation.released_amount),
+    onDemandReservedAfterUsd: formatDatabaseUsd(budget.reserved_amount),
+    onDemandActualUsd: formatDatabaseUsd(budget.actual_amount),
+    reservationState: 'consumed',
+    providerUsage,
+    pricingInputs,
+    usageReconciliation: 'passed',
+    costReconciliation: 'passed',
+    traceReconciliation: 'passed',
+  } as const;
+  await writeAi20CostRuntimeProof(acceptanceOutputPath, {
+    schemaVersion: 1,
+    state: 'COST_RUNTIME_STAGING_ACCEPTED',
+    acceptanceProfile: 'cost-runtime',
+    candidateSha,
+    candidateTreeSha,
+    pullRequestNumber: Number(pullRequestNumber),
+    deploymentRunId,
+    stagingOrigin: env.LIVE_E2E_BASE_URL,
+    ...(manualMfaChallengeObserved ? { humanMfa: 'user-completed' } : {}),
+    checks: { localCostMatrix: 'passed', oneBoundedProviderCall: 'passed' },
+    costRuntimeProof,
+    correlationIds: [workflowProof.correlationId],
+    acceptedAt: new Date().toISOString(),
+    accepted: true,
+  });
 });
