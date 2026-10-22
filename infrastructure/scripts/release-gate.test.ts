@@ -25,6 +25,7 @@ import {
   type StagingAcceptanceEvidence,
   type StagingDeploymentEvidence,
 } from './release-gate.js';
+import { ProcurementStagingAcceptanceChecksSchema } from './procurement-live-acceptance.js';
 
 const candidateSha = 'a'.repeat(40);
 const nextSha = 'b'.repeat(40);
@@ -183,6 +184,337 @@ function hostedSuiteEvidence(overrides: Record<string, unknown> = {}) {
     },
     correlationIds: ['run-uuid-1', 'trace-uuid-1'],
     workflowRuns: ai15WorkflowRuns,
+    acceptedAt: '2026-09-29T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function costRuntimeSuiteEvidence(overrides: Record<string, unknown> = {}) {
+  return {
+    schemaVersion: 1,
+    state: 'COST_RUNTIME_STAGING_ACCEPTED',
+    acceptanceProfile: 'cost-runtime',
+    candidateSha,
+    candidateTreeSha,
+    pullRequestNumber: 152,
+    deploymentRunId: '36474707377',
+    stagingOrigin: origin,
+    humanMfa: 'not-required',
+    checks: { localCostMatrix: 'passed', oneBoundedProviderCall: 'passed' },
+    costRuntimeProof: {
+      localProofSha: candidateSha,
+      localMatrix: {
+        estimateReservationReconciliation: 'passed',
+        hardCapConcurrency: 'passed',
+        cancellationFailureRelease: 'passed',
+        staleUnknownPricing: 'passed',
+        forecastInputsConfidence: 'passed',
+        providerDiscrepancy: 'passed',
+        nestedManagerAttribution: 'passed',
+      },
+      provider: 'openai-responses',
+      providerCallCount: 1,
+      searchCalls: 0,
+      model: 'gpt-5.6-luna',
+      runId: 'ai20-run-1',
+      responseId: 'resp-ai20-1',
+      correlationId: 'ai20-trace-1',
+      reservationId: 'ai20-reservation-1',
+      pricingRecordId: 'openai-luna-effective-1',
+      estimatedUsd: '0.01000000',
+      reservedUsd: '0.02000000',
+      hardCapUsd: '0.05000000',
+      calculatedActualUsd: '0.01200000',
+      reservationState: 'settled',
+      providerUsage: { inputTokens: 1000, cachedInputTokens: 100, outputTokens: 300 },
+      usageReconciliation: 'passed',
+      costReconciliation: 'passed',
+      traceReconciliation: 'passed',
+    },
+    correlationIds: ['ai20-trace-1'],
+    acceptedAt: '2026-09-29T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function procurementSuiteEvidence(overrides: Record<string, unknown> = {}) {
+  return {
+    schemaVersion: 1,
+    state: 'PROCUREMENT_STAGING_ACCEPTED',
+    acceptanceProfile: 'procurement',
+    candidateSha,
+    candidateTreeSha,
+    pullRequestNumber: 152,
+    deploymentRunId: '36474707377',
+    stagingOrigin: origin,
+    humanMfa: 'user-completed',
+    correlationIds: [
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000002',
+    ],
+    acceptedAt: '2026-09-29T10:00:00.000Z',
+    checks: {
+      releaseVersion: 'passed',
+      requirementsPersistedBeforeRanking: 'passed',
+      eligibilityAndUnknownHandling: 'passed',
+      allInTotalsAndDatedConflictingSources: 'passed',
+      revisionPreservesPriorProvenance: 'passed',
+      persistedRationale: 'passed',
+      purchasePaymentDenied: 'passed',
+      chromium: 'passed',
+    },
+    runs: [
+      {
+        researchRunId: '00000000-0000-4000-8000-000000000101',
+        workflowRunId: '00000000-0000-4000-8000-000000000201',
+        correlationId: '00000000-0000-4000-8000-000000000001',
+        status: 'complete',
+        hardCapMicroUsd: 250_000,
+        actualCostMicroUsd: 100_000,
+        searchLimit: 3,
+        searchesUsed: 2,
+        aiCallCount: 3,
+      },
+      {
+        researchRunId: '00000000-0000-4000-8000-000000000102',
+        workflowRunId: '00000000-0000-4000-8000-000000000202',
+        correlationId: '00000000-0000-4000-8000-000000000002',
+        status: 'complete',
+        hardCapMicroUsd: 250_000,
+        actualCostMicroUsd: 150_000,
+        searchLimit: 3,
+        searchesUsed: 3,
+        aiCallCount: 4,
+      },
+    ],
+    revision: {
+      originalResearchRunId: '00000000-0000-4000-8000-000000000101',
+      revisedResearchRunId: '00000000-0000-4000-8000-000000000102',
+      linkedToOriginal: true,
+      priorDecisionPreserved: true,
+      requirementsChanged: true,
+      priorDecisionSha256: 'a'.repeat(64),
+    },
+    comparison: {
+      requirements: [{ id: 'battery-life', kind: 'hard' }],
+      ineligibleCandidateId: 'candidate-ineligible',
+      exclusionReasonCount: 2,
+      exclusionReasonsSha256: 'b'.repeat(64),
+      unknownCandidateId: 'candidate-unknown',
+      unknownRequirementId: 'delivery-date',
+      sourceA: {
+        candidateId: 'candidate-a',
+        sourceHost: 'shop-a.example',
+        observedAt: '2026-09-28T10:00:00.000Z',
+        totalMinor: 12_499,
+      },
+      sourceB: {
+        candidateId: 'candidate-b',
+        sourceHost: 'shop-b.example',
+        observedAt: '2026-09-29T10:00:00.000Z',
+        totalMinor: 12_599,
+      },
+      currency: 'GBP',
+      allIn: {
+        itemMinor: 9_000,
+        deliveryMinor: 1_000,
+        accessoriesMinor: 500,
+        mandatoryFeesMinor: 200,
+        totalMinor: 10_700,
+      },
+      rationaleSha256: 'c'.repeat(64),
+    },
+    actionDenial: { status: 400, code: 'invalid_launch_request', noWorkflowCreated: true },
+    ...overrides,
+  };
+}
+
+function careerSuiteEvidence(overrides: Record<string, unknown> = {}) {
+  const correlationIds = [
+    '00000000-0000-4000-8000-000000000011',
+    '00000000-0000-4000-8000-000000000012',
+    '00000000-0000-4000-8000-000000000013',
+  ];
+  const checks = {
+    authenticatedCareerSync: 'passed',
+    personalGithubScope: 'passed',
+    demonstratedSkillCitation: 'passed',
+    brightSgDenied: 'passed',
+    otherOwnerDenied: 'passed',
+    ownerDenialAuditNoProviderRequest: 'passed',
+    chromium: 'passed',
+  } as const;
+  return {
+    schemaVersion: 1,
+    state: 'CAREER_STAGING_ACCEPTED',
+    acceptanceProfile: 'career',
+    candidateSha,
+    candidateTreeSha,
+    pullRequestNumber: 152,
+    deploymentRunId: '36474707377',
+    stagingOrigin: origin,
+    humanMfa: 'user-completed',
+    correlationIds,
+    checks,
+    proof: {
+      githubOwner: 'Matthew-Irving5',
+      sync: {
+        httpStatus: 200,
+        repositories: 2,
+        evidenceRecords: 1,
+        requestId: correlationIds[0],
+        retrievedAt: '2026-10-22T10:00:00.000Z',
+      },
+      skillCitation: {
+        skillCount: 1,
+        evidenceStrength: 'authored-source-change',
+        mergedDate: '2026-10-21',
+        retrievedDate: '2026-10-22',
+        mergedPullRequestUrlSha256: 'a'.repeat(64),
+        sourceFileBlobUrlSha256: 'b'.repeat(64),
+        sourceFileExtension: 'ts',
+        addedLines: 14,
+      },
+      ownerDenials: [
+        {
+          ownerClass: 'brightsg',
+          httpStatus: 403,
+          code: 'github_owner_hard_denied',
+          requestId: correlationIds[1],
+          auditAction: 'github_career_sync_owner_denied',
+          auditTargetType: 'github_owner',
+          auditTargetId: 'hard_denied',
+          auditResult: 'denied',
+          providerRequestMade: false,
+        },
+        {
+          ownerClass: 'other',
+          httpStatus: 403,
+          code: 'github_owner_not_allowlisted',
+          requestId: correlationIds[2],
+          auditAction: 'github_career_sync_owner_denied',
+          auditTargetType: 'github_owner',
+          auditTargetId: 'not_allowlisted',
+          auditResult: 'denied',
+          providerRequestMade: false,
+        },
+      ],
+    },
+    acceptedAt: '2026-10-22T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function mobileShortcutEvidence(overrides: Record<string, unknown> = {}) {
+  const correlationIds = [
+    'mobile-pair-1',
+    'mobile-valid-1',
+    'mobile-replay-1',
+    'mobile-update-1',
+    'mobile-revoke-1',
+    'mobile-schema-1',
+    'mobile-malformed-1',
+    'mobile-oversized-1',
+    'mobile-wrong-token-1',
+    'mobile-retry-1',
+  ];
+  return {
+    schemaVersion: 1,
+    state: 'MOBILE_SHORTCUTS_STAGING_ACCEPTED',
+    acceptanceProfile: 'mobile-shortcuts',
+    candidateSha,
+    candidateTreeSha,
+    pullRequestNumber: 152,
+    deploymentRunId: '36474707377',
+    stagingOrigin: origin,
+    humanMfa: 'not-required',
+    checks: {
+      supportedDevicePairing: 'passed',
+      validSnapshotProvenance: 'passed',
+      replayNoDuplicateCanonicalRows: 'passed',
+      updatedSnapshotOnlyChanges: 'passed',
+      revokedDeviceRejectedWithoutWrites: 'passed',
+      invalidInputsRejected: 'passed',
+      failedAdaptationRetry: 'passed',
+      freshnessTransitions: 'passed',
+    },
+    proof: {
+      deviceId: 'mobile-device-1',
+      pairingRequestId: correlationIds[0],
+      validRequestId: correlationIds[1],
+      replayRequestId: correlationIds[2],
+      updatedRequestId: correlationIds[3],
+      revokedRequestId: correlationIds[4],
+      wrongSchemaRequestId: correlationIds[5],
+      malformedRequestId: correlationIds[6],
+      oversizedRequestId: correlationIds[7],
+      wrongTokenRequestId: correlationIds[8],
+      retryRequestId: correlationIds[9],
+      rawSnapshotId: 'mobile-raw-snapshot-1',
+      canonicalRecordId: 'mobile-canonical-record-1',
+      provenanceRecordId: 'mobile-provenance-1',
+      replayCreatedCanonicalRows: 0,
+      updatedChangedRecordCount: 1,
+      updatedUnchangedRecordCount: 1,
+      revokedSubmissionStatus: 401,
+      revokedSubmissionCreatedRows: 0,
+      invalidStatuses: { wrongSchema: 400, malformed: 400, oversized: 413, wrongToken: 401 },
+      retryCreatedCanonicalRows: 1,
+      freshnessStaleObserved: true,
+      freshnessRecoveredAt: '2026-09-29T10:00:00.000Z',
+    },
+    correlationIds,
+    acceptedAt: '2026-09-29T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function mobileActionSuiteEvidence(overrides: Record<string, unknown> = {}) {
+  const mobileEvidence = mobileShortcutEvidence();
+  const actionCorrelationIds = ['ai44-action-correlation-1'];
+  const actionEvidence = {
+    schemaVersion: 1,
+    state: 'AI44_ACTION_STAGING_ACCEPTED',
+    acceptanceProfile: 'auth-browser',
+    candidateSha,
+    candidateTreeSha,
+    pullRequestNumber: 152,
+    deploymentRunId: '36474707377',
+    stagingOrigin: origin,
+    humanMfa: 'user-completed',
+    checks: {
+      staleSessionDenied: 'passed',
+      freshMfaActionAccepted: 'passed',
+      oneEffectCommitted: 'passed',
+      oneTerminalReceiptPersisted: 'passed',
+    },
+    freshMfaAction: {
+      staleDenied: 'passed',
+      staleAttemptUsedMfaGate: false,
+      freshReauthAccepted: 'passed',
+    },
+    actionId: 'ai44-action-1',
+    executionId: 'ai44-execution-1',
+    receiptId: 'ai44-receipt-1',
+    effectCount: 1,
+    terminalReceiptCount: 1,
+    correlationIds: actionCorrelationIds,
+    acceptedAt: '2026-09-29T10:00:00.000Z',
+  };
+  return {
+    schemaVersion: 1,
+    state: 'MOBILE_ACTION_STAGING_ACCEPTED',
+    acceptanceProfile: 'mobile-shortcuts-action',
+    candidateSha,
+    candidateTreeSha,
+    pullRequestNumber: 152,
+    deploymentRunId: '36474707377',
+    stagingOrigin: origin,
+    humanMfa: 'user-completed',
+    checks: { mobileShortcutJourney: 'passed', canonicalActionJourney: 'passed' },
+    mobileEvidence,
+    actionEvidence,
+    correlationIds: [...mobileEvidence.correlationIds, ...actionCorrelationIds],
     acceptedAt: '2026-09-29T10:00:00.000Z',
     ...overrides,
   };
@@ -601,6 +933,277 @@ test('staging acceptance status is pending until complete current-head hosted ev
       'pending',
     );
   }
+});
+
+test('cost-runtime acceptance requires one reconciled Responses call and stays pending until submitted', () => {
+  const success = createStagingAcceptanceStatus({
+    candidateSha,
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    state: 'success',
+    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'cost-runtime' }),
+    hostedSuite: costRuntimeSuiteEvidence(),
+  });
+  assert.equal(success.status.state, 'success');
+  assert.equal(success.acceptance?.acceptanceProfile, 'cost-runtime');
+  assert.equal(success.acceptance?.humanMfa, 'not-required');
+  assert.deepEqual(
+    success.acceptance?.costRuntimeProof,
+    costRuntimeSuiteEvidence().costRuntimeProof,
+  );
+  assert.deepEqual(success.acceptance?.checks, {
+    localCostMatrix: 'passed',
+    oneBoundedProviderCall: 'passed',
+  });
+
+  const pending = createStagingAcceptanceStatus({
+    candidateSha,
+    currentPullRequestHeadSha: candidateSha,
+    state: 'pending',
+    phase: 'hosted_acceptance',
+  });
+  assert.equal(pending.status.state, 'pending');
+
+  const proof = costRuntimeSuiteEvidence().costRuntimeProof;
+  assert.throws(
+    () =>
+      createStagingAcceptanceStatus({
+        candidateSha,
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        state: 'success',
+        deployment: candidateDeploymentEvidence({ acceptanceProfile: 'cost-runtime' }),
+        hostedSuite: {
+          ...costRuntimeSuiteEvidence(),
+          costRuntimeProof: { ...proof, providerCallCount: 2 },
+        },
+      }),
+    /invalid_evidence/,
+  );
+  assert.throws(
+    () =>
+      createStagingAcceptanceStatus({
+        candidateSha,
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        state: 'success',
+        deployment: candidateDeploymentEvidence({ acceptanceProfile: 'cost-runtime' }),
+        hostedSuite: {
+          ...costRuntimeSuiteEvidence(),
+          costRuntimeProof: { ...proof, calculatedActualUsd: '0.06000000' },
+        },
+      }),
+    /invalid_evidence/,
+  );
+  assert.throws(
+    () =>
+      createStagingAcceptanceStatus({
+        candidateSha,
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        state: 'success',
+        deployment: candidateDeploymentEvidence({ acceptanceProfile: 'cost-runtime' }),
+        hostedSuite: { ...costRuntimeSuiteEvidence(), costRuntimeProof: undefined },
+      }),
+    /invalid_evidence/,
+  );
+});
+
+test('AI-39 Procurement evidence stays pending until its strict candidate-bound proof validates', () => {
+  const hostedSuite = procurementSuiteEvidence();
+  assert.deepEqual(
+    ProcurementStagingAcceptanceChecksSchema.parse(hostedSuite.checks),
+    hostedSuite.checks,
+  );
+  const success = createStagingAcceptanceStatus({
+    candidateSha,
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    state: 'success',
+    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'procurement' }),
+    hostedSuite,
+  });
+  assert.equal(success.status.state, 'success');
+  assert.equal(success.acceptance?.acceptanceProfile, 'procurement');
+  assert.equal(success.acceptance?.humanMfa, 'user-completed');
+  assert.deepEqual(success.acceptance?.checks, hostedSuite.checks);
+  assert.deepEqual(success.acceptance?.procurementEvidence, hostedSuite);
+
+  assert.throws(
+    () =>
+      createStagingAcceptanceStatus({
+        candidateSha,
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        state: 'success',
+        deployment: candidateDeploymentEvidence({ acceptanceProfile: 'procurement' }),
+        hostedSuite: { ...hostedSuite, candidateSha: nextSha },
+      }),
+    /acceptance_sha_mismatch/,
+  );
+  assert.throws(
+    () =>
+      acceptStagingCandidate({
+        ready: ready(),
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        acceptance: {
+          candidateSha,
+          deploymentRunId: '36474707377',
+          stagingOrigin: origin,
+          acceptanceProfile: 'procurement',
+          humanMfa: 'user-completed',
+          checks: hostedSuite.checks,
+          procurementEvidence: { ...hostedSuite, candidateTreeSha: nextSha },
+          correlationIds: hostedSuite.correlationIds,
+          acceptedAt: hostedSuite.acceptedAt,
+        },
+      }),
+    /invalid_evidence/,
+  );
+  assert.throws(
+    () =>
+      acceptStagingCandidate({
+        ready: ready(),
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        acceptance: {
+          candidateSha,
+          deploymentRunId: '36474707377',
+          stagingOrigin: origin,
+          acceptanceProfile: 'procurement',
+          humanMfa: 'user-completed',
+          checks: { ...hostedSuite.checks, chromium: 'failed' },
+          procurementEvidence: hostedSuite,
+          correlationIds: hostedSuite.correlationIds,
+          acceptedAt: hostedSuite.acceptedAt,
+        },
+      }),
+    /invalid_evidence/,
+  );
+});
+
+test('AI-35 Career acceptance requires its strict candidate-bound provider evidence', () => {
+  const hostedSuite = careerSuiteEvidence();
+  const accepted = createStagingAcceptanceStatus({
+    candidateSha,
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    state: 'success',
+    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'career' }),
+    hostedSuite,
+  });
+  assert.equal(accepted.status.state, 'success');
+  assert.equal(accepted.acceptance?.acceptanceProfile, 'career');
+  assert.equal(accepted.acceptance?.humanMfa, 'user-completed');
+  assert.deepEqual(accepted.acceptance?.checks, hostedSuite.checks);
+  assert.deepEqual(accepted.acceptance?.careerEvidence, hostedSuite);
+
+  assert.throws(
+    () =>
+      createStagingAcceptanceStatus({
+        candidateSha,
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        state: 'success',
+        deployment: candidateDeploymentEvidence({ acceptanceProfile: 'career' }),
+        hostedSuite: {
+          ...hostedSuite,
+          proof: {
+            ...hostedSuite.proof,
+            sync: { ...hostedSuite.proof.sync, requestId: '00000000-0000-4000-8000-000000000099' },
+          },
+        },
+      }),
+    /invalid_evidence/,
+  );
+  assert.throws(
+    () =>
+      createStagingAcceptanceStatus({
+        candidateSha,
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        state: 'success',
+        deployment: candidateDeploymentEvidence({ acceptanceProfile: 'career' }),
+        hostedSuite: { ...hostedSuite, candidateTreeSha: nextSha },
+      }),
+    /acceptance profile, proof, MFA evidence, and check shape must agree/,
+  );
+});
+
+test('AI-28 mobile and AI-44 action acceptance require separate candidate-bound proofs', () => {
+  const hostedSuite = mobileActionSuiteEvidence();
+  const accepted = createStagingAcceptanceStatus({
+    candidateSha,
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    state: 'success',
+    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'mobile-shortcuts-action' }),
+    hostedSuite,
+  });
+  assert.equal(accepted.status.state, 'success');
+  assert.equal(accepted.acceptance?.acceptanceProfile, 'mobile-shortcuts-action');
+  assert.equal(accepted.acceptance?.humanMfa, 'user-completed');
+  assert.deepEqual(accepted.acceptance?.mobileActionEvidence, hostedSuite);
+
+  const action = hostedSuite.actionEvidence;
+  assert.throws(
+    () =>
+      createStagingAcceptanceStatus({
+        candidateSha,
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        state: 'success',
+        deployment: candidateDeploymentEvidence({ acceptanceProfile: 'mobile-shortcuts-action' }),
+        hostedSuite: { ...hostedSuite, actionEvidence: { ...action, effectCount: 2 } },
+      }),
+    /invalid_evidence/,
+  );
+  assert.throws(
+    () =>
+      createStagingAcceptanceStatus({
+        candidateSha,
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        state: 'success',
+        deployment: candidateDeploymentEvidence({ acceptanceProfile: 'mobile-shortcuts-action' }),
+        hostedSuite: {
+          ...hostedSuite,
+          mobileEvidence: { ...hostedSuite.mobileEvidence, candidateSha: nextSha },
+        },
+      }),
+    /invalid_evidence/,
+  );
+  assert.throws(
+    () =>
+      createStagingAcceptanceStatus({
+        candidateSha,
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        state: 'success',
+        deployment: candidateDeploymentEvidence({ acceptanceProfile: 'mobile-shortcuts-action' }),
+        hostedSuite: {
+          ...hostedSuite,
+          correlationIds: [...hostedSuite.correlationIds].reverse(),
+        },
+      }),
+    /invalid_evidence/,
+  );
 });
 
 test('failed, missing, malformed, stale, or wrong-run acceptance cannot publish success', () => {
@@ -1186,6 +1789,35 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(deployWorkflow, /DISPATCH_SHA: \$\{\{ github\.sha \}\}/);
   assert.match(deployWorkflow, /DISPATCH_REF: \$\{\{ github\.ref \}\}/);
+  assert.match(
+    deployWorkflow,
+    /acceptance_profile:[\s\S]*options:[\s\S]*\bauto\b[\s\S]*\bauth-browser\b[\s\S]*\bcost-runtime\b[\s\S]*\bprocurement\b[\s\S]*\bcareer\b[\s\S]*\bmobile-shortcuts\b[\s\S]*\bmobile-shortcuts-action\b/,
+  );
+  assert.match(
+    deployWorkflow,
+    /Ticket-specific mobile, cost, Procurement, and Career proof stays pending until candidate-bound evidence validates/,
+  );
+  assert.match(
+    deployWorkflow,
+    /Set candidate status while hosted acceptance is pending[\s\S]*ACCEPTANCE_PROFILE: \$\{\{ steps\.acceptance-profile\.outputs\.acceptance_profile \}\}[\s\S]*waiting for one-call cost-runtime evidence/,
+  );
+  assert.match(
+    deployWorkflow,
+    /ACCEPTANCE_PROFILE" == "procurement"[\s\S]*waiting for ticket-specific Procurement acceptance evidence/,
+  );
+  assert.match(
+    deployWorkflow,
+    /ACCEPTANCE_PROFILE" == "mobile-shortcuts-action"[\s\S]*waiting for separate AI-28 mobile and AI-44 action acceptance evidence/,
+  );
+  assert.doesNotMatch(deployWorkflow, /run-live-e2e|live:e2e -- suite/);
+  assert.match(
+    deployWorkflow,
+    /HOSTED_PROFILE_OVERRIDE: \$\{\{ inputs\.acceptance_profile \|\| 'auto' \}\}/,
+  );
+  assert.match(
+    deployWorkflow,
+    /acceptance-profile\.ts candidate-files\.txt "\$HOSTED_PROFILE_OVERRIDE"/,
+  );
   const leaseCheck = deployWorkflow.indexOf('name: Check shared staging acceptance lease');
   const deployPending = deployWorkflow.indexOf('name: Set candidate status while staging deploys');
   const targetedAutoAccept = deployWorkflow.indexOf('name: Auto-accept targeted staging candidate');
@@ -1198,6 +1830,25 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   const environmentValidation = deployWorkflow.indexOf(
     'name: Validate staging environment identity',
   );
+  const migrationPreflight = deployWorkflow.indexOf(
+    'name: Preflight persistent staging migration history',
+  );
+  assert.ok(
+    migrationPreflight > environmentValidation,
+    'persistent staging migration history must be checked after staging identity validation',
+  );
+  assert.match(deployWorkflow, /environment:drift -- preflight-staging-migrations/);
+  assert.match(deployWorkflow, /supabase db push --linked --include-all/);
+  for (const mutation of [
+    'name: Deploy Worker',
+    'name: Configure staging finance archive gateway secret',
+    'name: Apply staging migrations',
+  ]) {
+    assert.ok(
+      migrationPreflight < deployWorkflow.indexOf(mutation),
+      `${mutation} must follow the persistent staging migration preflight`,
+    );
+  }
   assert.ok(
     manualRequiredGate >= 0 && manualRequiredGate < environmentValidation,
     'manual candidate dispatch must validate CI before environment/deploy steps',
@@ -1439,7 +2090,7 @@ test('hosted acceptance profile requires real MFA only for auth-browser changes'
   assert.equal(selectHostedAcceptanceProfile(['docs/testing/local-autonomous-qa.md']), 'targeted');
 });
 
-test('issue-required action, worker-pairing, and Career proofs use auth-browser', () => {
+test('issue-required action and worker pairing use auth-browser while Career uses its dedicated proof profile', () => {
   assert.equal(
     selectHostedAcceptanceProfile([
       'packages/contracts/src/action-policy.ts',
@@ -1460,8 +2111,113 @@ test('issue-required action, worker-pairing, and Career proofs use auth-browser'
     selectHostedAcceptanceProfile([
       'apps/web/app/(app)/career/page.tsx',
       'supabase/functions/github-career-sync/index.ts',
+      'docs/build/ticket-readbacks/AI-35.md',
+      'tests/e2e-live/career-acceptance.spec.ts',
     ]),
-    'auth-browser',
+    'career',
+  );
+});
+
+test('explicit issue proof override upgrades a targeted candidate to auth-browser only', () => {
+  const ai28CandidateFiles = [
+    'supabase/migrations/20261021155521_ai28_scoped_reminder_v2.sql',
+    'docs/build/ticket-readbacks/AI-28.md',
+  ];
+  assert.equal(selectHostedAcceptanceProfile(ai28CandidateFiles), 'mobile-shortcuts');
+  assert.throws(
+    () => selectHostedAcceptanceProfile(ai28CandidateFiles, 'auth-browser'),
+    /A ticket-specific hosted proof cannot be replaced by the generic auth-browser suite/,
+  );
+  const combinedCandidate = [
+    ...ai28CandidateFiles,
+    'packages/contracts/src/action-policy.ts',
+    'packages/manager-core/src/action-execution.ts',
+  ];
+  assert.equal(selectHostedAcceptanceProfile(combinedCandidate), 'mobile-shortcuts-action');
+  assert.equal(
+    selectHostedAcceptanceProfile(combinedCandidate, 'mobile-shortcuts-action'),
+    'mobile-shortcuts-action',
+  );
+  assert.throws(
+    () =>
+      selectHostedAcceptanceProfile(
+        ['packages/contracts/src/action-policy.ts'],
+        'mobile-shortcuts',
+      ),
+    /mobile-shortcuts override requires the AI-28 readback/,
+  );
+  assert.throws(
+    () => selectHostedAcceptanceProfile(['apps/web/app/api/auth/mfa/verify/route.ts'], 'targeted'),
+    /Hosted acceptance profile override must be 'auto', 'auth-browser', 'cost-runtime', 'procurement', 'career', 'mobile-shortcuts', or 'mobile-shortcuts-action'\./,
+  );
+});
+
+test('AI-20 cost-runtime selection stays separate from auth-browser and targeted auto-accept', () => {
+  const ai20CandidateFiles = [
+    'packages/ai-runtime/src/index.ts',
+    'supabase/functions/ai-execute/index.ts',
+    'supabase/migrations/20261021155522_ai20_cost_reconciliation_authority.sql',
+    'docs/build/ticket-readbacks/AI-20.md',
+  ];
+  assert.equal(selectHostedAcceptanceProfile(ai20CandidateFiles), 'cost-runtime');
+  assert.equal(
+    selectHostedAcceptanceProfile([
+      'supabase/migrations/20261021155522_ai20_cost_reconciliation_authority.sql',
+    ]),
+    'targeted',
+  );
+  assert.equal(
+    selectHostedAcceptanceProfile(['docs/build/ticket-readbacks/AI-20.md'], 'cost-runtime'),
+    'cost-runtime',
+  );
+  assert.throws(
+    () => selectHostedAcceptanceProfile(['packages/ai-runtime/src/index.ts'], 'cost-runtime'),
+    /cost-runtime override requires the AI-20 readback marker/,
+  );
+  assert.throws(
+    () => selectHostedAcceptanceProfile(ai20CandidateFiles, 'auth-browser'),
+    /A ticket-specific hosted proof cannot be replaced by the generic auth-browser suite/,
+  );
+  assert.throws(
+    () =>
+      selectHostedAcceptanceProfile(
+        [...ai20CandidateFiles, 'apps/web/app/(app)/devices/device-manager.tsx'],
+        'auto',
+      ),
+    /Candidate requires both ticket-specific and generic auth-browser proof/,
+  );
+  assert.throws(
+    () =>
+      selectHostedAcceptanceProfile(
+        [...ai20CandidateFiles, 'apps/web/app/(app)/devices/device-manager.tsx'],
+        'cost-runtime',
+      ),
+    /Candidate requires both ticket-specific and generic auth-browser proof/,
+  );
+});
+
+test('AI-39 procurement selection binds a dedicated profile to its ticket marker', () => {
+  const ai39CandidateFiles = [
+    'docs/build/ticket-readbacks/AI-39.md',
+    'supabase/migrations/20261021131410_ai39_procurement_lifecycle.sql',
+  ];
+  assert.equal(selectHostedAcceptanceProfile(ai39CandidateFiles), 'procurement');
+  assert.equal(selectHostedAcceptanceProfile(ai39CandidateFiles, 'procurement'), 'procurement');
+  assert.throws(
+    () => selectHostedAcceptanceProfile(['apps/web/app/(app)/procurement/page.tsx'], 'procurement'),
+    /procurement override requires the AI-39 readback or dedicated acceptance spec marker/,
+  );
+  assert.throws(
+    () => selectHostedAcceptanceProfile(ai39CandidateFiles, 'auth-browser'),
+    /A ticket-specific hosted proof cannot be replaced by the generic auth-browser suite/,
+  );
+  assert.throws(
+    () =>
+      selectHostedAcceptanceProfile(
+        [...ai39CandidateFiles, 'apps/web/app/api/auth/mfa/verify/route.ts'],
+        'auto',
+      ),
+    /Candidate requires both ticket-specific and generic auth-browser proof/,
   );
 });
 

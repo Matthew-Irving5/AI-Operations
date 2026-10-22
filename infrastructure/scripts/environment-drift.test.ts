@@ -9,10 +9,12 @@ import {
   compareInventory,
   compareWorkerToExpected,
   compareMigrations,
+  missingAppliedMigrationVersions,
   compareSourceAttestations,
   compareSourceDigests,
   migrationInventoryFromFilenames,
   migrationVersionFromFilename,
+  stagingMigrationPreflightMismatches,
   parseAuthManifest,
   parseFunctionAuth,
   validateAuthManifest,
@@ -502,6 +504,23 @@ test('detects migration expectation drift before deployment', () => {
       'repo ↔ staging',
     ),
     ['repo ↔ staging: applied migration versions differ'],
+  );
+});
+
+test('staging migration preflight rejects candidate trees that omit accepted database history', () => {
+  const candidate = ['20260101000000', '20261021155522'];
+  const alreadyApplied = ['20260101000000', '20261021155521', '20261021155521'];
+
+  assert.deepEqual(missingAppliedMigrationVersions(candidate, alreadyApplied), ['20261021155521']);
+  assert.deepEqual(stagingMigrationPreflightMismatches(candidate, alreadyApplied), [
+    'Staging migration preflight failed: candidate is missing versions already applied to persistent staging: 20261021155521. Include the accepted migration history before deployment.',
+  ]);
+  assert.deepEqual(
+    stagingMigrationPreflightMismatches(
+      [...candidate, '20261021155521', '20261021155524'],
+      alreadyApplied,
+    ),
+    [],
   );
 });
 
