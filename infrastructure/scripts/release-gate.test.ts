@@ -261,6 +261,82 @@ function ai20CostRuntimeEvidence(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function careerSuiteEvidence(overrides: Record<string, unknown> = {}) {
+  const correlationIds = [
+    '00000000-0000-4000-8000-000000000011',
+    '00000000-0000-4000-8000-000000000012',
+    '00000000-0000-4000-8000-000000000013',
+  ];
+  const checks = {
+    authenticatedCareerSync: 'passed',
+    personalGithubScope: 'passed',
+    demonstratedSkillCitation: 'passed',
+    brightSgDenied: 'passed',
+    otherOwnerDenied: 'passed',
+    ownerDenialAuditNoProviderRequest: 'passed',
+    chromium: 'passed',
+  } as const;
+  return {
+    schemaVersion: 1,
+    state: 'CAREER_STAGING_ACCEPTED',
+    acceptanceProfile: 'career',
+    candidateSha,
+    candidateTreeSha,
+    pullRequestNumber: 152,
+    deploymentRunId: '36474707377',
+    stagingOrigin: origin,
+    humanMfa: 'user-completed',
+    correlationIds,
+    checks,
+    proof: {
+      githubOwner: 'Matthew-Irving5',
+      sync: {
+        httpStatus: 200,
+        repositories: 2,
+        evidenceRecords: 1,
+        requestId: correlationIds[0],
+        retrievedAt: '2026-10-22T10:00:00.000Z',
+      },
+      skillCitation: {
+        skillCount: 1,
+        evidenceStrength: 'authored-source-change',
+        mergedDate: '2026-10-21',
+        retrievedDate: '2026-10-22',
+        mergedPullRequestUrlSha256: 'a'.repeat(64),
+        sourceFileBlobUrlSha256: 'b'.repeat(64),
+        sourceFileExtension: 'ts',
+        addedLines: 14,
+      },
+      ownerDenials: [
+        {
+          ownerClass: 'brightsg',
+          httpStatus: 403,
+          code: 'github_owner_hard_denied',
+          requestId: correlationIds[1],
+          auditAction: 'github_career_sync_owner_denied',
+          auditTargetType: 'github_owner',
+          auditTargetId: 'hard_denied',
+          auditResult: 'denied',
+          providerRequestMade: false,
+        },
+        {
+          ownerClass: 'other',
+          httpStatus: 403,
+          code: 'github_owner_not_allowlisted',
+          requestId: correlationIds[2],
+          auditAction: 'github_career_sync_owner_denied',
+          auditTargetType: 'github_owner',
+          auditTargetId: 'not_allowlisted',
+          auditResult: 'denied',
+          providerRequestMade: false,
+        },
+      ],
+    },
+    acceptedAt: '2026-10-22T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
 function ready(overrides: Partial<Parameters<typeof createStagingReadyEvidence>[0]> = {}) {
   return createStagingReadyEvidence({
     candidateSha,
@@ -1224,7 +1300,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /candidate_sha:/);
   assert.match(
     deployWorkflow,
-    /acceptance_profile:[\s\S]*options: \[auto, targeted, auth-browser, cost-runtime\]/,
+    /acceptance_profile:[\s\S]*options: \[auto, targeted, auth-browser, cost-runtime, career\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1429,7 +1505,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(
     deployWorkflow,
-    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \]\]/,
+    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "career" \]\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1629,6 +1705,75 @@ test('AI-20 live acceptance command runs only its tagged provider proof', async 
   assert.equal(
     manifest.scripts?.['test:e2e:live:cost-acceptance'],
     'node --env-file-if-exists=.env --import tsx infrastructure/scripts/run-live-e2e.ts cost-acceptance',
+  );
+});
+
+test('AI-35 Career readback selects its dedicated profile and rejects incompatible auth proof', () => {
+  assert.equal(
+    selectHostedAcceptanceProfile([
+      'docs/build/ticket-readbacks/AI-35.md',
+      'apps/web/app/(app)/career/page.tsx',
+      'supabase/functions/github-career-sync/index.ts',
+    ]),
+    'career',
+  );
+  assert.equal(
+    selectHostedAcceptanceProfile(['tests/e2e-live/career-acceptance.spec.ts'], 'career'),
+    'career',
+  );
+  assert.throws(
+    () => selectHostedAcceptanceProfile(['docs/testing/local-autonomous-qa.md'], 'career'),
+    /AI-35 readback or dedicated acceptance spec marker/,
+  );
+  assert.throws(
+    () =>
+      selectHostedAcceptanceProfile(
+        ['docs/build/ticket-readbacks/AI-35.md', 'apps/web/app/api/auth/session/route.ts'],
+        'career',
+      ),
+    /both ticket-specific Career and generic auth-browser proof/,
+  );
+});
+
+test('AI-35 Career runner evidence converts through staging status into the strict acceptance consumer', () => {
+  const hostedSuite = createHostedStagingSuiteEvidence(careerSuiteEvidence());
+  const status = createStagingAcceptanceStatus({
+    candidateSha,
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    state: 'success',
+    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'career' }),
+    hostedSuite,
+  });
+
+  assert.equal(status.status.state, 'success');
+  assert.equal(status.acceptance?.acceptanceProfile, 'career');
+  assert.deepEqual(status.acceptance?.careerEvidence, hostedSuite);
+  assert.ok(status.acceptance);
+  const accepted = acceptStagingCandidate({
+    ready: ready(),
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    acceptance: status.acceptance,
+  });
+  assert.equal(accepted.state, 'STAGING_ACCEPTED');
+  assert.equal(accepted.acceptanceProfile, 'career');
+  assert.deepEqual(accepted.careerEvidence, hostedSuite);
+
+  assert.throws(
+    () =>
+      acceptStagingCandidate({
+        ready: ready(),
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        acceptance: careerSuiteEvidence() as unknown as Parameters<
+          typeof acceptStagingCandidate
+        >[0]['acceptance'],
+      }),
+    /invalid_evidence/,
   );
 });
 

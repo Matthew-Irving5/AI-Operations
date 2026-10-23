@@ -1,13 +1,20 @@
 'use client';
 
 import { useState } from 'react';
+import type { MfaFactorOption } from '../../../lib/mfa-factor-selection';
 import { MfaChallenge } from '../../mfa/mfa-challenge';
 
 export function ScheduleToggle({
   scheduleId,
   enabled,
-  factorId,
-}: Readonly<{ scheduleId: string; enabled: boolean; factorId?: string }>) {
+  availableFactors,
+  defaultFactorId,
+}: Readonly<{
+  scheduleId: string;
+  enabled: boolean;
+  availableFactors: MfaFactorOption[];
+  defaultFactorId?: string;
+}>) {
   const [current, setCurrent] = useState(enabled);
   const [message, setMessage] = useState('');
   const [mfaRequired, setMfaRequired] = useState(false);
@@ -55,7 +62,8 @@ export function ScheduleToggle({
           <MfaChallenge
             job="schedule_update"
             onVerified={(mfaGateId) => void update(pendingEnabled, mfaGateId)}
-            {...(factorId ? { factorId } : {})}
+            availableFactors={availableFactors}
+            {...(defaultFactorId ? { defaultFactorId } : {})}
           />
           <button type="button" onClick={() => setMfaRequired(false)} disabled={busy}>
             Cancel MFA
