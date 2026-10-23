@@ -7239,6 +7239,7 @@ export type Database = {
           id: string;
           version: number;
         }[];
+      };
       create_procurement_revision_request: {
         Args: {
           p_hard_cap: number;
@@ -7252,22 +7253,6 @@ export type Database = {
           p_workflow_id: string;
         };
         Returns: string;
-      };
-      create_prompt_candidate: {
-        Args: {
-          p_developer_text: string;
-          p_json_schema: Json;
-          p_model_route: string;
-          p_schema_version: number;
-          p_system_text: string;
-          p_template_id: string;
-          p_tool_policy: Json;
-          p_tool_policy_version: number;
-        };
-        Returns: {
-          id: string;
-          version: number;
-        }[];
       };
       create_worker_device_from_mfa_gate: {
         Args: {
