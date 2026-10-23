@@ -6,6 +6,7 @@ import {
   CareerOwnerDenialAuditColumns,
   CareerOwnerDenialAuditRowSchema,
 } from '../../infrastructure/scripts/career-owner-denial-audit.js';
+import { waitForCapturedCareerSyncResponse } from '../../infrastructure/scripts/career-sync-response.js';
 import { writeCareerStagingAcceptanceEvidence } from '../../infrastructure/scripts/career-staging-acceptance-evidence.js';
 
 const env = parseLiveE2eEnvironment(process.env, 'auth-acceptance');
@@ -28,6 +29,13 @@ const deploymentRunId = z
   .regex(/^[1-9][0-9]{0,19}$/)
   .parse(process.env.LIVE_E2E_DEPLOYMENT_RUN_ID);
 const outputPath = process.env.LIVE_E2E_ACCEPTANCE_OUTPUT_PATH;
+const authStatePath = process.env.LIVE_E2E_AUTH_STATE_PATH;
+let canResumeAuthenticatedSession = process.env.LIVE_E2E_RESUME_AUTH === 'true';
+
+test.afterEach(async ({ context }) => {
+  if (!authStatePath || !canResumeAuthenticatedSession) return;
+  await context.storageState({ path: authStatePath });
+});
 
 const SyncResultSchema = z
   .object({
@@ -226,6 +234,7 @@ async function verifyOwnerDenial(
 
 test('staging proves personal Career sync provenance and separate non-owner denials', async ({
   page,
+  context,
 }) => {
   test.setTimeout(15 * 60_000);
   failUnless(outputPath, 'Career acceptance evidence output path is missing.');
@@ -244,38 +253,55 @@ test('staging proves personal Career sync provenance and separate non-owner deni
     }
   });
 
-  await page.goto('/login');
-  await expect(page.getByRole('heading', { name: 'AI Operations' })).toBeVisible();
-  if (env.LIVE_E2E_EMAIL && env.LIVE_E2E_PASSWORD) {
-    await page.getByLabel('Email').fill(env.LIVE_E2E_EMAIL);
-    await page.getByLabel('Password').fill(env.LIVE_E2E_PASSWORD);
-    await page.getByRole('button', { name: 'Sign in' }).click();
-    await expect(page).toHaveURL(/\/mfa(?:\?|$)/, { timeout: 20_000 });
+  if (process.env.LIVE_E2E_RESUME_AUTH === 'true') {
+    await page.goto('/overview');
+    await expect(page).toHaveURL(/\/overview(?:\?|$)/, { timeout: 20_000 });
+  } else {
+    await page.goto('/login');
+    await expect(page.getByRole('heading', { name: 'AI Operations' })).toBeVisible();
+    if (env.LIVE_E2E_EMAIL && env.LIVE_E2E_PASSWORD) {
+      await page.getByLabel('Email').fill(env.LIVE_E2E_EMAIL);
+      await page.getByLabel('Password').fill(env.LIVE_E2E_PASSWORD);
+      await page.getByRole('button', { name: 'Sign in' }).click();
+      await expect(page).toHaveURL(/\/mfa(?:\?|$)/, { timeout: 20_000 });
+    }
+    process.stdout.write(
+      '\nAI-35 staging browser is open at login. Sign in and complete Microsoft Authenticator when the challenge appears; the browser journey resumes automatically.\n',
+    );
+    await expect(page).toHaveURL(/\/overview(?:\?|$)/, { timeout: 5 * 60_000 });
+    failUnless(initialMfaChallengeObserved, 'The real staging sign-in MFA route was not observed.');
+    canResumeAuthenticatedSession = true;
   }
-  process.stdout.write(
-    '\nAI-35 staging browser is open at login. Sign in and complete Microsoft Authenticator when the challenge appears; the browser journey resumes automatically.\n',
-  );
-  await expect(page).toHaveURL(/\/overview(?:\?|$)/, { timeout: 5 * 60_000 });
-  failUnless(initialMfaChallengeObserved, 'The real staging sign-in MFA route was not observed.');
+  if (authStatePath && canResumeAuthenticatedSession) {
+    await context.storageState({ path: authStatePath });
+  }
 
   await page.goto('/career');
   await expect(page.getByRole('heading', { name: 'Career Operations' })).toBeVisible();
-  const syncExchange: { status: number | null; payload: unknown } = {
-    status: null,
-    payload: null,
-  };
+  let resolveSyncExchange!: (exchange: { status: number; payload: unknown }) => void;
+  let rejectSyncExchange!: (error: Error) => void;
+  const syncExchange = new Promise<{ status: number; payload: unknown }>((resolve, reject) => {
+    resolveSyncExchange = resolve;
+    rejectSyncExchange = reject;
+  });
   await page.route(
     (url) => url.origin === stagingTarget.origin && url.pathname === '/api/career/github-sync',
     async (route) => {
-      const upstreamResponse = await route.fetch();
-      const responseBody = await upstreamResponse.body();
-      syncExchange.status = upstreamResponse.status();
       try {
-        syncExchange.payload = JSON.parse(responseBody.toString('utf8')) as unknown;
+        const upstreamResponse = await route.fetch();
+        const responseBody = await upstreamResponse.body();
+        let payload: unknown;
+        try {
+          payload = JSON.parse(responseBody.toString('utf8')) as unknown;
+        } catch {
+          payload = null;
+        }
+        await route.fulfill({ response: upstreamResponse });
+        resolveSyncExchange({ status: upstreamResponse.status(), payload });
       } catch {
-        syncExchange.payload = null;
+        rejectSyncExchange(new Error('Career sync upstream response could not be captured.'));
+        throw new Error('Career sync upstream response could not be captured.');
       }
-      await route.fulfill({ response: upstreamResponse });
     },
   );
   await page
@@ -286,8 +312,9 @@ test('staging proves personal Career sync provenance and separate non-owner deni
   process.stdout.write(
     '\nAI-35 fresh sync challenge is visible in the headed Career browser. Complete Microsoft Authenticator in that browser; the sync will submit automatically. Do not send the code here.\n',
   );
-  const syncResponseStatus = syncExchange.status;
-  const sync = SyncResultSchema.safeParse(syncExchange.payload);
+  const capturedSync = await waitForCapturedCareerSyncResponse(syncExchange, 5 * 60_000);
+  const syncResponseStatus = capturedSync.status;
+  const sync = SyncResultSchema.safeParse(capturedSync.payload);
   failUnless(
     syncResponseStatus === 200 && sync.success,
     'Career personal GitHub sync did not complete successfully.',

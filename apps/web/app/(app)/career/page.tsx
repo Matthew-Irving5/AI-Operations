@@ -1,4 +1,5 @@
 import { careerData } from '../../../lib/platform-data';
+import { selectMfaFactors } from '../../../lib/mfa-factor-selection';
 import { createSupabaseServerClient } from '../../../lib/supabase-server';
 import { GithubSyncControl } from './github-sync-control';
 
@@ -6,7 +7,7 @@ export default async function CareerPage() {
   const { evidence, sourceCount, evidenceSnapshot } = await careerData();
   const supabase = await createSupabaseServerClient();
   const { data: factors } = await supabase.auth.mfa.listFactors();
-  const factorId = factors?.totp?.find((factor) => factor.status === 'verified')?.id;
+  const factorSelection = selectMfaFactors(factors?.totp);
   return (
     <>
       <h1>Career Operations</h1>
@@ -14,7 +15,12 @@ export default async function CareerPage() {
         GitHub is read-only and restricted to the configured personal account. No outreach is ever
         sent automatically.
       </p>
-      <GithubSyncControl {...(factorId ? { factorId } : {})} />
+      <GithubSyncControl
+        availableFactors={factorSelection.availableFactors}
+        {...(factorSelection.defaultFactorId
+          ? { defaultFactorId: factorSelection.defaultFactorId }
+          : {})}
+      />
       {(evidence.error ?? sourceCount.error) ? (
         <p role="alert" className="notice">
           {evidence.error ?? sourceCount.error}

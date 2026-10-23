@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, unlink } from 'node:fs/promises';
+import { access, mkdir, readFile, stat, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { parseLiveE2eEnvironment, stagingTarget } from '../../apps/web/lib/live-e2e-safety';
@@ -126,8 +126,24 @@ async function main(): Promise<void> {
     'test-results',
     `career-staging-${candidateSha}-${candidate.runId}`,
   );
+  const authStatePath = resolve('test-results', 'career-staging-auth-state.json');
+  const hasAuthState = await access(authStatePath).then(
+    () => true,
+    () => false,
+  );
+  const authStateAgeMs = hasAuthState ? Date.now() - (await stat(authStatePath)).mtimeMs : null;
+  const hasResumableAuthState =
+    authStateAgeMs !== null && authStateAgeMs >= 0 && authStateAgeMs < 30 * 60_000;
+  if (hasAuthState && !hasResumableAuthState) await unlink(authStatePath).catch(() => undefined);
   await mkdir(resolve('test-results'), { recursive: true });
   process.env.LIVE_E2E_ACCEPTANCE_OUTPUT_PATH = outputPath;
+  process.env.LIVE_E2E_AUTH_STATE_PATH = authStatePath;
+  delete process.env.LIVE_E2E_RESUME_AUTH;
+  delete process.env.LIVE_E2E_STORAGE_STATE;
+  if (hasResumableAuthState) {
+    process.env.LIVE_E2E_RESUME_AUTH = 'true';
+    process.env.LIVE_E2E_STORAGE_STATE = authStatePath;
+  }
   process.env.LIVE_E2E_CANDIDATE_SHA = candidateSha;
   process.env.LIVE_E2E_CANDIDATE_TREE_SHA = candidateTreeSha;
   process.env.LIVE_E2E_PULL_REQUEST_NUMBER = String(candidate.pullRequestNumber);
@@ -168,6 +184,7 @@ async function main(): Promise<void> {
       );
     }
     process.stdout.write(`Career staging acceptance evidence saved to ${outputPath}.\n`);
+    await unlink(authStatePath).catch(() => undefined);
   } catch (error) {
     await unlink(outputPath).catch(() => undefined);
     throw error;

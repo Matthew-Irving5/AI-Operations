@@ -5,6 +5,7 @@ import {
   CareerOwnerDenialAuditColumns,
   CareerOwnerDenialAuditRowSchema,
 } from './career-owner-denial-audit.js';
+import { waitForCapturedCareerSyncResponse } from './career-sync-response.js';
 import { CareerStagingAcceptanceEvidenceSchema } from './career-staging-acceptance-evidence.js';
 
 const syncRequestId = 'f46c233d-9971-422f-82a5-7262029570ab';
@@ -52,7 +53,7 @@ test('Career acceptance captures the real sync response before page reload', asy
     new URL('../../tests/e2e-live/career-acceptance.spec.ts', import.meta.url),
     'utf8',
   );
-  const captureStart = acceptanceSpec.indexOf('const syncExchange:');
+  const captureStart = acceptanceSpec.indexOf('const syncExchange = new Promise');
   const upstreamFetch = acceptanceSpec.indexOf('await route.fetch()', captureStart);
   const bodyRead = acceptanceSpec.indexOf('await upstreamResponse.body()', upstreamFetch);
   const responseFulfill = acceptanceSpec.indexOf(
@@ -65,6 +66,64 @@ test('Career acceptance captures the real sync response before page reload', asy
   assert.ok(bodyRead > upstreamFetch);
   assert.ok(responseFulfill > bodyRead);
   assert.doesNotMatch(acceptanceSpec, /page\.waitForResponse\(/);
+});
+
+test('Career acceptance waits for a delayed real sync response after the MFA prompt', async () => {
+  let captureResponse!: (response: { status: number; payload: unknown }) => void;
+  const delayedResponse = new Promise<{ status: number; payload: unknown }>((resolve) => {
+    captureResponse = resolve;
+  });
+  const expectedResponse = { status: 200, payload: { code: 'github_sync_complete' } };
+  const acceptanceSpec = await readFile(
+    new URL('../../tests/e2e-live/career-acceptance.spec.ts', import.meta.url),
+    'utf8',
+  );
+  const prompt = acceptanceSpec.indexOf('AI-35 fresh sync challenge is visible');
+  const wait = acceptanceSpec.indexOf('waitForCapturedCareerSyncResponse(syncExchange', prompt);
+  const responseRead = acceptanceSpec.indexOf(
+    'const syncResponseStatus = capturedSync.status;',
+    prompt,
+  );
+
+  assert.ok(prompt >= 0);
+  assert.ok(wait > prompt);
+  assert.ok(responseRead > wait);
+
+  let waitSettled = false;
+  const waitingForResponse = waitForCapturedCareerSyncResponse(delayedResponse, 1_000).then(
+    (response) => {
+      waitSettled = true;
+      return response;
+    },
+  );
+  assert.equal(waitSettled, false);
+  captureResponse(expectedResponse);
+  assert.deepEqual(await waitingForResponse, expectedResponse);
+  assert.equal(waitSettled, true);
+});
+
+test('Career acceptance bounds the wait for a missing sync response', async () => {
+  await assert.rejects(
+    waitForCapturedCareerSyncResponse(new Promise<never>(() => undefined), 1),
+    /Timed out waiting for the actual Career sync response/,
+  );
+});
+
+test('Career acceptance waits for the real sync response after the fresh MFA prompt', async () => {
+  const acceptanceSpec = await readFile(
+    new URL('../../tests/e2e-live/career-acceptance.spec.ts', import.meta.url),
+    'utf8',
+  );
+  const prompt = acceptanceSpec.indexOf('AI-35 fresh sync challenge is visible');
+  const wait = acceptanceSpec.indexOf('waitForCapturedCareerSyncResponse(syncExchange', prompt);
+  const responseRead = acceptanceSpec.indexOf(
+    'const syncResponseStatus = capturedSync.status;',
+    prompt,
+  );
+
+  assert.ok(prompt >= 0);
+  assert.ok(wait > prompt);
+  assert.ok(responseRead > wait);
 });
 
 function validEvidence() {
