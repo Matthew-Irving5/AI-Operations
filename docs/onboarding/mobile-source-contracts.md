@@ -1,31 +1,39 @@
 # Passive mobile source contracts
 
 The universal iOS Shortcut sends all passive records to
-`https://epmgvknrydadzitzupzx.supabase.co/functions/v1/mobile-snapshot-ingest`
-using the ADR 0007 envelope. Authentication remains
+`<SUPABASE_PROJECT_URL>/functions/v1/mobile-snapshot-ingest` using the ADR 0007
+envelope. Select the Supabase project that issued the paired device token: this
+repository's staging project is `https://jqtssfrfocnibffdkqch.supabase.co`, and
+production is `https://epmgvknrydadzitzupzx.supabase.co`. A token and its
+requests must stay in the same Supabase project. Authentication remains
 `Authorization: Bearer <DEVICE_TOKEN>`; never put the token in the JSON or an
 exported Shortcut.
 
-Every record requires only a snapshot-scoped UUID `record_id`, its `source`, its
+Every record requires a snapshot-scoped UUID `record_id`, its `source`, its
 `kind`, and a `payload` dictionary. `external_id`, `created_at`, and
-`modified_at` are optional. The server hashes canonical payloads. The Shortcut
-must not calculate hashes.
+`modified_at` are optional. Reminder v2 additionally requires
+`payload.contract_version: 2` and the exact source `payload.list`. The server
+hashes canonical payloads. The Shortcut must not calculate hashes.
 
-## Supported version 1 records
+## Supported record contracts
 
-| Logical adapter  | Source        | Kind                   | Payload fields                                                                                               |
-| ---------------- | ------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `reminders:v1`   | `reminders`   | `reminder`             | `title`, `notes`, `priority`, `is_completed`, `is_flagged`, `due_at`, `completion_at`, `url`, `has_subtasks` |
-| `calendar:v1`    | `calendar`    | `calendar_event`       | `title`, `start_at`, `end_at`, `all_day`, `calendar`, `location`, `notes`, `url`                             |
-| `health:v1`      | `health`      | `health_sample`        | `type`, `value`, `unit`, `start_at`, `end_at`, `duration`, `source_name`, `name`                             |
-| `location:v1`    | `location`    | `location_observation` | `latitude`, `longitude`, `altitude`, `name`, `street`, `city`, `state`, `postcode`, `region`                 |
-| `screen_time:v1` | `screen_time` | `app_website_activity` | `raw_text`                                                                                                   |
+| Logical adapter  | Source        | Kind                   | Payload fields                                                                                                                              |
+| ---------------- | ------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reminders:v2`   | `reminders`   | `reminder`             | `contract_version: 2`, `list`, `title`, `notes`, `priority`, `is_completed`, `is_flagged`, `due_at`, `completion_at`, `url`, `has_subtasks` |
+| `calendar:v1`    | `calendar`    | `calendar_event`       | `title`, `start_at`, `end_at`, `all_day`, `calendar`, `location`, `notes`, `url`                                                            |
+| `health:v1`      | `health`      | `health_sample`        | `type`, `value`, `unit`, `start_at`, `end_at`, `duration`, `source_name`, `name`                                                            |
+| `location:v1`    | `location`    | `location_observation` | `latitude`, `longitude`, `altitude`, `name`, `street`, `city`, `state`, `postcode`, `region`                                                |
+| `screen_time:v1` | `screen_time` | `app_website_activity` | `raw_text`                                                                                                                                  |
 
 All listed payload fields are required so a missing Shortcuts mapping is visible
 as a per-record adapter rejection. Empty strings are valid for optional Apple
 values represented as strings. Reminder `due_at` and `completion_at`
-specifically normalise from `""` to database `null`. Calendar and Health
-timestamps must be offset-aware ISO-8601 values.
+specifically normalise from `""` to database `null`. Reminder v2 requires the
+exact approved list name and contract version before the snapshot can be
+retained; the database checks the list against the device's paired scope.
+Missing or device-disabled lists reject the whole request without storing its
+raw payload. Calendar and Health timestamps must be offset-aware ISO-8601
+values. Non-Reminder v1 records remain supported.
 
 Health accepts a string or JSON number for `value` and preserves both the value
 representation and reported unit exactly. A separate deterministic `v1`
@@ -51,6 +59,7 @@ representation losslessly and does not use an LLM or infer fields.
 - Records per snapshot: 2,500
 - Payload per record: 64,000 bytes
 - Record JSON nesting: 12 levels
+- Snapshots: 20 per paired user per minute; excess requests return HTTP 429 without retaining a snapshot or record.
 
 Requests over an envelope limit fail as a whole with structured diagnostics;
 records are never silently truncated. A record over its individual size/depth

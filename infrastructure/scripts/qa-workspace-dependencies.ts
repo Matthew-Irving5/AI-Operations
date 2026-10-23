@@ -7,6 +7,8 @@ export const localSupabaseWorkspaceFiles = [
   'packages/contracts/src/evidence.ts',
   'packages/contracts/src/execution.ts',
   'packages/contracts/src/index.ts',
+  'packages/contracts/src/action-policy.ts',
+  'packages/manager-core/src/action-execution.ts',
   'packages/contracts/src/observability.ts',
   'packages/db/src/database.types.ts',
   'packages/ai-runtime/src/governance.ts',

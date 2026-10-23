@@ -81,6 +81,18 @@ export function isSupportedNodeVersion(version: string): boolean {
   return major > 22 || (major === 22 && minor >= 18);
 }
 
+export function pinnedSupabaseCliVersion(lockfile: string): string {
+  const match = lockfile.match(
+    /^      supabase:\r?\n(?:        specifier:[^\r\n]*\r?\n)?        version:\s*([^\s(]+)/m,
+  );
+  if (!match) throw new Error('pnpm-lock.yaml does not pin the root Supabase CLI version');
+  return match[1];
+}
+
+export function isPinnedSupabaseCliVersion(lockfile: string, installedVersion: string): boolean {
+  return pinnedSupabaseCliVersion(lockfile) === installedVersion.trim().replace(/^v/, '');
+}
+
 async function check(label: string, fn: () => Promise<string> | string): Promise<Result> {
   const started = Date.now();
   try {
@@ -132,7 +144,21 @@ async function main(): Promise<void> {
     }),
   );
   results.push(
-    await check('Supabase CLI', () => run('corepack', ['pnpm', 'exec', 'supabase', '--version'])),
+    await check('Supabase CLI', () => {
+      const lockfile = readFileSync('pnpm-lock.yaml', 'utf8');
+      const expectedVersion = pinnedSupabaseCliVersion(lockfile);
+      let installedVersion = run('corepack', ['pnpm', 'exec', 'supabase', '--version']);
+      if (!isPinnedSupabaseCliVersion(lockfile, installedVersion) && fix && !ci) {
+        run('corepack', ['pnpm', 'install', '--frozen-lockfile'], 300_000);
+        installedVersion = run('corepack', ['pnpm', 'exec', 'supabase', '--version']);
+      }
+      if (!isPinnedSupabaseCliVersion(lockfile, installedVersion)) {
+        throw new Error(
+          `pnpm-lock.yaml pins ${expectedVersion}; found ${installedVersion}. Run corepack pnpm install --frozen-lockfile, then rerun pnpm qa:doctor --fix.`,
+        );
+      }
+      return installedVersion;
+    }),
   );
   if (warm) {
     results.push(

@@ -4,8 +4,10 @@ import {
   mobileEnvelopeSchema,
   mobileIdentifier,
   mobileRecordSchema,
+  mobileReminderV2ScopeSchema,
 } from "../_shared/mobile-snapshot-contract.ts";
 import { normalizeMobileShortcutEnvelope } from "../_shared/mobile-snapshot-compatibility.ts";
+import { cancelIfDeclaredBodyTooLarge } from "../_shared/mobile-request-limits.ts";
 import {
   canonicalJson,
   jsonDepth,
@@ -166,8 +168,11 @@ Deno.serve(async (request) => {
       { expected: "POST", received: request.method },
     );
   }
-  const declaredLength = Number(request.headers.get("content-length") ?? 0);
-  if (declaredLength > MOBILE_LIMITS.requestBytes) {
+  const declaredLength = await cancelIfDeclaredBodyTooLarge(
+    request,
+    MOBILE_LIMITS.requestBytes,
+  );
+  if (declaredLength !== null) {
     return errorResponse(
       diagnosticId,
       413,
@@ -285,6 +290,30 @@ Deno.serve(async (request) => {
     );
   }
   const envelope = parsed.data;
+  for (const candidate of envelope.records) {
+    if (
+      typeof candidate !== "object" || candidate === null ||
+      Array.isArray(candidate)
+    ) continue;
+    const record = candidate as Record<string, unknown>;
+    const source = typeof record.source === "string"
+      ? record.source.trim().toLowerCase()
+      : "";
+    if (source !== "reminders" && record.kind !== "reminder") continue;
+    if (!mobileReminderV2ScopeSchema.safeParse(candidate).success) {
+      return errorResponse(
+        diagnosticId,
+        400,
+        "reminder_v2_required",
+        "reminder_scope_validation",
+        "Reminder records must include contract_version 2 and a supported list before the snapshot can be retained.",
+        {
+          expected:
+            "source=reminders, kind=reminder, payload.contract_version=2, payload.list=<supported list>",
+        },
+      );
+    }
+  }
   if (
     new Set(envelope.sources.map((source) => source.source)).size !==
       envelope.sources.length
@@ -432,6 +461,33 @@ Deno.serve(async (request) => {
       outcome.code,
       "device_authentication",
       "The bearer token did not match an active Apple bridge device. Generate or copy the device token again.",
+    );
+  }
+  if (outcome.code === "reminder_v2_required") {
+    return errorResponse(
+      diagnosticId,
+      400,
+      outcome.code,
+      "reminder_scope_validation",
+      "The database rejected a Reminder record that did not satisfy contract v2. No snapshot payload was retained.",
+    );
+  }
+  if (outcome.code === "reminder_list_not_enabled") {
+    return errorResponse(
+      diagnosticId,
+      403,
+      outcome.code,
+      "reminder_scope_validation",
+      "The device is not authorized for one or more Reminder lists in this snapshot. No snapshot payload was retained.",
+    );
+  }
+  if (outcome.code === "rate_limit_exceeded") {
+    return errorResponse(
+      diagnosticId,
+      429,
+      outcome.code,
+      "request_rate_limit",
+      "This device has sent too many mobile snapshots in the current minute. Retry after the next minute.",
     );
   }
   if (

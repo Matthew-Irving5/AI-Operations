@@ -15,9 +15,9 @@ it('builds a complete non-personal canonical conversation chain with matching ev
   expect(fixture.handoff).toMatchObject({ status: 'requested', fromManagerCode: 'systems' });
   expect(fixture.attention.evidenceReferenceIds).toContain(fixture.evidence.id);
   expect(fixture.action).toMatchObject({
-    authority: 'verified_user',
+    authority: 'agent_proposal',
     status: 'proposed',
-    approvalState: 'not_required',
+    approvalState: 'pending',
   });
   expect(fixture.evidenceLinks.map((link) => link.entityId)).toEqual([
     fixture.conversation.id,

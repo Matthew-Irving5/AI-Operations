@@ -408,7 +408,7 @@ describe('live auth acceptance harness', () => {
         stagingOrigin,
         acceptanceProfile: 'targeted',
         completeSuite: 'passed',
-        manualMfaChallengeObserved: true,
+        manualMfaChallengeObserved: false,
         browserChecks: { chromium: 'passed', webkit: 'passed' },
         checks: {
           authAal2: 'passed',
@@ -453,7 +453,7 @@ describe('live auth acceptance harness', () => {
 
       assert.equal(status.status.state, 'success');
       assert.equal(status.acceptance?.acceptanceProfile, 'targeted');
-      assert.equal(status.acceptance?.humanMfa, 'user-completed');
+      assert.equal(status.acceptance?.humanMfa, 'not-required');
       assert.equal(Object.hasOwn(status.acceptance ?? {}, 'freshMfaAction'), false);
       assert.deepEqual(status.acceptance?.workflowRuns, workflowRuns);
       assert.deepEqual(status.acceptance?.correlationIds, [

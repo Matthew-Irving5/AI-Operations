@@ -7,6 +7,7 @@ import { basename, join } from 'node:path';
 import { requiredBrowsersFromPlaywrightArgs, runLocalQaPreflight } from './local-qa-preflight';
 import { configureLocalAuthCallback } from './local-auth-config';
 import { copyLocalSupabaseWorkspaceFiles } from './qa-workspace-dependencies';
+import { sanitizeCommandError } from './qa-debug';
 
 function run(args: string[], env = process.env, timeoutMs = 120_000): string {
   return execFileSync('corepack', ['pnpm', ...args], {
@@ -16,16 +17,6 @@ function run(args: string[], env = process.env, timeoutMs = 120_000): string {
     stdio: ['inherit', 'pipe', 'pipe'],
     timeout: timeoutMs,
   });
-}
-
-function sanitizedCommandError(error: unknown): string {
-  if (!error || typeof error !== 'object' || !('stderr' in error)) return '';
-  const stderr = (error as { stderr?: Buffer | string }).stderr;
-  if (!stderr) return '';
-  return String(stderr)
-    .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[REDACTED_JWT]')
-    .replace(/(?:sb_secret_|sb_publishable_)[A-Za-z0-9_-]+/g, '[REDACTED_KEY]')
-    .slice(-2000);
 }
 
 function cleanupDockerProject(projectId: string): void {
@@ -309,7 +300,7 @@ async function main(): Promise<void> {
       process.stdout.write(`[qa:local] ${projectId}: isolated Supabase started.\n`);
     } catch (error) {
       throw new Error(
-        `Local Supabase could not start within 120s or failed early. Confirm Docker Desktop is ready and pnpm qa:doctor --fix is green.${sanitizedCommandError(error) ? `\n${sanitizedCommandError(error)}` : ''}`,
+        `Local Supabase could not start within 120s or failed early. Confirm Docker Desktop is ready and pnpm qa:doctor --fix is green.${sanitizeCommandError(error) ? `\n${sanitizeCommandError(error)}` : ''}`,
       );
     }
 

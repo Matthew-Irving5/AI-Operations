@@ -6,6 +6,7 @@ import { MOBILE_LIMITS } from "./mobile-snapshot.ts";
 import {
   mobileEnvelopeSchema,
   mobileRecordSchema,
+  mobileReminderV2ScopeSchema,
 } from "./mobile-snapshot-contract.ts";
 
 Deno.test("mobile records do not require optional Apple identity timestamps", () => {
@@ -15,6 +16,47 @@ Deno.test("mobile records do not require optional Apple identity timestamps", ()
       source: "reminders",
       kind: "reminder",
       payload: {},
+    }).success,
+  );
+});
+
+Deno.test("Reminder v2 requires a supported list identity before persistence", () => {
+  const record = {
+    source: "reminders",
+    kind: "reminder",
+    payload: { contract_version: 2, list: "Fitness Plan" },
+  };
+  assert(mobileReminderV2ScopeSchema.safeParse(record).success);
+  assertEquals(
+    mobileReminderV2ScopeSchema.safeParse({
+      ...record,
+      payload: { contract_version: 1, list: "Fitness Plan" },
+    }).success,
+    false,
+  );
+  assertEquals(
+    mobileReminderV2ScopeSchema.safeParse({
+      ...record,
+      payload: { contract_version: 2 },
+    }).success,
+    false,
+  );
+  assertEquals(
+    mobileReminderV2ScopeSchema.safeParse({
+      ...record,
+      payload: { contract_version: 2, list: "Unapproved List" },
+    }).success,
+    false,
+  );
+});
+
+Deno.test("non-Reminder v1 records remain valid", () => {
+  assert(
+    mobileRecordSchema.safeParse({
+      record_id: "31000000-0000-4000-8000-000000000099",
+      source: "health",
+      kind: "health_sample",
+      payload: { type: "Steps" },
     }).success,
   );
 });
@@ -59,4 +101,37 @@ Deno.test("empty five-source transport arrays remain valid", () => {
       attachments: [],
     }).success,
   );
+});
+
+Deno.test("Shortcut documentation scopes the endpoint to its paired Supabase project", async () => {
+  const guides = await Promise.all(
+    [
+      "../../../docs/onboarding/apple-shortcuts.md",
+      "../../../docs/onboarding/mobile-source-contracts.md",
+    ].map((path) => Deno.readTextFile(new URL(path, import.meta.url))),
+  );
+  for (const guide of guides) {
+    assert(
+      guide.includes(
+        "<SUPABASE_PROJECT_URL>/functions/v1/mobile-snapshot-ingest",
+      ),
+    );
+    assert(guide.includes("same Supabase project"));
+    const absoluteUrls = [...guide.matchAll(/https?:\/\/[^\s`]+/g)].map(
+      (match) => {
+        try {
+          return new URL(match[0]);
+        } catch {
+          return null;
+        }
+      },
+    );
+    assert(
+      !absoluteUrls.some(
+        (url) =>
+          url?.hostname === "epmgvknrydadzitzupzx.supabase.co" &&
+          url.pathname === "/functions/v1/mobile-snapshot-ingest",
+      ),
+    );
+  }
 });
