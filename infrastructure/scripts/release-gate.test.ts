@@ -1169,6 +1169,47 @@ test('AI-35 Career acceptance requires its strict candidate-bound provider evide
   );
 });
 
+test('AI-44 staging runner uses owner and canonical RPC reads for protected state', async () => {
+  const source = await readFile(
+    new URL('../../tests/e2e-live/ai44-action-acceptance.spec.ts', import.meta.url),
+    'utf8',
+  );
+  const forbiddenServiceRoleReads =
+    /\b(?:stagingRows|requireSingleRow)(?:<[^>]*>)?\s*\(\s*['"](?:actions|mfa_reauthentication_events|prompt_version_transitions)['"]/;
+  const assertNoServiceRoleProtectedReads = (candidate: string) =>
+    assert.doesNotMatch(candidate, forbiddenServiceRoleReads);
+
+  assert.match(
+    source,
+    /function loadCanonicalActionContext\([\s\S]*?stagingRpc\('load_canonical_action_execution_request'/,
+  );
+  assert.match(source, /actionContext\.freshWebAal2\)\.toBe\(false\)/);
+  assert.match(source, /actionContext\.freshWebAal2\)\.toBe\(true\)/);
+  assert.match(
+    source,
+    /async function requireSingleOwnerRow[\s\S]*?stagingRows<T>\(table, parameters, accessToken\)/,
+  );
+  assert.match(source, /requireSingleOwnerRow<Action>\(\s*'actions',[\s\S]*?actionToken,/);
+  assert.match(
+    source,
+    /function replayPromptTransition[\s\S]*?stagingRpc\('transition_prompt_version'[\s\S]*?p_idempotency_key:\s*input\.idempotencyKey/,
+  );
+  assert.match(source, /idempotencyKey:\s*forwardTransitionKey/);
+  assert.match(source, /idempotencyKey:\s*reversalTransitionKey/);
+  assert.match(source, /replayed:\s*true/);
+  assertNoServiceRoleProtectedReads(source);
+
+  assert.throws(() =>
+    assertNoServiceRoleProtectedReads(
+      [
+        "requireSingleRow<Action>('actions', params)",
+        "stagingRows('mfa_reauthentication_events', params)",
+        "stagingRows('prompt_version_transitions', params)",
+      ].join('\n'),
+    ),
+  );
+});
+
 test('AI-28 mobile and AI-44 action acceptance require separate candidate-bound proofs', () => {
   const hostedSuite = mobileActionSuiteEvidence();
   const combined = combineMobileActionResults(
