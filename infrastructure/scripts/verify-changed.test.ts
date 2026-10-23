@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  buildImpactPlan,
-  playwrightInstallArgs,
-  prettierFiles,
-  runChecks,
-  shellSafeArguments,
-} from './verify-changed';
+import { readFileSync } from 'node:fs';
+import { buildImpactPlan, prettierFiles, runChecks, shellSafeArguments } from './verify-changed';
+
+test('browser prerequisite setup has its own bounded install and launch budget', () => {
+  const source = readFileSync(new URL('./verify-changed.ts', import.meta.url), 'utf8');
+  assert.match(source, /playwright-browser-setup\.ts', 'chromium'\][\s\S]*timeout: 1_200_000/);
+});
 
 test('release-only changes do not pay browser E2E', () => {
   const plan = buildImpactPlan(['infrastructure/scripts/release-gate.ts']);
@@ -25,6 +25,12 @@ test('auth session boundary changes select production Worker browser proof', () 
   assert.equal(plan.workerPreview, true);
   assert.equal(plan.browser, true);
   assert.equal(plan.security, true);
+  assert.ok(plan.profiles.includes('worker-preview'));
+});
+
+test('web runtime dependency changes select production Worker browser proof', () => {
+  const plan = buildImpactPlan(['apps/web/package.json']);
+  assert.equal(plan.workerPreview, true);
   assert.ok(plan.profiles.includes('worker-preview'));
 });
 
@@ -47,24 +53,6 @@ test('Windows command arguments preserve route-group paths through cmd.exe', () 
     '"apps/web/app/(app)/design-system/page.tsx"',
   ]);
   assert.deepEqual(shellSafeArguments(['--check', path], 'linux'), ['--check', path]);
-});
-
-test('clean Linux runners install Chromium system dependencies only when selected', () => {
-  assert.deepEqual(playwrightInstallArgs('linux'), [
-    'pnpm',
-    'exec',
-    'playwright',
-    'install',
-    '--with-deps',
-    'chromium',
-  ]);
-  assert.deepEqual(playwrightInstallArgs('win32'), [
-    'pnpm',
-    'exec',
-    'playwright',
-    'install',
-    'chromium',
-  ]);
 });
 
 test('independent changed-surface checks continue and summarize failures without leaking secrets', () => {

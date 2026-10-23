@@ -9,6 +9,7 @@ import {
   compareInventory,
   compareWorkerToExpected,
   compareMigrations,
+  missingAppliedMigrationVersions,
   compareSourceAttestations,
   compareSourceDigests,
   migrationInventoryFromFilenames,
@@ -502,6 +503,23 @@ test('detects migration expectation drift before deployment', () => {
       'repo ↔ staging',
     ),
     ['repo ↔ staging: applied migration versions differ'],
+  );
+});
+
+test('staging migration preflight requires every applied version in the candidate checkout', () => {
+  assert.deepEqual(
+    missingAppliedMigrationVersions(
+      ['20261022180901', '20261021155524', '20261021155521'],
+      ['20261021155521', '20261021155524', '20261022180901', '20261023120000'],
+    ),
+    [],
+  );
+  assert.deepEqual(
+    missingAppliedMigrationVersions(
+      ['20261022180901', '20261021155524', '20261021155521'],
+      ['20261021155521'],
+    ),
+    ['20261021155524', '20261022180901'],
   );
 });
 

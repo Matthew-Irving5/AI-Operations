@@ -13,6 +13,12 @@ on:
         description: Exact current same-repository PR head SHA; manual candidate dispatch requires the current baseline PR verification workflows to pass.
         required: true
         type: string
+      acceptance_profile:
+        description: Expected hosted acceptance profile. Use auto for candidate deployment and an exact ticket profile when submitting acceptance.
+        required: false
+        default: auto
+        type: choice
+        options: [auto, targeted, auth-browser, cost-runtime]
       deployment_run_id:
         description: Successful candidate deployment run ID; required for acceptance.
         required: false
@@ -93,10 +99,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
           PULL_REQUEST_NUMBER: ${{ steps.candidate.outputs.pull_request_number }}
+          ACCEPTANCE_PROFILE: ${{ inputs.acceptance_profile || 'auto' }}
         run: |
           set -euo pipefail
           gh api --paginate "repos/$GH_REPOSITORY/pulls/$PULL_REQUEST_NUMBER/files?per_page=100" --jq '.[].filename' > candidate-files.txt
-          pnpm exec tsx infrastructure/scripts/acceptance-profile.ts candidate-files.txt
+          pnpm exec tsx infrastructure/scripts/acceptance-profile.ts candidate-files.txt "$ACCEPTANCE_PROFILE"
       - name: Validate manual candidate required workflows
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'candidate'
         env:
@@ -163,6 +170,11 @@ jobs:
           NODE
           pnpm exec tsx infrastructure/scripts/release-gate.ts staging-slot-check < staging-slot-input.json > staging-slot-evidence.json
           jq -e '.available == true' staging-slot-evidence.json > /dev/null || { owner="$(jq -r '.owner.pullRequestNumber // "unknown"' staging-slot-evidence.json)"; echo "Staging is reserved for open PR #$owner until its hosted acceptance completes."; exit 1; }
+      - name: Preflight candidate migration history before deployment
+        env:
+          STAGING_SUPABASE_ACCESS_TOKEN: ${{ secrets.STAGING_SUPABASE_ACCESS_TOKEN }}
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+        run: pnpm environment:drift -- preflight-staging-migrations
       - name: Set candidate status while staging deploys
         if: inputs.candidate_sha != ''
         env:
@@ -214,7 +226,7 @@ jobs:
           DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
         run: |
           pnpm exec supabase link --project-ref "$PROJECT_REF" --password "$DB_PASSWORD"
-          pnpm exec supabase db push --linked --password "$DB_PASSWORD" --yes
+          pnpm exec supabase db push --linked --include-all --password "$DB_PASSWORD" --yes
       - name: Deploy Supabase Edge Functions
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.STAGING_SUPABASE_ACCESS_TOKEN }}
@@ -335,14 +347,20 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - name: Set candidate status while hosted acceptance is pending
-        if: inputs.candidate_sha != '' && steps.acceptance-profile.outputs.acceptance_profile == 'auth-browser'
+        if: inputs.candidate_sha != '' && (steps.acceptance-profile.outputs.acceptance_profile == 'auth-browser' || steps.acceptance-profile.outputs.acceptance_profile == 'cost-runtime')
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          ACCEPTANCE_PROFILE: ${{ steps.acceptance-profile.outputs.acceptance_profile }}
         run: |
           set -euo pipefail
-          jq -n '{state:"pending",context:"AI Operations / Staging capability acceptance",description:"Staging is deployed; waiting for auth-browser acceptance."}' > commit-status.json
+          if [[ "$ACCEPTANCE_PROFILE" == "cost-runtime" ]]; then
+            description="Staging is deployed; waiting for one-call cost-runtime evidence."
+          else
+            description="Staging is deployed; waiting for auth-browser acceptance."
+          fi
+          jq -n --arg description "$description" '{state:"pending",context:"AI Operations / Staging capability acceptance",description:$description}' > commit-status.json
           gh api "repos/$GH_REPOSITORY/statuses/$CANDIDATE_SHA" --method POST --input commit-status.json > /dev/null
       - name: Set candidate status after staging deployment failure
         if: failure() && inputs.candidate_sha != ''
@@ -388,12 +406,14 @@ jobs:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           DEPLOYMENT_RUN_ID: ${{ inputs.deployment_run_id }}
           OUTCOME: ${{ inputs.acceptance_outcome }}
+          ACCEPTANCE_PROFILE: ${{ inputs.acceptance_profile }}
           DISPATCH_SHA: ${{ github.sha }}
           DISPATCH_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
           [[ "$CANDIDATE_SHA" =~ ^[a-f0-9]{40}$ && "$CANDIDATE_SHA" == "$DISPATCH_SHA" && "$DISPATCH_REF" == refs/heads/* && "$DISPATCH_REF" != "refs/heads/main" ]] || { echo "Acceptance dispatch must use the current non-main PR branch head."; exit 1; }
           [[ "$DEPLOYMENT_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]] || { echo "Deployment run ID is invalid."; exit 1; }
+          [[ "$ACCEPTANCE_PROFILE" == "auth-browser" || "$ACCEPTANCE_PROFILE" == "cost-runtime" ]] || { echo "Acceptance dispatch requires the exact auth-browser or cost-runtime profile."; exit 1; }
           [[ "$OUTCOME" == "accepted" || "$OUTCOME" == "failed" ]] || { echo "Acceptance outcome is invalid."; exit 1; }
           gh api "repos/$GH_REPOSITORY/commits/$CANDIDATE_SHA/pulls" > candidate-pulls.json
           pr_count="$(jq --arg repo "$GH_REPOSITORY" --arg sha "$CANDIDATE_SHA" '[.[] | select(.state == "open" and .base.ref == "main" and .head.sha == $sha and .head.repo.full_name == $repo)] | length' candidate-pulls.json)"
@@ -437,6 +457,7 @@ jobs:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           DEPLOYMENT_RUN_ID: ${{ inputs.deployment_run_id }}
           ACCEPTANCE_EVIDENCE: ${{ inputs.acceptance_evidence }}
+          ACCEPTANCE_PROFILE: ${{ inputs.acceptance_profile }}
         run: |
           set -euo pipefail
           node --input-type=module <<'NODE'
@@ -444,6 +465,7 @@ jobs:
           const sha = process.env.CANDIDATE_SHA;
           const runId = process.env.DEPLOYMENT_RUN_ID;
           const submitted = JSON.parse(process.env.ACCEPTANCE_EVIDENCE ?? '');
+          const expectedProfile = process.env.ACCEPTANCE_PROFILE;
           const deployment = JSON.parse(readFileSync('deployment-evidence/candidate-staging-deployment.json', 'utf8'));
           const run = JSON.parse(readFileSync('deployment-run.json', 'utf8'));
           const currentPr = JSON.parse(readFileSync('current-pr.json', 'utf8'));
@@ -454,6 +476,9 @@ jobs:
           }
           if (submitted.candidateSha !== sha || submitted.candidateTreeSha !== candidateTreeSha || submitted.pullRequestNumber !== currentPr.number || submitted.deploymentRunId !== runId) {
             throw new Error('Hosted acceptance does not match the exact candidate SHA, tree, PR, and deployment run.');
+          }
+          if (submitted.acceptanceProfile !== expectedProfile || deployment.acceptanceProfile !== expectedProfile) {
+            throw new Error('Hosted acceptance profile does not match the exact staged candidate profile.');
           }
           writeFileSync('staging-status-input.json', JSON.stringify({
             candidateSha: sha,

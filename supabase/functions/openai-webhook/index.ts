@@ -2,6 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { verifyOpenAiWebhookSignature } from "../_shared/openai-webhook-security.ts";
 import {
   extractResponseOutputText,
+  type RedactedProviderUsage,
   redactedProviderUsage,
   validateReportOutput,
 } from "../_shared/openai-contract.ts";
@@ -29,19 +30,24 @@ const sha256 = async (value: string) => {
 };
 
 async function recordEvent(externalId: string): Promise<string | null> {
-  const inserted = await service.from("webhook_events").insert({
-    provider: "openai",
-    external_id: externalId,
-    signature_verified: true,
-    status: "received",
-  }).select("id").maybeSingle();
+  const inserted = await service
+    .from("webhook_events")
+    .insert({
+      provider: "openai",
+      external_id: externalId,
+      signature_verified: true,
+      status: "received",
+    })
+    .select("id")
+    .maybeSingle();
   if (!inserted.error) return inserted.data?.id ?? null;
   if (inserted.error.code !== "23505") return null;
-  const existing = await service.from("webhook_events").select("id").eq(
-    "provider",
-    "openai",
-  )
-    .eq("external_id", externalId).maybeSingle();
+  const existing = await service
+    .from("webhook_events")
+    .select("id")
+    .eq("provider", "openai")
+    .eq("external_id", externalId)
+    .maybeSingle();
   return existing.data?.id ?? null;
 }
 
@@ -54,10 +60,13 @@ async function resolveProviderJob(
     p_response_id: responseId,
   });
   if (
-    submission.error || !isRecord(submission.data) ||
+    submission.error ||
+    !isRecord(submission.data) ||
     typeof submission.data.id !== "string" ||
     typeof submission.data.status !== "string"
-  ) return null;
+  ) {
+    return null;
+  }
   return { id: submission.data.id, status: submission.data.status };
 }
 
@@ -67,7 +76,7 @@ async function failProviderResult(
   callId: string,
   errorCode: string,
   actualCost: number,
-  usage: Record<string, number>,
+  usage: RedactedProviderUsage,
   trace: Record<string, unknown>,
 ): Promise<boolean> {
   const failure = await service.rpc("fail_instrumented_ai_provider_response", {
@@ -121,16 +130,21 @@ Deno.serve(async (request) => {
   if (
     !["response.completed", "response.failed", "response.incomplete"].includes(
       body.type,
-    ) || !body.data?.id
+    ) ||
+    !body.data?.id
   ) {
     await markEvent(eventId, "processed");
     return json({ accepted: true });
   }
 
   const responseId = body.data.id;
-  const call = await service.from("ai_calls").select(
-    "id,run_id,user_id,model_id,estimated_cost,request_id,redacted_trace,status",
-  ).eq("response_id", responseId).maybeSingle();
+  const call = await service
+    .from("ai_calls")
+    .select(
+      "id,run_id,user_id,model_id,model_pricing_id,estimated_cost,request_id,redacted_trace,status",
+    )
+    .eq("response_id", responseId)
+    .maybeSingle();
   if (call.error) return json({ code: "response_lookup_failed" }, 500);
   if (!call.data?.run_id) {
     await markEvent(eventId, "processed");
@@ -162,7 +176,9 @@ Deno.serve(async (request) => {
   }
   if (
     !["submitted", "completed_pending_reconciliation", "reconciliation_failed"]
-      .includes(callData.status)
+      .includes(
+        callData.status,
+      )
   ) {
     return json({ code: "response_not_reconcilable" }, 409);
   }
@@ -191,14 +207,25 @@ Deno.serve(async (request) => {
         authorization: `Bearer ${Deno.env.get("OPENAI_API_KEY") ?? ""}`,
       },
     },
-  ).then(async (result) => result.ok ? await result.json() : null).catch(() =>
-    null
-  );
+  )
+    .then(async (result) => (result.ok ? await result.json() : null))
+    .catch(() => null);
   if (
     isRecord(responseResult) &&
     ["failed", "incomplete"].includes(String(responseResult.status))
   ) {
     const failedUsage = redactedProviderUsage(responseResult);
+    if (!failedUsage.has_complete_usage || !callData.model_pricing_id) {
+      await service.rpc("record_instrumented_ai_reconciliation_failure", {
+        p_call_id: callData.id,
+        p_error_code: !failedUsage.has_complete_usage
+          ? "provider_usage_incomplete"
+          : "model_pricing_version_missing",
+        p_redacted_trace: { response_id: responseId },
+      });
+      await markEvent(eventId, "retrying");
+      return json({ code: "provider_usage_reconciliation_required" }, 500);
+    }
     const failedCostResult = await service.rpc(
       "calculate_instrumented_ai_cost",
       {
@@ -207,6 +234,8 @@ Deno.serve(async (request) => {
         p_output_tokens: failedUsage.output_tokens,
         p_cached_input_tokens: failedUsage.cached_input_tokens,
         p_search_calls: 0,
+        p_cache_write_tokens: failedUsage.cache_write_tokens,
+        p_pricing_id: callData.model_pricing_id,
       },
     );
     if (failedCostResult.error || typeof failedCostResult.data !== "number") {
@@ -228,7 +257,7 @@ Deno.serve(async (request) => {
       responseResult.status === "failed"
         ? "provider_response_failed"
         : "provider_response_incomplete",
-      Math.min(callData.estimated_cost, failedCostResult.data),
+      failedCostResult.data,
       failedUsage,
       failedTrace,
     );
@@ -253,18 +282,33 @@ Deno.serve(async (request) => {
   let parsed: unknown = null;
   try {
     parsed = outputText ? JSON.parse(outputText) : null;
-  } catch { /* invalid output is settled below */ }
+  } catch {
+    /* invalid output is settled below */
+  }
   const validated = validateReportOutput(parsed, new Set(evidenceIds));
   const actionsAllowed = validated?.actions.every((action) =>
     allowedActionTypes.includes(action.type)
   ) ?? false;
   const usage = redactedProviderUsage(responseResult);
+  if (!usage.has_complete_usage || !callData.model_pricing_id) {
+    await service.rpc("record_instrumented_ai_reconciliation_failure", {
+      p_call_id: callData.id,
+      p_error_code: !usage.has_complete_usage
+        ? "provider_usage_incomplete"
+        : "model_pricing_version_missing",
+      p_redacted_trace: { response_id: responseId },
+    });
+    await markEvent(eventId, "retrying");
+    return json({ code: "provider_usage_reconciliation_required" }, 500);
+  }
   const actualCost = await service.rpc("calculate_instrumented_ai_cost", {
     p_model_id: callData.model_id,
     p_input_tokens: usage.input_tokens,
     p_output_tokens: usage.output_tokens,
     p_cached_input_tokens: usage.cached_input_tokens,
     p_search_calls: 0,
+    p_cache_write_tokens: usage.cache_write_tokens,
+    p_pricing_id: callData.model_pricing_id,
   });
   if (actualCost.error || typeof actualCost.data !== "number") {
     await service.rpc("record_instrumented_ai_reconciliation_failure", {
@@ -281,7 +325,7 @@ Deno.serve(async (request) => {
       responseId,
       callData.id,
       "provider_usage_exceeded_reservation",
-      callData.estimated_cost,
+      actualCost.data,
       usage,
       {
         request_id: callData.request_id,
@@ -327,10 +371,11 @@ Deno.serve(async (request) => {
     return json({ accepted: true, reconciliation: "failed" });
   }
 
-  const run = await service.from("workflow_runs").select("correlation_id").eq(
-    "id",
-    callData.run_id,
-  ).maybeSingle();
+  const run = await service
+    .from("workflow_runs")
+    .select("correlation_id")
+    .eq("id", callData.run_id)
+    .maybeSingle();
   if (run.error || !run.data) {
     await markEvent(eventId, "retrying");
     return json({ code: "run_context_unavailable" }, 500);
