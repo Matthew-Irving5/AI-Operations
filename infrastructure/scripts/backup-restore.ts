@@ -860,13 +860,13 @@ async function restoreBackup(
     const sourceCommit = payload.manifest.sourceCommit;
     const objectCount = payload.manifest.objects.length;
     const databaseSha = payload.manifest.database.sha256;
-    const insert = `insert into public.backup_restore_drills
+    const insert = singleLineSqlArgument(`insert into public.backup_restore_drills
       (user_id, backup_key, backup_sha256, encrypted, drill_status, restored_at, backup_size_bytes,
        database_sha256, object_count, manifest_version, migration_version, source_commit_sha,
        source_environment, encryption_algorithm, key_version)
       values ('${userId}', '${backupKey.replace(/'/g, "''")}', '${backupSha}', true, 'passed', now(),
        ${encrypted.byteLength}, '${databaseSha}', ${objectCount}, 1, '${migrationVersion}',
-       '${sourceCommit}', '${environment}', 'AES-256-GCM', '${keyVersion.replace(/'/g, "''")}')`;
+       '${sourceCommit}', '${environment}', 'AES-256-GCM', '${keyVersion.replace(/'/g, "''")}')`);
     if (target.kind === 'local-recovery') {
       await localSupabase(target.workdir, ['db', 'query', '--local', insert]);
     } else {
