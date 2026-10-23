@@ -28,6 +28,7 @@ Read only rows touching the current ticket. The IDs are stable; update a rule wh
 ## Mobile / device integration
 
 - **MOBILE-01 — Pairing token and ingestion endpoint must share a Supabase project.** A mobile token is issued by the app's environment-configured Supabase project and is only valid at that project's `mobile-snapshot-ingest` endpoint. Never hardcode the production project URL into a staging Shortcut or setup guide. Keep the endpoint scoped to the paired environment and add a contract check that parses and compares the exact Supabase hostname and function path. (AI-28 PR #180, commits `d612f4c` and `91fb4d4`)
+- **MOBILE-02 — Cancel oversized request streams before returning from Supabase Edge.** When `Content-Length` proves a request exceeds the mobile transport cap, cancel the unread request body before returning the correlated 413. Returning early without releasing the body can make the Edge runtime log a 413 while Node `fetch` receives a 502 with no headers. Preserve the hard cap and avoid draining or buffering oversized bodies; prove the actual HTTP status, error code and correlation header with Node `fetch` against local Supabase Edge. (AI-28 incident AI28-11; `mobile-request-limits_test.ts` and mobile Shortcut acceptance)
 
 ## Provider / orchestration / acceptance contracts
 

@@ -7,6 +7,7 @@ import {
   mobileReminderV2ScopeSchema,
 } from "../_shared/mobile-snapshot-contract.ts";
 import { normalizeMobileShortcutEnvelope } from "../_shared/mobile-snapshot-compatibility.ts";
+import { cancelIfDeclaredBodyTooLarge } from "../_shared/mobile-request-limits.ts";
 import {
   canonicalJson,
   jsonDepth,
@@ -167,8 +168,11 @@ Deno.serve(async (request) => {
       { expected: "POST", received: request.method },
     );
   }
-  const declaredLength = Number(request.headers.get("content-length") ?? 0);
-  if (declaredLength > MOBILE_LIMITS.requestBytes) {
+  const declaredLength = await cancelIfDeclaredBodyTooLarge(
+    request,
+    MOBILE_LIMITS.requestBytes,
+  );
+  if (declaredLength !== null) {
     return errorResponse(
       diagnosticId,
       413,
