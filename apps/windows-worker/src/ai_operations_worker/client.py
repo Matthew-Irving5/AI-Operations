@@ -23,6 +23,7 @@ from .identity import (
 )
 from .inventory import collect
 from .manifest import verify_manifest
+from .protocol import WORKER_VERSION, worker_capabilities
 from .results import sign_scan_result
 from .state import StateStore
 
@@ -71,15 +72,26 @@ class ControlPlaneClient:
                 return
             self.state.delete_result(result_id)
 
+    def protocol_metadata(self) -> dict[str, Any]:
+        return {
+            "workerVersion": WORKER_VERSION,
+            "capabilities": list(
+                worker_capabilities(self.config.manifest_public_key_b64),
+            ),
+        }
+
     def heartbeat(self) -> dict[str, Any]:
         return self.post("/worker-heartbeat", {
             "deviceId": self.config.device_id,
-            "workerVersion": "0.2.0",
+            **self.protocol_metadata(),
             "status": {"transport": "outbound_https"},
         })
 
     def poll(self) -> dict[str, Any]:
-        return self.post("/worker-poll", {"deviceId": self.config.device_id})
+        return self.post("/worker-poll", {
+            "deviceId": self.config.device_id,
+            **self.protocol_metadata(),
+        })
 
     def run_once(self) -> dict[str, Any]:
         self.send_queued_results()
@@ -153,7 +165,7 @@ class ControlPlaneClient:
             except OSError:
                 delay = min(max(delay * 2, 30), 3600)
             except RuntimeError as error:
-                if str(error).startswith(("401:", "403:")):
+                if str(error).startswith(("401:", "403:", "426:")):
                     return
                 delay = min(max(delay * 2, 30), 3600)
             time.sleep(delay)
