@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
+import { procurementLaunchRequestSchema } from "@ai-operations/contracts";
 import { createWorkflowExecutionHandler } from "./handler.ts";
 import { AI15_WORKFLOW_RUN_SELECT } from "./read-contract.ts";
 import { submitProviderResponse as submitProviderResponseWithRetry } from "./provider-submission.ts";
@@ -8,6 +9,7 @@ import {
   selectModelUnderCeiling,
 } from "./execution-policy.ts";
 import {
+  validateProcurementResearchOutputSchema,
   validatePromptGovernance,
   validateReportOutputSchema,
 } from "../../../packages/ai-runtime/src/governance.ts";
@@ -176,10 +178,11 @@ async function persistStage(
 async function executeDeterministic(
   runId: string,
 ): Promise<ExecuteWorkflowOutcome> {
-  const run = await service.from("workflow_runs").select("correlation_id").eq(
-    "id",
-    runId,
-  ).maybeSingle();
+  const run = await service
+    .from("workflow_runs")
+    .select("correlation_id")
+    .eq("id", runId)
+    .maybeSingle();
   if (run.error || !run.data) {
     return outcomeFor(
       runId,
@@ -283,6 +286,17 @@ async function executeAiWorkflow(
   execution: Awaited<ReturnType<typeof loadTrustedWorkflowExecution>>,
 ): Promise<ExecuteWorkflowOutcome> {
   const { run, definition, input } = execution;
+  const isProcurement = definition.code === "procurement-on-demand-research";
+  const procurementRequest = isProcurement
+    ? procurementLaunchRequestSchema.safeParse(input)
+    : null;
+  if (isProcurement && !procurementRequest?.success) {
+    return outcomeFor(
+      run.id,
+      "terminal_failure",
+      "procurement_request_invalid",
+    );
+  }
   const mode = resolveWorkflowMode(run.managerCode, definition.code);
   if (!mode) {
     return outcomeFor(
@@ -328,10 +342,11 @@ async function executeAiWorkflow(
     ? existingReport.structured_metrics.ai_call_id
     : null;
   if (existingReport?.id && existingCallId) {
-    const callState = await service.from("ai_calls").select("status").eq(
-      "id",
-      existingCallId,
-    ).maybeSingle();
+    const callState = await service
+      .from("ai_calls")
+      .select("status")
+      .eq("id", existingCallId)
+      .maybeSingle();
     if (callState.data?.status === "succeeded") {
       return {
         runId: run.id,
@@ -352,6 +367,17 @@ async function executeAiWorkflow(
     return outcomeFor(run.id, "terminal_failure", "execution_budget_missing");
   }
   const budget = budgetResult.data;
+  if (
+    isProcurement &&
+    (!budget || !Number.isInteger(budget.search_ceiling) ||
+      budget.search_ceiling < 1)
+  ) {
+    return outcomeFor(
+      run.id,
+      "terminal_failure",
+      "procurement_search_budget_missing",
+    );
+  }
   if (
     budget &&
     (budget.status !== "active" || Date.parse(budget.expires_at) <= Date.now())
@@ -385,7 +411,8 @@ async function executeAiWorkflow(
     );
   }
   const definitionConfig = definitionResult.data;
-  const pendingReservation = await service.from("ai_calls")
+  const pendingReservation = await service
+    .from("ai_calls")
     .select("id,status,response_id,request_id,prompt_version_id,model_id")
     .eq("run_id", run.id)
     .eq("status", "reserved")
@@ -408,13 +435,16 @@ async function executeAiWorkflow(
   if (!pendingReservation.data && !defaultSelectedModel) {
     return outcomeFor(run.id, "terminal_failure", "model_route_unavailable");
   }
-  const modelQuery = service.from("ai_model_catalog")
-    .select("id,model_id,enabled");
+  const modelQuery = service.from("ai_model_catalog").select(
+    "id,model_id,enabled",
+  );
   const modelResult = pendingReservation.data
-    ? await modelQuery.eq("id", pendingReservation.data.model_id)
-      .eq("enabled", true).maybeSingle()
-    : await modelQuery.eq("model_id", defaultSelectedModel!)
-      .eq("enabled", true).maybeSingle();
+    ? await modelQuery.eq("id", pendingReservation.data.model_id).eq(
+      "enabled",
+      true,
+    ).maybeSingle()
+    : await modelQuery.eq("model_id", defaultSelectedModel!).eq("enabled", true)
+      .maybeSingle();
   if (modelResult.error || !modelResult.data) {
     return outcomeFor(run.id, "terminal_failure", "model_unavailable");
   }
@@ -424,7 +454,12 @@ async function executeAiWorkflow(
     .from("prompt_templates")
     .select("id,active_version")
     .eq("manager_id", definitionConfig.manager_id)
-    .eq("code", "controlled-agent-report")
+    .eq(
+      "code",
+      isProcurement
+        ? "procurement-research-comparison"
+        : "controlled-agent-report",
+    )
     .maybeSingle();
   if (promptResult.error || !promptResult.data?.active_version) {
     return outcomeFor(
@@ -442,10 +477,11 @@ async function executeAiWorkflow(
     ? await promptVersionQuery.eq(
       "id",
       pendingReservation.data.prompt_version_id,
-    )
-      .maybeSingle()
-    : await promptVersionQuery.eq("template_id", promptResult.data.id)
-      .eq("version", promptResult.data.active_version).maybeSingle();
+    ).maybeSingle()
+    : await promptVersionQuery
+      .eq("template_id", promptResult.data.id)
+      .eq("version", promptResult.data.active_version)
+      .maybeSingle();
   if (
     selectedPromptVersion.error ||
     !selectedPromptVersion.data ||
@@ -467,50 +503,59 @@ async function executeAiWorkflow(
   };
   if (
     !validatePromptGovernance(promptGovernance) ||
-    !validateReportOutputSchema(selectedPromptVersion.data.json_schema) ||
+    !(isProcurement
+      ? validateProcurementResearchOutputSchema(
+        selectedPromptVersion.data.json_schema,
+      )
+      : validateReportOutputSchema(selectedPromptVersion.data.json_schema)) ||
     selectModelUnderCeiling(promptGovernance.modelRoute, selectedModel) !==
       selectedModel
   ) {
     return outcomeFor(run.id, "terminal_failure", "prompt_governance_invalid");
   }
 
-  const feedbackResult = await service
-    .from("feedback")
-    .select("id,categories,created_at")
-    .eq("user_id", run.userId)
-    .eq("positive", false)
-    .gte(
-      "created_at",
-      new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    )
-    .order("created_at", { ascending: false })
-    .limit(50);
-  if (feedbackResult.error) {
-    return outcomeFor(
-      run.id,
-      "retryable_failure",
-      "required_sources_unavailable",
-    );
+  let evidence: Array<{ id: string; source: string }> = [];
+  if (!isProcurement) {
+    const feedbackResult = await service
+      .from("feedback")
+      .select("id,categories,created_at")
+      .eq("user_id", run.userId)
+      .eq("positive", false)
+      .gte(
+        "created_at",
+        new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      )
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (feedbackResult.error) {
+      return outcomeFor(
+        run.id,
+        "retryable_failure",
+        "required_sources_unavailable",
+      );
+    }
+    evidence = (feedbackResult.data ?? []).flatMap((feedback) => {
+      if (!Array.isArray(feedback.categories)) return [];
+      return feedback.categories.flatMap((category) =>
+        typeof category === "string"
+          ? [{
+            id: feedback.id,
+            source: `Recent quality feedback category: ${category}`,
+          }]
+          : []
+      );
+    });
   }
-  const evidence = (feedbackResult.data ?? []).flatMap((feedback) => {
-    if (!Array.isArray(feedback.categories)) return [];
-    return feedback.categories.flatMap((category) =>
-      typeof category === "string"
-        ? [{
-          id: feedback.id,
-          source: `Recent quality feedback category: ${category}`,
-        }]
-        : []
-    );
-  });
   const evidenceIds = [...new Set(evidence.map((item) => item.id))];
+  const searchCeiling = isProcurement ? Number(budget?.search_ceiling ?? 0) : 0;
   const workflowInput = JSON.stringify({
     workflow: definition.code,
     request: input,
     evidence,
     constraints: {
       model: selectedModel,
-      searchCalls: 0,
+      searchCalls: searchCeiling,
+      asOf: new Date().toISOString(),
       approvalPolicy: definitionConfig.approval_policy,
     },
   });
@@ -552,11 +597,12 @@ async function executeAiWorkflow(
       "model_pricing_stale_or_unverified",
     );
   }
-  const searchCalls =
-    promptGovernance.toolPolicy.tools.filter((tool) =>
-      isRecord(tool) && tool.type === "web_search"
+  const searchCalls = isProcurement
+    ? searchCeiling
+    : promptGovernance.toolPolicy.tools.filter(
+      (tool) => isRecord(tool) && tool.type === "web_search",
     ).length;
-  if (searchCalls > 0) {
+  if (searchCalls > 0 && !isProcurement) {
     return outcomeFor(
       run.id,
       "terminal_failure",
@@ -565,10 +611,12 @@ async function executeAiWorkflow(
   }
   const instructions =
     `${selectedPromptVersion.data.system_text}\n\n${selectedPromptVersion.data.developer_text}`;
-  const maximumOutputTokens = 2_000;
+  const maximumOutputTokens = isProcurement ? 6_000 : 2_000;
   const maximumInputTokens = new TextEncoder().encode(
     `${instructions}\n\n${workflowInput}\n\n${
-      JSON.stringify(selectedPromptVersion.data.json_schema)
+      JSON.stringify(
+        selectedPromptVersion.data.json_schema,
+      )
     }`,
   ).byteLength + 128;
   let estimatedCost: number;
@@ -602,7 +650,8 @@ async function executeAiWorkflow(
   ) {
     return outcomeFor(run.id, "terminal_failure", "execution_budget_exceeded");
   }
-  const unresolvedCall = await service.from("ai_calls")
+  const unresolvedCall = await service
+    .from("ai_calls")
     .select("id,status,response_id,request_id")
     .eq("run_id", run.id)
     .in("status", [
@@ -664,7 +713,8 @@ async function executeAiWorkflow(
       responseId: unresolvedCall.data.response_id,
     };
   }
-  const attemptResult = await service.from("job_queue")
+  const attemptResult = await service
+    .from("job_queue")
     .select("attempt_count")
     .eq("run_id", run.id)
     .eq("job_type", "workflow_execute")
@@ -678,8 +728,11 @@ async function executeAiWorkflow(
     `ai15:${run.id}:attempt:${Math.max(1, attemptResult.data.attempt_count)}`;
   const priorCallResult = pendingReservation.data
     ? { data: pendingReservation.data, error: null }
-    : await service.from("ai_calls").select("id,status,response_id,request_id")
-      .eq("request_id", requestId).maybeSingle();
+    : await service
+      .from("ai_calls")
+      .select("id,status,response_id,request_id")
+      .eq("request_id", requestId)
+      .maybeSingle();
   if (priorCallResult.error) {
     return outcomeFor(
       run.id,
@@ -717,6 +770,7 @@ async function executeAiWorkflow(
         notification_policy: definitionConfig.notification_policy,
         allowed_action_types: allowedActionTypes,
         execution_mode: "ai",
+        search_ceiling: searchCeiling,
       },
     });
     if (reservation.error || typeof reservation.data !== "string") {
@@ -754,7 +808,12 @@ async function executeAiWorkflow(
           max_output_tokens: maximumOutputTokens,
           service_tier: "default",
           store: false,
-          tools: promptGovernance.toolPolicy.tools,
+          tools: promptGovernance.toolPolicy.tools.map((tool) =>
+            tool.type === "web_search" ? { type: "web_search" } : tool
+          ),
+          ...(isProcurement
+            ? { tool_choice: "required", max_tool_calls: searchCeiling }
+            : {}),
           text: {
             format: {
               type: "json_schema",

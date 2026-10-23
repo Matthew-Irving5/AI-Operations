@@ -1224,12 +1224,15 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /candidate_sha:/);
   assert.match(
     deployWorkflow,
-    /acceptance_profile:[\s\S]*options: \[auto, targeted, auth-browser, cost-runtime\]/,
+    /acceptance_profile:[\s\S]*options: \[auto, targeted, auth-browser, cost-runtime, procurement\]/,
   );
   assert.match(
     deployWorkflow,
     /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \|\| 'auto' \}\}[\s\S]*acceptance-profile\.ts candidate-files\.txt "\$ACCEPTANCE_PROFILE"/,
   );
+  assert.match(deployWorkflow, /ACCEPTANCE_PROFILE.*procurement/);
+  assert.match(deployWorkflow, /waiting for Procurement acceptance/);
+  assert.match(deployWorkflow, /exact auth-browser, cost-runtime, or procurement profile/);
   assert.match(deployWorkflow, /deployment_run_id:/);
   assert.match(deployWorkflow, /acceptance_evidence:/);
   assert.match(deployWorkflow, /outcome:[\s\S]*options: \[accepted, failed\]/);
@@ -1429,7 +1432,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(
     deployWorkflow,
-    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \]\]/,
+    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "procurement" \]\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1587,6 +1590,24 @@ test('AI-20 readback selects cost-runtime and cannot silently downgrade to auth-
   );
 });
 
+test('AI-39 readback selects the independent Procurement profile despite shared auth routes', () => {
+  const readback = 'docs/build/ticket-readbacks/AI-39.md';
+  assert.equal(selectHostedAcceptanceProfile([readback]), 'procurement');
+  assert.equal(
+    selectHostedAcceptanceProfile([readback, 'apps/web/app/api/workflows/launch/route.ts']),
+    'procurement',
+  );
+  assert.equal(selectHostedAcceptanceProfile([readback], 'procurement'), 'procurement');
+  assert.throws(
+    () => selectHostedAcceptanceProfile([readback], 'targeted'),
+    /does not match inferred 'procurement'/,
+  );
+  assert.throws(
+    () => selectHostedAcceptanceProfile([readback, 'docs/build/ticket-readbacks/AI-20.md']),
+    /cannot share one acceptance profile/,
+  );
+});
+
 test('AI-20 producer proof passes the hosted validator and becomes candidate-bound accepted status', () => {
   for (const humanMfa of ['not-required', 'user-completed'] as const) {
     const produced = createAi20CostRuntimeProof(ai20CostRuntimeEvidence({ humanMfa }));
@@ -1629,6 +1650,19 @@ test('AI-20 live acceptance command runs only its tagged provider proof', async 
   assert.equal(
     manifest.scripts?.['test:e2e:live:cost-acceptance'],
     'node --env-file-if-exists=.env --import tsx infrastructure/scripts/run-live-e2e.ts cost-acceptance',
+  );
+});
+
+test('AI-39 live acceptance command runs only its dedicated headed proof', async () => {
+  const runner = await readFile(new URL('./run-live-e2e.ts', import.meta.url), 'utf8');
+  const manifest = JSON.parse(
+    await readFile(new URL('../../package.json', import.meta.url), 'utf8'),
+  ) as { scripts?: Record<string, string> };
+  assert.match(runner, /mode === 'procurement-acceptance'/);
+  assert.match(runner, /tests\/e2e-live\/procurement-acceptance\.spec\.ts/);
+  assert.equal(
+    manifest.scripts?.['test:e2e:live:procurement-acceptance'],
+    'node --env-file-if-exists=.env --import tsx infrastructure/scripts/run-live-e2e.ts procurement-acceptance',
   );
 });
 

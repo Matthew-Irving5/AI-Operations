@@ -23,6 +23,7 @@
     "test:e2e:live": "node --env-file-if-exists=.env --import tsx infrastructure/scripts/run-live-e2e.ts suite",
     "test:e2e:live:auth-acceptance": "node --env-file-if-exists=.env --import tsx infrastructure/scripts/run-live-e2e.ts auth-acceptance",
     "test:e2e:live:cost-acceptance": "node --env-file-if-exists=.env --import tsx infrastructure/scripts/run-live-e2e.ts cost-acceptance",
+    "test:e2e:live:procurement-acceptance": "node --env-file-if-exists=.env --import tsx infrastructure/scripts/run-live-e2e.ts procurement-acceptance",
     "test:visual:design-system": "corepack pnpm exec playwright test -c playwright.visual.config.ts",
     "test:e2e:live:fixture-mismatch": "node --env-file-if-exists=.env --import tsx infrastructure/scripts/run-live-e2e.ts fixture-mismatch",
     "test:e2e:live:mismatch": "tsx infrastructure/scripts/run-live-e2e.ts mismatch",

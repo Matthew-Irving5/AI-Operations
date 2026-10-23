@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { Ai20CostRuntimeProofSchema } from './ai20-cost-runtime-proof.js';
+import {
+  ProcurementStagingAcceptanceChecksSchema,
+  ProcurementStagingAcceptanceEvidenceSchema,
+} from './procurement-live-acceptance.js';
 
 const ShaSchema = z
   .string()
@@ -199,7 +203,7 @@ const ReadyEvidenceSchema = z
   })
   .strict();
 
-const AcceptanceProfileSchema = z.enum(['targeted', 'auth-browser', 'cost-runtime']);
+const AcceptanceProfileSchema = z.enum(['targeted', 'auth-browser', 'cost-runtime', 'procurement']);
 
 const CapabilityResultsSchema = z
   .object({
@@ -255,8 +259,10 @@ const AcceptanceEvidenceSchema = z
       CapabilityResultsSchema,
       TargetedCapabilityResultsSchema,
       CostRuntimeChecksSchema,
+      ProcurementStagingAcceptanceChecksSchema,
     ]),
     freshMfaAction: FreshMfaActionEvidenceSchema.optional(),
+    procurementEvidence: ProcurementStagingAcceptanceEvidenceSchema.optional(),
     promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
     costRuntimeProof: Ai20CostRuntimeProofSchema.optional(),
     correlationIds: z.array(SafeIdSchema).max(20),
@@ -268,13 +274,18 @@ const AcceptanceEvidenceSchema = z
   .superRefine((value, context) => {
     const targeted = value.acceptanceProfile === 'targeted';
     const costRuntime = value.acceptanceProfile === 'cost-runtime';
+    const procurement = value.acceptanceProfile === 'procurement';
     const validMfa = targeted || costRuntime || value.humanMfa === 'user-completed';
     const validChecks = targeted
       ? Array.isArray(value.checks)
       : !Array.isArray(value.checks) &&
-        (costRuntime ? 'localCostMatrix' in value.checks : 'authAal2' in value.checks);
+        (costRuntime
+          ? 'localCostMatrix' in value.checks
+          : procurement
+            ? 'requirementsPersistedBeforeRanking' in value.checks
+            : 'authAal2' in value.checks);
     const validFreshMfaAction =
-      targeted || costRuntime
+      targeted || costRuntime || procurement
         ? value.freshMfaAction === undefined
         : value.freshMfaAction !== undefined;
     const validCostRuntimeProof = costRuntime
@@ -282,7 +293,26 @@ const AcceptanceEvidenceSchema = z
         value.costRuntimeProof.localProofSha === value.candidateSha &&
         value.correlationIds.includes(value.costRuntimeProof.correlationId)
       : value.costRuntimeProof === undefined;
-    if (!validMfa || !validChecks || !validFreshMfaAction || !validCostRuntimeProof) {
+    const validProcurementEvidence = procurement
+      ? value.procurementEvidence !== undefined &&
+        value.procurementEvidence.candidateSha === value.candidateSha &&
+        value.procurementEvidence.candidateTreeSha === value.candidateTreeSha &&
+        value.procurementEvidence.pullRequestNumber === value.pullRequestNumber &&
+        value.procurementEvidence.deploymentRunId === value.deploymentRunId &&
+        value.procurementEvidence.stagingOrigin === value.stagingOrigin &&
+        JSON.stringify(value.procurementEvidence.checks) === JSON.stringify(value.checks) &&
+        value.procurementEvidence.correlationIds.length === value.correlationIds.length &&
+        value.procurementEvidence.correlationIds.every(
+          (id, index) => id === value.correlationIds[index],
+        )
+      : value.procurementEvidence === undefined;
+    if (
+      !validMfa ||
+      !validChecks ||
+      !validFreshMfaAction ||
+      !validCostRuntimeProof ||
+      !validProcurementEvidence
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message:
@@ -366,6 +396,34 @@ const StagingAcceptanceInputSchema = z.discriminatedUnion('acceptanceProfile', [
       acceptedAt: z.string().datetime({ offset: true }),
     })
     .strict(),
+  z
+    .object({
+      candidateSha: ShaSchema,
+      deploymentRunId: RunIdSchema,
+      stagingOrigin: StageOrigin,
+      acceptanceProfile: z.literal('procurement'),
+      humanMfa: z.literal('user-completed'),
+      checks: ProcurementStagingAcceptanceChecksSchema,
+      procurementEvidence: ProcurementStagingAcceptanceEvidenceSchema,
+      correlationIds: z.array(SafeIdSchema).length(2),
+      acceptedAt: z.string().datetime({ offset: true }),
+    })
+    .strict()
+    .superRefine((value, context) => {
+      const proof = value.procurementEvidence;
+      if (
+        proof.candidateSha !== value.candidateSha ||
+        proof.deploymentRunId !== value.deploymentRunId ||
+        proof.stagingOrigin !== value.stagingOrigin ||
+        JSON.stringify(proof.checks) !== JSON.stringify(value.checks) ||
+        proof.correlationIds.some((id, index) => id !== value.correlationIds[index])
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'procurement acceptance metadata must match its evidence envelope',
+        });
+      }
+    }),
 ]);
 const CandidateStagingDeploymentEvidenceSchema = z
   .object({
@@ -465,6 +523,7 @@ const HostedStagingSuiteEvidenceSchema = z.discriminatedUnion('acceptanceProfile
   AuthBrowserStagingSuiteEvidenceSchema,
   TargetedStagingSuiteEvidenceSchema,
   CostRuntimeStagingSuiteEvidenceSchema,
+  ProcurementStagingAcceptanceEvidenceSchema,
 ]);
 
 const StagingAcceptanceCommandSchema = z
@@ -633,6 +692,7 @@ export function selectHostedAcceptanceProfile(
 ): HostedAcceptanceProfile {
   const normalizedFiles = files.map((raw) => raw.replaceAll('\\', '/'));
   const costRuntime = normalizedFiles.includes('docs/build/ticket-readbacks/AI-20.md');
+  const procurement = normalizedFiles.includes('docs/build/ticket-readbacks/AI-39.md');
   const authBrowser = normalizedFiles.some((file) => {
     return (
       file.startsWith('apps/web/app/api/auth/') ||
@@ -651,12 +711,23 @@ export function selectHostedAcceptanceProfile(
       file === 'tests/e2e/platform-authenticated.spec.ts'
     );
   });
+  if (costRuntime && procurement) {
+    throw new Error(
+      'AI-20 cost-runtime and Procurement proof cannot share one acceptance profile.',
+    );
+  }
   if (costRuntime && authBrowser) {
     throw new Error(
       'AI-20 cost-runtime and auth-browser proof cannot share one acceptance profile.',
     );
   }
-  const inferred = costRuntime ? 'cost-runtime' : authBrowser ? 'auth-browser' : 'targeted';
+  const inferred = costRuntime
+    ? 'cost-runtime'
+    : procurement
+      ? 'procurement'
+      : authBrowser
+        ? 'auth-browser'
+        : 'targeted';
   if (override !== 'auto' && override !== inferred) {
     throw new Error(
       `Requested staging profile '${override}' does not match inferred '${inferred}'.`,
@@ -838,6 +909,9 @@ export function createStagingAcceptanceStatus(input: unknown): StagingAcceptance
       : {}),
     ...(parsed.hostedSuite.acceptanceProfile === 'cost-runtime'
       ? { costRuntimeProof: parsed.hostedSuite.costRuntimeProof }
+      : {}),
+    ...(parsed.hostedSuite.acceptanceProfile === 'procurement'
+      ? { procurementEvidence: parsed.hostedSuite }
       : {}),
     correlationIds: parsed.hostedSuite.correlationIds,
     ...(parsed.hostedSuite.workflowRuns ? { workflowRuns: parsed.hostedSuite.workflowRuns } : {}),

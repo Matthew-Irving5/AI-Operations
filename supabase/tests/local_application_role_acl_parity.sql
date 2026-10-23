@@ -66,7 +66,12 @@ WITH grants AS (
       to_regprocedure('public.complete_canonical_action_execution(uuid,uuid,text,text,uuid,jsonb)'),
       to_regprocedure('public.load_canonical_action_execution_request(uuid)'),
       to_regprocedure('public.load_prompt_promotion_target(uuid,integer)'),
-      to_regprocedure('public.request_canonical_action_reversal(uuid,text)')
+      to_regprocedure('public.request_canonical_action_reversal(uuid,text)'),
+      -- AI-39 Procurement write RPCs have their exact grants checked in rpc_security.sql.
+      to_regprocedure('public.sync_procurement_research_run_status()'),
+      to_regprocedure('public.create_procurement_revision_request(uuid,uuid,text,numeric,text,integer,text,jsonb,uuid)'),
+      to_regprocedure('public.commit_procurement_decision(uuid,uuid,integer,jsonb,jsonb)'),
+      to_regprocedure('public.commit_instrumented_ai_procurement_report_with_queue(uuid,text,uuid,uuid,integer,jsonb,jsonb,text,text,text,text,text,jsonb,jsonb,jsonb,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)')
     )
 )
 SELECT is(
