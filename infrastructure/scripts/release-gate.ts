@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { Ai20CostRuntimeProofSchema } from './ai20-cost-runtime-proof.js';
+import { GoogleOAuthChecksSchema, GoogleOAuthStagingEvidenceSchema } from './google-oauth-staging-acceptance.js';
 import {
   CareerStagingAcceptanceChecksSchema,
   CareerStagingAcceptanceEvidenceSchema,
@@ -211,6 +212,7 @@ const AcceptanceProfileSchema = z.enum([
   'career-auth-browser',
   'planner-specialist',
   'worker-protocol',
+  'google-oauth',
 ]);
 
 export const WorkerProtocolChecksSchema = z
@@ -349,6 +351,7 @@ const AcceptanceEvidenceSchema = z
       CareerStagingAcceptanceChecksSchema,
       Ai17PlannerSpecialistChecksSchema,
       WorkerProtocolChecksSchema,
+      GoogleOAuthChecksSchema,
     ]),
     freshMfaAction: FreshMfaActionEvidenceSchema.optional(),
     promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
@@ -356,6 +359,7 @@ const AcceptanceEvidenceSchema = z
     careerEvidence: CareerStagingAcceptanceEvidenceSchema.optional(),
     authBrowserEvidence: z.lazy(() => AuthBrowserStagingSuiteEvidenceSchema).optional(),
     plannerSpecialistEvidence: Ai17PlannerSpecialistEvidenceSchema.optional(),
+    googleOAuthEvidence: GoogleOAuthStagingEvidenceSchema.optional(),
     correlationIds: z.array(SafeIdSchema).max(20),
     workflowRuns: Ai15WorkflowProofsSchema.optional(),
     acceptedAt: z.string().datetime({ offset: true }),
@@ -370,6 +374,7 @@ const AcceptanceEvidenceSchema = z
     const combinedCareer = value.acceptanceProfile === 'career-auth-browser';
     const plannerSpecialist = value.acceptanceProfile === 'planner-specialist';
     const workerProtocol = value.acceptanceProfile === 'worker-protocol';
+    const googleOAuth = value.acceptanceProfile === 'google-oauth';
     const validMfa = targeted || costRuntime || value.humanMfa === 'user-completed';
     const validChecks = targeted
       ? Array.isArray(value.checks)
@@ -380,11 +385,13 @@ const AcceptanceEvidenceSchema = z
             ? 'plannerToTravelJourney' in value.checks
             : workerProtocol
               ? 'realWindowsArtifact' in value.checks
-              : career
-                ? 'authenticatedCareerSync' in value.checks
-                : 'authAal2' in value.checks);
+              : googleOAuth
+                ? 'accountRole' in value.checks
+                : career
+                  ? 'authenticatedCareerSync' in value.checks
+                  : 'authAal2' in value.checks);
     const validFreshMfaAction =
-      targeted || costRuntime || plannerSpecialist || workerProtocol || (career && !combinedCareer)
+      targeted || costRuntime || plannerSpecialist || workerProtocol || googleOAuth || (career && !combinedCareer)
         ? value.freshMfaAction === undefined
         : value.freshMfaAction !== undefined;
     const validCostRuntimeProof = costRuntime
@@ -436,6 +443,22 @@ const AcceptanceEvidenceSchema = z
         JSON.stringify(value.freshMfaAction) ===
           JSON.stringify(value.authBrowserEvidence.freshMfaAction)
       : value.authBrowserEvidence === undefined;
+    const googleOAuthEvidence = value.googleOAuthEvidence;
+    const validGoogleOAuthEvidence = googleOAuth
+      ? googleOAuthEvidence !== undefined &&
+        googleOAuthEvidence.candidateSha === value.candidateSha &&
+        googleOAuthEvidence.candidateTreeSha === value.candidateTreeSha &&
+        googleOAuthEvidence.pullRequestNumber === value.pullRequestNumber &&
+        googleOAuthEvidence.deploymentRunId === value.deploymentRunId &&
+        googleOAuthEvidence.stagingOrigin === value.stagingOrigin &&
+        googleOAuthEvidence.humanMfa === value.humanMfa &&
+        googleOAuthEvidence.acceptedAt === value.acceptedAt &&
+        googleOAuthEvidence.correlationIds.length === value.correlationIds.length &&
+        googleOAuthEvidence.correlationIds.every(
+          (id, index) => id === value.correlationIds[index],
+        ) &&
+        JSON.stringify(value.checks) === JSON.stringify(googleOAuthEvidence.checks)
+      : googleOAuthEvidence === undefined;
     if (
       !validAuthBrowserEvidence ||
       !validMfa ||
@@ -443,7 +466,8 @@ const AcceptanceEvidenceSchema = z
       !validFreshMfaAction ||
       !validCostRuntimeProof ||
       !validPlannerSpecialistEvidence ||
-      !validCareerEvidence
+      !validCareerEvidence ||
+      !validGoogleOAuthEvidence
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -508,6 +532,19 @@ const StagingAcceptanceInputSchema = z.discriminatedUnion('acceptanceProfile', [
       acceptanceProfile: z.literal('worker-protocol'),
       humanMfa: z.literal('user-completed'),
       checks: WorkerProtocolChecksSchema,
+      correlationIds: z.array(SafeIdSchema).min(1).max(20),
+      acceptedAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+  z
+    .object({
+      candidateSha: ShaSchema,
+      deploymentRunId: RunIdSchema,
+      stagingOrigin: StageOrigin,
+      acceptanceProfile: z.literal('google-oauth'),
+      humanMfa: z.literal('user-completed'),
+      checks: GoogleOAuthChecksSchema,
+      googleOAuthEvidence: GoogleOAuthStagingEvidenceSchema,
       correlationIds: z.array(SafeIdSchema).min(1).max(20),
       acceptedAt: z.string().datetime({ offset: true }),
     })
@@ -742,6 +779,7 @@ const WorkerProtocolStagingSuiteEvidenceSchema = z
 
 const HostedStagingSuiteEvidenceSchema = z.discriminatedUnion('acceptanceProfile', [
   WorkerProtocolStagingSuiteEvidenceSchema,
+  GoogleOAuthStagingEvidenceSchema,
   AuthBrowserStagingSuiteEvidenceSchema,
   TargetedStagingSuiteEvidenceSchema,
   CostRuntimeStagingSuiteEvidenceSchema,
@@ -915,6 +953,9 @@ export function selectHostedAcceptanceProfile(
   override: string = 'auto',
 ): HostedAcceptanceProfile {
   const normalizedFiles = files.map((raw) => raw.replaceAll('\\', '/'));
+  const googleOAuth =
+    normalizedFiles.includes('docs/build/ticket-readbacks/AI-27.md') ||
+    normalizedFiles.includes('tests/e2e-live/google-oauth-acceptance.spec.ts');
   const plannerSpecialist =
     normalizedFiles.includes('docs/build/ticket-readbacks/AI-17.md') ||
     normalizedFiles.includes('tests/e2e-live/ai17-planner-specialist.spec.ts');
@@ -938,6 +979,7 @@ export function selectHostedAcceptanceProfile(
     file === 'packages/contracts/src/execution.test.ts' ||
     file === 'infrastructure/scripts/qa-workspace-dependencies.ts';
   const authBrowser = normalizedFiles.some((file) => {
+    if (googleOAuth && file === 'apps/web/middleware.ts') return false;
     if (workerProtocol && workerProtocolSurfacePath(file)) return false;
     if (careerSurfacePath(file)) return false;
     if (
@@ -962,6 +1004,12 @@ export function selectHostedAcceptanceProfile(
       file === 'tests/e2e/platform-authenticated.spec.ts'
     );
   });
+  if (googleOAuth && (costRuntime || plannerSpecialist || workerProtocol || career || authBrowser))
+    throw new Error('Candidate requires both ticket-specific and generic auth-browser proof');
+  if (override === 'google-oauth' && !googleOAuth)
+    throw new Error(
+      'google-oauth override requires the AI-27 readback or dedicated acceptance spec marker',
+    );
   if (
     (costRuntime && (plannerSpecialist || career)) ||
     ((costRuntime || plannerSpecialist) && authBrowser)
@@ -972,7 +1020,9 @@ export function selectHostedAcceptanceProfile(
   }
   if (workerProtocol && (costRuntime || authBrowser || career))
     throw new Error('Worker protocol requires its own staging candidate.');
-  const inferred = workerProtocol
+  const inferred = googleOAuth
+    ? 'google-oauth'
+    : workerProtocol
     ? 'worker-protocol'
     : costRuntime
       ? 'cost-runtime'
@@ -1169,6 +1219,9 @@ export function createStagingAcceptanceStatus(input: unknown): StagingAcceptance
       : {}),
     ...(parsed.hostedSuite.acceptanceProfile === 'planner-specialist'
       ? { plannerSpecialistEvidence: parsed.hostedSuite }
+      : {}),
+    ...(parsed.hostedSuite.acceptanceProfile === 'google-oauth'
+      ? { googleOAuthEvidence: parsed.hostedSuite }
       : {}),
     correlationIds: parsed.hostedSuite.correlationIds,
     ...('workflowRuns' in parsed.hostedSuite && parsed.hostedSuite.workflowRuns

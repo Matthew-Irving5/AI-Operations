@@ -1289,7 +1289,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /candidate_sha:/);
   assert.match(
     deployWorkflow,
-    /acceptance_profile:[\s\S]*options:\s*\[\s*auto,\s*targeted,\s*auth-browser,\s*cost-runtime,\s*planner-specialist,\s*worker-protocol,\s*procurement,\s*career,\s*career-auth-browser,\s*mobile-shortcuts,\s*mobile-shortcuts-action,\s*archive-restore,?\s*\]/,
+    /acceptance_profile:[\s\S]*options:\s*\[\s*auto,\s*targeted,\s*auth-browser,\s*cost-runtime,\s*google-oauth,\s*planner-specialist,\s*worker-protocol,\s*procurement,\s*career,\s*career-auth-browser,\s*mobile-shortcuts,\s*mobile-shortcuts-action,\s*archive-restore,?\s*\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1488,13 +1488,14 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(targetedAutoAcceptStep, /target_url:\$url/);
   assert.match(deployWorkflow, /state:"pending"[\s\S]*waiting for auth-browser acceptance/);
   assert.match(deployWorkflow, /waiting for one-call cost-runtime evidence/);
+  assert.match(deployWorkflow, /waiting for selected Google OAuth and Picker acceptance/);
   assert.match(
     deployWorkflow,
     /Hosted acceptance profile does not match the exact staged candidate profile/,
   );
   assert.match(
     deployWorkflow,
-    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "planner-specialist" \|\| "\$ACCEPTANCE_PROFILE" == "worker-protocol" \|\| "\$ACCEPTANCE_PROFILE" == "procurement" \|\| "\$ACCEPTANCE_PROFILE" == "career" \|\| "\$ACCEPTANCE_PROFILE" == "career-auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "mobile-shortcuts" \|\| "\$ACCEPTANCE_PROFILE" == "mobile-shortcuts-action" \|\| "\$ACCEPTANCE_PROFILE" == "archive-restore" \]\]/,
+    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "planner-specialist" \|\| "\$ACCEPTANCE_PROFILE" == "worker-protocol" \|\| "\$ACCEPTANCE_PROFILE" == "google-oauth" \|\| "\$ACCEPTANCE_PROFILE" == "procurement" \|\| "\$ACCEPTANCE_PROFILE" == "career" \|\| "\$ACCEPTANCE_PROFILE" == "career-auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "mobile-shortcuts" \|\| "\$ACCEPTANCE_PROFILE" == "mobile-shortcuts-action" \|\| "\$ACCEPTANCE_PROFILE" == "archive-restore" \]\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1891,4 +1892,153 @@ test('AI-17 producer evidence passes the strict staged release consumer only for
       }),
     /deployment_run_mismatch/,
   );
+});
+
+test('AI-27 Google OAuth profile routes the exact candidate through its strict evidence consumer', () => {
+  const ai27Files = [
+    'docs/build/ticket-readbacks/AI-27.md',
+    'supabase/functions/google-connection-sources/index.ts',
+  ];
+  assert.equal(selectHostedAcceptanceProfile(ai27Files), 'google-oauth');
+  assert.equal(
+    selectHostedAcceptanceProfile(['tests/e2e-live/google-oauth-acceptance.spec.ts']),
+    'google-oauth',
+  );
+  assert.equal(selectHostedAcceptanceProfile(ai27Files, 'google-oauth'), 'google-oauth');
+  assert.throws(
+    () =>
+      selectHostedAcceptanceProfile(
+        ['supabase/functions/google-connection-sources/index.ts'],
+        'google-oauth',
+      ),
+    /google-oauth override requires the AI-27 readback or dedicated acceptance spec marker/,
+  );
+  assert.throws(
+    () =>
+      selectHostedAcceptanceProfile(
+        [...ai27Files, 'apps/web/app/api/auth/mfa/verify/route.ts'],
+        'auto',
+      ),
+    /Candidate requires both ticket-specific and generic auth-browser proof/,
+  );
+
+  const checks = {
+    accountRole: 'personal_data_source',
+    expectedAccountMatched: 'passed',
+    approvedScopesMatched: 'passed',
+    pickerSelectedDedicatedFile: 'passed',
+    selectedOnlySync: 'passed',
+    idempotencyReplay: 'passed',
+    providerUpdateAppliedOnce: 'passed',
+    selectionRevokeStoppedImport: 'passed',
+    deselectedProvenanceRetained: 'passed',
+    oauthRevokeDegradedWithoutDataLoss: 'passed',
+    reconnectRecoveredSync: 'passed',
+    freshnessRecovered: 'passed',
+    unrelatedResourceUntouched: 'passed',
+  } as const;
+  const googleSuite = createHostedStagingSuiteEvidence({
+    schemaVersion: 1,
+    state: 'GOOGLE_OAUTH_STAGING_ACCEPTED',
+    acceptanceProfile: 'google-oauth',
+    candidateSha,
+    candidateTreeSha,
+    pullRequestNumber: 152,
+    deploymentRunId: '36474707377',
+    stagingOrigin: origin,
+    humanMfa: 'user-completed',
+    checks,
+    resourceFingerprints: {
+      selectedFile: 'a'.repeat(64),
+      unselectedFile: 'b'.repeat(64),
+      deselectedFile: 'c'.repeat(64),
+    },
+    correlationIds: ['google-sync-1', 'google-update-1'],
+    acceptedAt: '2026-10-22T10:00:00.000Z',
+  });
+  if (googleSuite.acceptanceProfile !== 'google-oauth')
+    throw new Error('Google OAuth evidence selected the wrong hosted profile.');
+  const status = createStagingAcceptanceStatus({
+    candidateSha,
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    state: 'success',
+    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'google-oauth' }),
+    hostedSuite: googleSuite,
+  });
+  assert.equal(status.status.state, 'success');
+  assert.equal(status.acceptance?.acceptanceProfile, 'google-oauth');
+  assert.deepEqual(status.acceptance?.checks, checks);
+  assert.deepEqual(status.acceptance?.googleOAuthEvidence, googleSuite);
+  const googleAcceptance = status.acceptance;
+  if (!googleAcceptance || googleAcceptance.acceptanceProfile !== 'google-oauth')
+    throw new Error('Google OAuth acceptance selected the wrong profile.');
+  const googleAcceptanceInput = {
+    candidateSha,
+    deploymentRunId: googleSuite.deploymentRunId,
+    stagingOrigin: googleSuite.stagingOrigin,
+    acceptanceProfile: 'google-oauth',
+    humanMfa: googleSuite.humanMfa,
+    checks: googleSuite.checks,
+    googleOAuthEvidence: googleSuite,
+    correlationIds: googleSuite.correlationIds,
+    acceptedAt: googleSuite.acceptedAt,
+  };
+  const acceptedResult = runCli('staging-accept', {
+    ready: ready(),
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    acceptance: googleAcceptanceInput,
+  });
+  assert.equal(acceptedResult.status, 0, acceptedResult.stderr);
+  const acceptedEvidence = JSON.parse(acceptedResult.stdout) as StagingAcceptanceEvidence;
+  assert.equal(acceptedEvidence.acceptanceProfile, 'google-oauth');
+  assert.deepEqual(acceptedEvidence.googleOAuthEvidence, googleSuite);
+  assert.equal(
+    acceptStagingCandidate({
+      ready: ready(),
+      currentPullRequestHeadSha: candidateSha,
+      currentPullRequestTreeSha: candidateTreeSha,
+      currentPullRequestNumber: 152,
+      acceptance: googleAcceptance,
+    }).acceptanceProfile,
+    'google-oauth',
+  );
+  assert.throws(
+    () =>
+      createStagingAcceptanceStatus({
+        candidateSha,
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        state: 'success',
+        deployment: candidateDeploymentEvidence({ acceptanceProfile: 'google-oauth' }),
+        hostedSuite: { ...googleSuite, candidateTreeSha: nextSha },
+      }),
+    /acceptance profile, MFA evidence, fresh-MFA action proof and check shape must agree/,
+  );
+  assert.throws(
+    () =>
+      acceptStagingCandidate({
+        ready: ready(),
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        acceptance: {
+          ...googleAcceptance,
+          googleOAuthEvidence: { ...googleSuite, candidateTreeSha: nextSha },
+        },
+      }),
+    /invalid_evidence/,
+  );
+  const flatProducer = runCli('staging-accept', {
+    ready: ready(),
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    acceptance: googleSuite,
+  });
+  assert.equal(flatProducer.status, 1);
 });
