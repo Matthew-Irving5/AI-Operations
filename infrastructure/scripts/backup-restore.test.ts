@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { dirname, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import {
   assertIsolatedRestoreTarget,
   corepackInvocation,
@@ -63,6 +64,9 @@ port = 55423
 [inbucket]
 port = 55424
 `;
+const isolatedRecoveryWorkdir = join(tmpdir(), 'ai45-recovery-target');
+const isolatedSourceWorkdir = join(tmpdir(), 'ai45-recovery-source');
+const repositoryWorkdir = join(tmpdir(), 'ai45-worktree');
 
 test('local recovery accepts only explicit loopback MinIO endpoints', () => {
   assert.equal(assertLoopbackS3Endpoint('http://127.0.0.1:9000'), 'http://127.0.0.1:9000');
@@ -81,20 +85,20 @@ test('local recovery accepts only explicit loopback MinIO endpoints', () => {
 
 test('local recovery requires an isolated workdir, project id, and port block', () => {
   const result = assertIsolatedLocalRecoveryTarget(
-    'C:\\recovery\\ai45',
-    'C:\\worktrees\\ai-45',
+    isolatedRecoveryWorkdir,
+    repositoryWorkdir,
     isolatedLocalConfig,
     'staging-project-ref',
     'production-project-ref',
   );
-  assert.equal(result.workdir, 'C:\\recovery\\ai45');
+  assert.equal(result.workdir, resolve(isolatedRecoveryWorkdir));
   assert.equal(result.projectId, 'aiops-ai45-recovery');
 
   assert.throws(
     () =>
       assertIsolatedLocalRecoveryTarget(
-        'C:\\worktrees\\ai-45\\supabase',
-        'C:\\worktrees\\ai-45',
+        join(repositoryWorkdir, 'supabase'),
+        repositoryWorkdir,
         isolatedLocalConfig,
         'staging-project-ref',
         'production-project-ref',
@@ -104,8 +108,8 @@ test('local recovery requires an isolated workdir, project id, and port block', 
   assert.throws(
     () =>
       assertIsolatedLocalRecoveryTarget(
-        'C:\\recovery\\ai45',
-        'C:\\worktrees\\ai-45',
+        isolatedRecoveryWorkdir,
+        repositoryWorkdir,
         isolatedLocalConfig.replace('aiops-ai45-recovery', 'ai-operations-local'),
         'staging-project-ref',
         'production-project-ref',
@@ -115,8 +119,8 @@ test('local recovery requires an isolated workdir, project id, and port block', 
   assert.throws(
     () =>
       assertIsolatedLocalRecoveryTarget(
-        'C:\\recovery\\ai45',
-        'C:\\worktrees\\ai-45',
+        isolatedRecoveryWorkdir,
+        repositoryWorkdir,
         isolatedLocalConfig.replace('55422', '54322'),
         'staging-project-ref',
         'production-project-ref',
@@ -126,8 +130,8 @@ test('local recovery requires an isolated workdir, project id, and port block', 
   assert.throws(
     () =>
       assertIsolatedLocalRecoveryTarget(
-        'relative\\recovery',
-        'C:\\worktrees\\ai-45',
+        join('relative', 'recovery'),
+        repositoryWorkdir,
         isolatedLocalConfig,
         'staging-project-ref',
         'production-project-ref',
@@ -138,8 +142,8 @@ test('local recovery requires an isolated workdir, project id, and port block', 
 
 test('local synthetic source allows its own project ref while excluding production', () => {
   const result = assertIsolatedLocalSourceProject(
-    'C:\\recovery\\ai45-source',
-    'C:\\worktrees\\ai-45',
+    isolatedSourceWorkdir,
+    repositoryWorkdir,
     isolatedLocalConfig.replace('aiops-ai45-recovery', 'aiops-ai45-source'),
     'production-project-ref',
   );
@@ -147,8 +151,8 @@ test('local synthetic source allows its own project ref while excluding producti
   assert.throws(
     () =>
       assertIsolatedLocalSourceProject(
-        'C:\\recovery\\ai45-source',
-        'C:\\worktrees\\ai-45',
+        isolatedSourceWorkdir,
+        repositoryWorkdir,
         isolatedLocalConfig.replace('aiops-ai45-recovery', 'production-project-ref'),
         'production-project-ref',
       ),
