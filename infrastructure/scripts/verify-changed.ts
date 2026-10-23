@@ -443,7 +443,9 @@ function runBoundary(plan: ImpactPlan): CheckResult[] {
       name: 'Chromium browser setup',
       command: 'corepack pnpm exec playwright install chromium',
       execute: () => {
-        if (!existsSync(chromium.executablePath())) run('corepack', playwrightInstallArgs());
+        if (!existsSync(chromium.executablePath())) {
+          run('corepack', playwrightInstallArgs(), { timeout: 1_200_000 });
+        }
       },
     });
     add(
