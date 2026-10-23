@@ -46,7 +46,7 @@ function isPersonalBlobUrl(value: string, repositoryName: string, path: string):
   try {
     const segments = new URL(value).pathname.split('/').filter(Boolean);
     return (
-      segments.length >= 6 &&
+      segments.length >= 5 &&
       segments[0] === allowedOwner &&
       segments[1] === repositoryName &&
       segments[2] === 'blob' &&

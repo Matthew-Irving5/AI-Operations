@@ -2,6 +2,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { z } from 'zod';
 import { parseLiveE2eEnvironment, stagingTarget } from '../../apps/web/lib/live-e2e-safety';
+import {
+  CareerOwnerDenialAuditColumns,
+  CareerOwnerDenialAuditRowSchema,
+} from '../../infrastructure/scripts/career-owner-denial-audit.js';
 import { writeCareerStagingAcceptanceEvidence } from '../../infrastructure/scripts/career-staging-acceptance-evidence.js';
 
 const env = parseLiveE2eEnvironment(process.env, 'auth-acceptance');
@@ -42,18 +46,6 @@ const OwnerDenialResponseSchema = z
     requestId: z.string().uuid(),
   })
   .passthrough();
-
-const AuditRowSchema = z
-  .object({
-    correlation_id: z.string().uuid(),
-    action_type: z.literal('github_career_sync_owner_denied'),
-    target_type: z.literal('github_owner'),
-    target_id: z.enum(['hard_denied', 'not_allowlisted']),
-    result: z.literal('denied'),
-    redacted_after: z.object({ provider_request_made: z.literal(false) }).passthrough(),
-    created_at: z.string().datetime({ offset: true }),
-  })
-  .strict();
 
 type DenialEvidence = {
   ownerClass: 'brightsg' | 'other';
@@ -198,7 +190,7 @@ async function verifyOwnerDenial(
   );
 
   const query = new URLSearchParams({
-    select: 'correlation_id,action_type,target_type,target_id,result,redacted_after',
+    select: CareerOwnerDenialAuditColumns.join(','),
     user_id: `eq.${userId}`,
     correlation_id: `eq.${requestId}`,
     action_type: 'eq.github_career_sync_owner_denied',
@@ -207,7 +199,7 @@ async function verifyOwnerDenial(
     result: 'eq.denied',
     limit: '2',
   });
-  const rows = (await auditRows(query)).map((row) => AuditRowSchema.parse(row));
+  const rows = (await auditRows(query)).map((row) => CareerOwnerDenialAuditRowSchema.parse(row));
   failUnless(
     rows.length === 1,
     'Career owner denial did not produce exactly one audit event for this request ID.',
@@ -268,25 +260,36 @@ test('staging proves personal Career sync provenance and separate non-owner deni
 
   await page.goto('/career');
   await expect(page.getByRole('heading', { name: 'Career Operations' })).toBeVisible();
-  const syncResponsePromise = page.waitForResponse(
-    (response) => {
-      const url = new URL(response.url());
-      return url.origin === stagingTarget.origin && url.pathname === '/api/career/github-sync';
+  const syncExchange: { status: number | null; payload: unknown } = {
+    status: null,
+    payload: null,
+  };
+  await page.route(
+    (url) => url.origin === stagingTarget.origin && url.pathname === '/api/career/github-sync',
+    async (route) => {
+      const upstreamResponse = await route.fetch();
+      const responseBody = await upstreamResponse.body();
+      syncExchange.status = upstreamResponse.status();
+      try {
+        syncExchange.payload = JSON.parse(responseBody.toString('utf8')) as unknown;
+      } catch {
+        syncExchange.payload = null;
+      }
+      await route.fulfill({ response: upstreamResponse });
     },
-    { timeout: 5 * 60_000 },
   );
   await page
     .getByRole('button', { name: 'Connect and sync personal GitHub (fresh MFA required)' })
     .click();
-  await expect(page.getByRole('region', { name: 'GitHub fresh MFA' })).toBeVisible();
+  await expect(page.getByRole('article', { name: 'GitHub fresh MFA' })).toBeVisible();
   await expect(page.getByLabel('Six-digit code')).toBeVisible();
   process.stdout.write(
     '\nAI-35 fresh sync challenge is visible in the headed Career browser. Complete Microsoft Authenticator in that browser; the sync will submit automatically. Do not send the code here.\n',
   );
-  const syncResponse = await syncResponsePromise;
-  const sync = SyncResultSchema.safeParse(await syncResponse.json());
+  const syncResponseStatus = syncExchange.status;
+  const sync = SyncResultSchema.safeParse(syncExchange.payload);
   failUnless(
-    syncResponse.status() === 200 && sync.success,
+    syncResponseStatus === 200 && sync.success,
     'Career personal GitHub sync did not complete successfully.',
   );
   await expect(page.getByRole('heading', { name: 'Career evidence snapshot' })).toBeVisible({
@@ -412,7 +415,7 @@ test('staging proves personal Career sync provenance and separate non-owner deni
     proof: {
       githubOwner: sync.data.owner,
       sync: {
-        httpStatus: syncResponse.status(),
+        httpStatus: syncResponseStatus,
         repositories: sync.data.repositories,
         evidenceRecords: sync.data.evidenceRecords,
         requestId: sync.data.requestId,

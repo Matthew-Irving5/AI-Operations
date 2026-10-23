@@ -1,10 +1,71 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
+import {
+  CareerOwnerDenialAuditColumns,
+  CareerOwnerDenialAuditRowSchema,
+} from './career-owner-denial-audit.js';
 import { CareerStagingAcceptanceEvidenceSchema } from './career-staging-acceptance-evidence.js';
 
 const syncRequestId = 'f46c233d-9971-422f-82a5-7262029570ab';
 const brightSgRequestId = '2b2bd312-6a89-4df4-87c3-25c575eb8f53';
 const otherOwnerRequestId = 'b4f31941-3cf3-4886-b8f0-a8a23662974c';
+
+test('Career denial REST projection contains and parses every strict audit field', () => {
+  const projectedRow = {
+    correlation_id: brightSgRequestId,
+    action_type: 'github_career_sync_owner_denied',
+    target_type: 'github_owner',
+    target_id: 'hard_denied',
+    result: 'denied',
+    redacted_after: { provider_request_made: false },
+    created_at: '2026-10-23T09:30:00.000Z',
+  };
+  const row = CareerOwnerDenialAuditRowSchema.parse(
+    Object.fromEntries(
+      CareerOwnerDenialAuditColumns.map((column) => [column, projectedRow[column]]),
+    ),
+  );
+
+  assert.deepEqual(
+    [...CareerOwnerDenialAuditColumns].sort(),
+    Object.keys(CareerOwnerDenialAuditRowSchema.shape).sort(),
+  );
+  assert.equal(row.created_at, projectedRow.created_at);
+});
+
+test('Career acceptance locator uses the accessible role rendered by the MFA action', async () => {
+  const [acceptanceSpec, syncControl] = await Promise.all([
+    readFile(new URL('../../tests/e2e-live/career-acceptance.spec.ts', import.meta.url), 'utf8'),
+    readFile(
+      new URL('../../apps/web/app/(app)/career/github-sync-control.tsx', import.meta.url),
+      'utf8',
+    ),
+  ]);
+
+  assert.match(syncControl, /<article className="stack" aria-label="GitHub fresh MFA">/);
+  assert.match(acceptanceSpec, /getByRole\('article', \{ name: 'GitHub fresh MFA' \}\)/);
+});
+
+test('Career acceptance captures the real sync response before page reload', async () => {
+  const acceptanceSpec = await readFile(
+    new URL('../../tests/e2e-live/career-acceptance.spec.ts', import.meta.url),
+    'utf8',
+  );
+  const captureStart = acceptanceSpec.indexOf('const syncExchange:');
+  const upstreamFetch = acceptanceSpec.indexOf('await route.fetch()', captureStart);
+  const bodyRead = acceptanceSpec.indexOf('await upstreamResponse.body()', upstreamFetch);
+  const responseFulfill = acceptanceSpec.indexOf(
+    'await route.fulfill({ response: upstreamResponse })',
+    bodyRead,
+  );
+
+  assert.ok(captureStart >= 0);
+  assert.ok(upstreamFetch > captureStart);
+  assert.ok(bodyRead > upstreamFetch);
+  assert.ok(responseFulfill > bodyRead);
+  assert.doesNotMatch(acceptanceSpec, /page\.waitForResponse\(/);
+});
 
 function validEvidence() {
   return {

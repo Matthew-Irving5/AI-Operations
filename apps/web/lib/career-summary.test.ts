@@ -233,4 +233,27 @@ describe('buildCareerEvidenceSnapshot', () => {
 
     expect(result).toEqual({ data: null, error: 'Career summary evidence failed validation.' });
   });
+
+  it('accepts root-level changed files with canonical GitHub blob URLs', () => {
+    const result = buildCareerEvidenceSnapshot([
+      pullRequestEvidence({
+        payload: {
+          kind: 'pull_request',
+          number: 17,
+          author: 'Matthew-Irving5',
+          changedFiles: [
+            {
+              path: 'feature.ts',
+              blobUrl:
+                'https://github.com/Matthew-Irving5/synthetic-career-project/blob/cccccccccccccccccccccccccccccccccccccccc/feature.ts',
+              additions: 12,
+            },
+          ],
+        },
+      }),
+    ]);
+
+    expect(result.error).toBeNull();
+    expect(result.data?.demonstratedSkills).toMatchObject([{ code: 'typescript-development' }]);
+  });
 });
