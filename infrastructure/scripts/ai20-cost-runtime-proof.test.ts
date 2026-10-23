@@ -20,6 +20,7 @@ const evidence = {
   pullRequestNumber: 178,
   deploymentRunId: '1234567890',
   stagingOrigin: 'https://ai-operations-staging.ai-operations.workers.dev',
+  humanMfa: 'not-required',
   checks: { localCostMatrix: 'passed', oneBoundedProviderCall: 'passed' },
   costRuntimeProof: {
     localProofSha: candidateSha,
@@ -75,7 +76,6 @@ const evidence = {
   },
   correlationIds: [correlationId],
   acceptedAt: '2026-10-22T12:00:00.000Z',
-  accepted: true,
 } as const;
 
 test('AI-20 cost runtime evidence accepts one candidate-bound bounded proof', () => {
@@ -84,7 +84,7 @@ test('AI-20 cost runtime evidence accepts one candidate-bound bounded proof', ()
   assert.equal(parsed.acceptanceProfile, 'cost-runtime');
   assert.equal(parsed.costRuntimeProof.workflowCode, 'systems-weekly-quality-platform');
   assert.equal(parsed.costRuntimeProof.reservationState, 'consumed');
-  assert.equal(parsed.humanMfa, undefined);
+  assert.equal(parsed.humanMfa, 'not-required');
 });
 
 test('AI-20 actual cost uses immutable pricing and all provider token classes', () => {
@@ -113,7 +113,10 @@ test('AI-20 cost runtime evidence records MFA only after an observed challenge',
     createAi20CostRuntimeProof({ ...evidence, humanMfa: 'user-completed' }).humanMfa,
     'user-completed',
   );
-  assert.throws(() => createAi20CostRuntimeProof({ ...evidence, humanMfa: 'not-required' }));
+  assert.equal(
+    createAi20CostRuntimeProof({ ...evidence, humanMfa: 'not-required' }).humanMfa,
+    'not-required',
+  );
 });
 
 test('AI-20 cost runtime evidence rejects cost, usage, and candidate contradictions', () => {

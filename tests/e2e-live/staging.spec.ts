@@ -1577,11 +1577,10 @@ test('staging proves one candidate-bound AI-20 Responses cost lifecycle @ai20-co
     pullRequestNumber: Number(pullRequestNumber),
     deploymentRunId,
     stagingOrigin: env.LIVE_E2E_BASE_URL,
-    ...(manualMfaChallengeObserved ? { humanMfa: 'user-completed' } : {}),
+    humanMfa: manualMfaChallengeObserved ? 'user-completed' : 'not-required',
     checks: { localCostMatrix: 'passed', oneBoundedProviderCall: 'passed' },
     costRuntimeProof,
     correlationIds: [workflowProof.correlationId],
     acceptedAt: new Date().toISOString(),
-    accepted: true,
   });
 });

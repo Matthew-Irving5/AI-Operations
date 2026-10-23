@@ -129,7 +129,7 @@ export const Ai20CostRuntimeEvidenceSchema = z
     pullRequestNumber: z.number().int().positive(),
     deploymentRunId: z.string().regex(/^[1-9][0-9]{0,19}$/),
     stagingOrigin: z.literal('https://ai-operations-staging.ai-operations.workers.dev'),
-    humanMfa: z.literal('user-completed').optional(),
+    humanMfa: z.enum(['user-completed', 'not-required']),
     checks: z
       .object({
         localCostMatrix: z.literal('passed'),
@@ -139,7 +139,6 @@ export const Ai20CostRuntimeEvidenceSchema = z
     costRuntimeProof: Ai20CostRuntimeProofSchema,
     correlationIds: z.array(SafeIdSchema).length(1),
     acceptedAt: z.string().datetime({ offset: true }),
-    accepted: z.literal(true),
   })
   .strict()
   .superRefine((evidence, context) => {
