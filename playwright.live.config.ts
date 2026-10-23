@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { liveE2eBrowserEnvironment } from './infrastructure/scripts/live-e2e-browser-environment';
 
 export default defineConfig({
   testDir: './tests/e2e-live',
@@ -14,6 +15,7 @@ export default defineConfig({
     screenshot: 'off',
     video: 'off',
     launchOptions: {
+      env: liveE2eBrowserEnvironment(process.env),
       headless: process.env.LIVE_E2E_MANUAL_MFA !== 'true',
       ...(process.env.LIVE_E2E_MANUAL_MFA === 'true'
         ? { args: ['--window-position=40,40', '--window-size=1280,900'] }
