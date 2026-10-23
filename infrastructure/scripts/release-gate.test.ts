@@ -28,6 +28,11 @@ import {
   type StagingDeploymentEvidence,
 } from './release-gate.js';
 import { ProcurementStagingAcceptanceChecksSchema } from './procurement-live-acceptance.js';
+import {
+  assertMobileStagingReadTarget,
+  buildMobileStagingSql,
+  readMobileStagingRows,
+} from './mobile-staging-reader.js';
 
 const candidateSha = 'a'.repeat(40);
 const nextSha = 'b'.repeat(40);
@@ -1208,6 +1213,115 @@ test('AI-44 staging runner uses owner and canonical RPC reads for protected stat
       ].join('\n'),
     ),
   );
+});
+
+test('AI-28 mobile runner keeps protected reads off service-role PostgREST and bounds staging SQL', async () => {
+  const source = await readFile(
+    new URL('../../tests/e2e-live/mobile-shortcuts-acceptance.spec.ts', import.meta.url),
+    'utf8',
+  );
+  const assertMobileRunnerContract = (candidate: string) => {
+    for (const table of [
+      'mobile_snapshots',
+      'mobile_snapshot_sources',
+      'mobile_ingestion_records',
+      'mobile_record_adaptations',
+    ]) {
+      assert.match(candidate, new RegExp(`protectedStagingRows[\\s\\S]{0,120}['"]${table}['"]`));
+      assert.doesNotMatch(
+        candidate,
+        new RegExp(`(?:serviceRows|stagingRows)[\\s\\S]{0,120}['"]${table}['"]`),
+      );
+    }
+    assert.match(candidate, /authorization:\s*`Bearer \$\{session\.accessToken\}`/);
+    assert.match(candidate, /readMobileStagingRows<T>\(table, filters\)/);
+  };
+  const previousRunnerShape = `
+    async function serviceRows(table, filters) {
+      return fetch('/rest/v1/' + table, {
+        headers: { authorization: 'Bearer ' + serviceRoleKey }
+      });
+    }
+    const snapshot = await serviceRows('mobile_snapshots', { select: 'id' });
+  `;
+  assert.throws(() => assertMobileRunnerContract(previousRunnerShape));
+  assertMobileRunnerContract(source);
+
+  const snapshotId = '00000000-0000-4000-8000-000000000001';
+  assert.match(
+    buildMobileStagingSql('mobile_snapshots', {
+      select: 'id,snapshot_id',
+      device_id: `eq.${snapshotId}`,
+      received_at: 'gt.2026-10-23T10:00:00.000Z',
+      received_count: 'eq.0',
+      limit: '1',
+    }),
+    /^select id, snapshot_id from public\.mobile_snapshots where .* limit 1$/,
+  );
+  assert.throws(
+    () => buildMobileStagingSql('actions', { select: 'id', id: `eq.${snapshotId}` }),
+    /not allowlisted/,
+  );
+  assert.throws(
+    () =>
+      buildMobileStagingSql('mobile_snapshots', {
+        select: 'raw_record',
+        device_id: `eq.${snapshotId}`,
+      }),
+    /selected column is not allowlisted/,
+  );
+  assert.throws(
+    () =>
+      buildMobileStagingSql('mobile_snapshots', {
+        select: 'id',
+        device_id: `eq.${snapshotId}' OR true --`,
+      }),
+    /UUID filter is invalid/,
+  );
+  assert.throws(
+    () => buildMobileStagingSql('mobile_snapshots', { select: 'id' }),
+    /required synthetic-row scope/,
+  );
+
+  const target = {
+    STAGING_SUPABASE_PROJECT_REF: 'jqtssfrfocnibffdkqch',
+    STAGING_SUPABASE_URL: 'https://jqtssfrfocnibffdkqch.supabase.co',
+    LIVE_E2E_SUPABASE_URL: 'https://jqtssfrfocnibffdkqch.supabase.co',
+    LIVE_E2E_CANDIDATE_SHA: 'a'.repeat(40),
+    LIVE_E2E_CANDIDATE_TREE_SHA: 'b'.repeat(40),
+    LIVE_E2E_PULL_REQUEST_NUMBER: '181',
+    LIVE_E2E_DEPLOYMENT_RUN_ID: '39949086115',
+    STAGING_SUPABASE_ACCESS_TOKEN: 'test-token-never-logged',
+  };
+  assert.doesNotThrow(() => assertMobileStagingReadTarget(target));
+  assert.throws(
+    () => assertMobileStagingReadTarget({ ...target, STAGING_SUPABASE_PROJECT_REF: 'production' }),
+    /fixed staging project/,
+  );
+
+  let requestUrl = '';
+  let requestBody: unknown;
+  await readMobileStagingRows(
+    'mobile_snapshots',
+    {
+      select: 'id',
+      snapshot_id: `eq.${snapshotId}`,
+    },
+    target,
+    async (input, init) => {
+      requestUrl = String(input);
+      requestBody = JSON.parse(String(init?.body)) as unknown;
+      return new Response(JSON.stringify([{ id: snapshotId }]), { status: 200 });
+    },
+  );
+  assert.equal(
+    requestUrl,
+    'https://api.supabase.com/v1/projects/jqtssfrfocnibffdkqch/database/query',
+  );
+  assert.deepEqual(requestBody, {
+    query: `select id from public.mobile_snapshots where snapshot_id = '${snapshotId}' limit 500`,
+    read_only: true,
+  });
 });
 
 test('AI-28 mobile and AI-44 action acceptance require separate candidate-bound proofs', () => {

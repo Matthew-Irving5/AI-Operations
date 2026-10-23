@@ -2,8 +2,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline/promises';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { parseLiveE2eEnvironment, stagingTarget } from '../../apps/web/lib/live-e2e-safety';
+import { readMobileStagingRows } from '../../infrastructure/scripts/mobile-staging-reader';
 
 const env = parseLiveE2eEnvironment(process.env, 'suite');
 const anonKey = process.env.LIVE_E2E_SUPABASE_ANON_KEY ?? process.env.STAGING_SUPABASE_ANON_KEY;
@@ -128,18 +129,128 @@ function eventRecord(title: string, externalId: string, modifiedAt: string): Cal
   };
 }
 
-async function serviceRows<T>(table: string, filters: Record<string, string>): Promise<T[]> {
+async function protectedStagingRows<T extends object>(
+  table: string,
+  filters: Record<string, string>,
+): Promise<T[]> {
+  return readMobileStagingRows<T>(table, filters);
+}
+
+const ownerReadContracts = {
+  apple_bridge_devices: {
+    columns: ['id', 'user_id', 'revoked_at'],
+    filters: ['id'],
+    scopes: [['id']],
+  },
+  data_freshness: {
+    columns: ['state', 'last_success_at'],
+    filters: ['user_id', 'source'],
+    scopes: [['user_id', 'source']],
+  },
+  mobile_calendar_event_items: {
+    columns: ['id', 'raw_record_id'],
+    filters: ['user_id', 'raw_record_id', 'title'],
+    scopes: [
+      ['user_id', 'raw_record_id'],
+      ['user_id', 'title'],
+    ],
+  },
+} as const;
+
+function readOwnerSession(cookies: Array<{ name: string; value: string }>): {
+  accessToken: string;
+  userId: string;
+} {
+  const cookieBase = `sb-${stagingTarget.projectRef}-auth-token`;
+  const chunks = cookies
+    .filter(({ name }) => name === cookieBase || name.startsWith(`${cookieBase}.`))
+    .sort((left, right) => {
+      const leftIndex = Number(left.name.slice(cookieBase.length + 1)) || 0;
+      const rightIndex = Number(right.name.slice(cookieBase.length + 1)) || 0;
+      return leftIndex - rightIndex;
+    });
+  if (chunks.length === 0) throw new Error('AI28 owner browser auth cookie is missing.');
+  const encoded = chunks.map(({ value }) => value).join('');
+  const json = encoded.startsWith('base64-')
+    ? Buffer.from(encoded.slice('base64-'.length), 'base64url').toString('utf8')
+    : decodeURIComponent(encoded);
+  const session = JSON.parse(json) as { access_token?: string };
+  const accessToken = session.access_token;
+  const claimsPart = accessToken?.split('.')[1];
+  if (!accessToken || !claimsPart) throw new Error('AI28 owner browser access token is invalid.');
+  const claims = JSON.parse(Buffer.from(claimsPart, 'base64url').toString('utf8')) as {
+    aal?: string;
+    exp?: number;
+    sub?: string;
+  };
+  if (
+    claims.aal !== 'aal2' ||
+    !claims.sub ||
+    !/^[0-9a-f-]{36}$/i.test(claims.sub) ||
+    typeof claims.exp !== 'number' ||
+    claims.exp <= Math.floor(Date.now() / 1000)
+  ) {
+    throw new Error('AI28 owner browser session is not a current AAL2 session.');
+  }
+  return { accessToken, userId: claims.sub };
+}
+
+async function ownerRows<T extends object>(
+  page: Page,
+  tableName: string,
+  filters: Record<string, string>,
+): Promise<T[]> {
+  if (!Object.hasOwn(ownerReadContracts, tableName))
+    throw new Error('AI28 owner Data API table is not allowlisted.');
+  const table = tableName as keyof typeof ownerReadContracts;
+  const contract = ownerReadContracts[table];
+  const selected = (filters.select ?? '').split(',');
+  if (
+    !filters.select ||
+    selected.length === 0 ||
+    selected.some((column) => !contract.columns.includes(column as never)) ||
+    Object.keys(filters).some((column) => !['select', ...contract.filters].includes(column)) ||
+    !(contract.scopes as readonly (readonly string[])[]).some((scope) =>
+      scope.every((column) => Object.hasOwn(filters, column)),
+    )
+  ) {
+    throw new Error(`AI28 owner Data API query is outside the ${table} read contract.`);
+  }
+  const session = readOwnerSession(await page.context().cookies(stagingTarget.origin));
+  if (table !== 'apple_bridge_devices' && filters.user_id !== `eq.${session.userId}`) {
+    throw new Error(`AI28 owner Data API query for ${table} does not match the signed-in owner.`);
+  }
+  for (const [column, expression] of Object.entries(filters)) {
+    if (column === 'select') continue;
+    if (column === 'title') {
+      if (!/^like\.AI28_SYNTH_[A-Za-z0-9_-]{1,80}\*$/.test(expression))
+        throw new Error('AI28 owner Data API title filter must use the synthetic fixture prefix.');
+    } else if (column === 'source') {
+      if (expression !== 'eq.apple_calendar')
+        throw new Error('AI28 owner Data API source filter is not allowlisted.');
+    } else if (!/^eq\.[0-9a-f-]{36}$/i.test(expression)) {
+      throw new Error(`AI28 owner Data API filter is invalid for ${table}.${column}.`);
+    }
+  }
   const url = new URL(`/rest/v1/${table}`, env.LIVE_E2E_SUPABASE_URL);
-  url.search = new URLSearchParams({ select: '*', ...filters }).toString();
+  for (const [column, value] of Object.entries(filters)) url.searchParams.set(column, value);
   const response = await fetch(url, {
     headers: {
-      apikey: env.LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY,
-      authorization: `Bearer ${env.LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: anonKey!,
+      authorization: `Bearer ${session.accessToken}`,
     },
+    cache: 'no-store',
   });
   if (!response.ok)
-    throw new Error(`Staging read of ${table} failed with HTTP ${response.status}.`);
-  return (await response.json()) as T[];
+    throw new Error(`AI28 owner read of ${table} failed with HTTP ${response.status}.`);
+  const rows: unknown = await response.json();
+  if (
+    !Array.isArray(rows) ||
+    rows.some((row) => typeof row !== 'object' || row === null || Array.isArray(row))
+  ) {
+    throw new Error(`AI28 owner read of ${table} returned an unexpected row shape.`);
+  }
+  return rows as T[];
 }
 
 async function mobileRequest(
@@ -226,7 +337,7 @@ async function waitForSnapshot(
 ): Promise<RawSnapshot> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const rows = await serviceRows<RawSnapshot>('mobile_snapshots', {
+    const rows = await protectedStagingRows<RawSnapshot>('mobile_snapshots', {
       select:
         'id,snapshot_id,request_id,device_id,received_at,received_count,client_type,client_version,status',
       device_id: `eq.${deviceId}`,
@@ -342,11 +453,11 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
   const shortcutSnapshot = await waitForSnapshot(deviceId!, shortcutStartedAt);
   expect(shortcutSnapshot.status).toBe('accepted');
   expect(shortcutSnapshot.client_version).toBe('1.0.0');
-  const shortcutSources = await serviceRows<{ id: string }>('mobile_snapshot_sources', {
+  const shortcutSources = await protectedStagingRows<{ id: string }>('mobile_snapshot_sources', {
     select: 'id',
     snapshot_internal_id: `eq.${shortcutSnapshot.id}`,
   });
-  const shortcutRecords = await serviceRows<{ id: string }>('mobile_ingestion_records', {
+  const shortcutRecords = await protectedStagingRows<{ id: string }>('mobile_ingestion_records', {
     select: 'id',
     snapshot_internal_id: `eq.${shortcutSnapshot.id}`,
   });
@@ -354,7 +465,8 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
   expect(shortcutRecords).toHaveLength(0);
   await confirmShortcutRun();
 
-  const devices = await serviceRows<{ id: string; user_id: string; revoked_at: string | null }>(
+  const devices = await ownerRows<{ id: string; user_id: string; revoked_at: string | null }>(
+    page,
     'apple_bridge_devices',
     { select: 'id,user_id,revoked_at', id: `eq.${deviceId}` },
   );
@@ -370,7 +482,7 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
   const staleEnvelope = envelope([], false);
   const staleResult = await mobileRequest(token!, JSON.stringify(staleEnvelope));
   expect(staleResult.status).toBe(202);
-  const staleRows = await serviceRows<{ state: string }>('data_freshness', freshnessFilter);
+  const staleRows = await ownerRows<{ state: string }>(page, 'data_freshness', freshnessFilter);
   expect(staleRows).toHaveLength(1);
   expect(staleRows[0]?.state).toBe('stale');
 
@@ -383,7 +495,7 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
   const validResult = await mobileRequest(token!, JSON.stringify(validEnvelope));
   expect(validResult.status).toBe(202);
   expect(validResult.body.adaptation).toMatchObject({ adapted: 2, duplicate: 0, rejected: 0 });
-  const validSnapshotRows = await serviceRows<RawSnapshot>('mobile_snapshots', {
+  const validSnapshotRows = await protectedStagingRows<RawSnapshot>('mobile_snapshots', {
     select:
       'id,snapshot_id,request_id,device_id,received_at,received_count,client_type,client_version,status',
     device_id: `eq.${deviceId}`,
@@ -391,7 +503,7 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
   });
   expect(validSnapshotRows).toHaveLength(1);
   const validRaw = validSnapshotRows[0]!;
-  const rawRecords = await serviceRows<{ id: string; record_id: string }>(
+  const rawRecords = await protectedStagingRows<{ id: string; record_id: string }>(
     'mobile_ingestion_records',
     {
       select: 'id,record_id',
@@ -400,7 +512,7 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
     },
   );
   expect(rawRecords).toHaveLength(1);
-  const provenance = await serviceRows<{
+  const provenance = await protectedStagingRows<{
     id: string;
     status: string;
     derived_row_id: string | null;
@@ -412,7 +524,8 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
   });
   expect(provenance).toHaveLength(1);
   expect(provenance[0]).toMatchObject({ status: 'adapted' });
-  const canonical = await serviceRows<{ id: string; raw_record_id: string }>(
+  const canonical = await ownerRows<{ id: string; raw_record_id: string }>(
+    page,
     'mobile_calendar_event_items',
     {
       select: 'id,raw_record_id',
@@ -422,21 +535,29 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
   );
   expect(canonical).toHaveLength(1);
   expect(canonical[0]?.id).toBe(provenance[0]?.derived_row_id);
-  const canonicalBeforeReplay = await serviceRows<{ id: string }>('mobile_calendar_event_items', {
-    select: 'id',
-    user_id: `eq.${userId}`,
-    title: `like.${titlePrefix}*`,
-  });
+  const canonicalBeforeReplay = await ownerRows<{ id: string }>(
+    page,
+    'mobile_calendar_event_items',
+    {
+      select: 'id',
+      user_id: `eq.${userId}`,
+      title: `like.${titlePrefix}*`,
+    },
+  );
   expect(canonicalBeforeReplay).toHaveLength(2);
 
   const replayResult = await mobileRequest(token!, JSON.stringify(validEnvelope));
   expect(replayResult.status).toBe(200);
   expect(replayResult.body.replay).toBe(true);
-  const canonicalAfterReplay = await serviceRows<{ id: string }>('mobile_calendar_event_items', {
-    select: 'id',
-    user_id: `eq.${userId}`,
-    title: `like.${titlePrefix}*`,
-  });
+  const canonicalAfterReplay = await ownerRows<{ id: string }>(
+    page,
+    'mobile_calendar_event_items',
+    {
+      select: 'id',
+      user_id: `eq.${userId}`,
+      title: `like.${titlePrefix}*`,
+    },
+  );
   expect(canonicalAfterReplay.map(({ id }) => id).sort()).toEqual(
     canonicalBeforeReplay.map(({ id }) => id).sort(),
   );
@@ -451,13 +572,18 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
   const updatedResult = await mobileRequest(token!, JSON.stringify(updatedEnvelope));
   expect(updatedResult.status).toBe(202);
   expect(updatedResult.body.adaptation).toMatchObject({ adapted: 1, duplicate: 1, rejected: 0 });
-  const canonicalAfterUpdate = await serviceRows<{ id: string }>('mobile_calendar_event_items', {
-    select: 'id',
-    user_id: `eq.${userId}`,
-    title: `like.${titlePrefix}*`,
-  });
+  const canonicalAfterUpdate = await ownerRows<{ id: string }>(
+    page,
+    'mobile_calendar_event_items',
+    {
+      select: 'id',
+      user_id: `eq.${userId}`,
+      title: `like.${titlePrefix}*`,
+    },
+  );
   expect(canonicalAfterUpdate).toHaveLength(3);
-  const freshRows = await serviceRows<{ state: string; last_success_at: string | null }>(
+  const freshRows = await ownerRows<{ state: string; last_success_at: string | null }>(
+    page,
     'data_freshness',
     freshnessFilter,
   );
@@ -478,7 +604,7 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
     JSON.stringify(wrongTokenEnvelope),
   );
   expect(wrongTokenResult.status).toBe(401);
-  const rejectedInvalidSnapshots = await serviceRows<{ id: string }>('mobile_snapshots', {
+  const rejectedInvalidSnapshots = await protectedStagingRows<{ id: string }>('mobile_snapshots', {
     select: 'id',
     device_id: `eq.${deviceId}`,
     snapshot_id: `in.(${wrongSchemaEnvelope.snapshot_id},${wrongTokenEnvelope.snapshot_id})`,
@@ -496,19 +622,19 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
   expect(retryResult.status).toBe(200);
   expect(retryResult.body.replay).toBe(true);
   expect(retryResult.body.adaptation).toMatchObject({ adapted: 1, duplicate: 0, rejected: 0 });
-  const retrySnapshots = await serviceRows<RawSnapshot>('mobile_snapshots', {
+  const retrySnapshots = await protectedStagingRows<RawSnapshot>('mobile_snapshots', {
     select:
       'id,snapshot_id,request_id,device_id,received_at,received_count,client_type,client_version,status',
     device_id: `eq.${deviceId}`,
     snapshot_id: `eq.${retryEnvelope.snapshot_id}`,
   });
   expect(retrySnapshots).toHaveLength(1);
-  const retryRawRows = await serviceRows<{ id: string }>('mobile_ingestion_records', {
+  const retryRawRows = await protectedStagingRows<{ id: string }>('mobile_ingestion_records', {
     select: 'id',
     snapshot_internal_id: `eq.${retrySnapshots[0]!.id}`,
   });
   expect(retryRawRows).toHaveLength(1);
-  const retryProvenance = await serviceRows<{
+  const retryProvenance = await protectedStagingRows<{
     id: string;
     status: string;
     derived_row_id: string | null;
@@ -520,8 +646,9 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
   });
   expect(retryProvenance).toHaveLength(1);
   expect(retryProvenance[0]?.status).toBe('adapted');
-  const retryCanonical = await serviceRows<{ id: string }>('mobile_calendar_event_items', {
+  const retryCanonical = await ownerRows<{ id: string }>(page, 'mobile_calendar_event_items', {
     select: 'id',
+    user_id: `eq.${userId}`,
     raw_record_id: `eq.${retryRawRows[0]!.id}`,
   });
   expect(retryCanonical).toHaveLength(1);
@@ -547,7 +674,7 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
   const revokedRequestEnvelope = envelope([]);
   const revokedResult = await mobileRequest(token!, JSON.stringify(revokedRequestEnvelope));
   expect(revokedResult.status).toBe(401);
-  const revokedWrites = await serviceRows<{ id: string }>('mobile_snapshots', {
+  const revokedWrites = await protectedStagingRows<{ id: string }>('mobile_snapshots', {
     select: 'id',
     device_id: `eq.${deviceId}`,
     snapshot_id: `eq.${revokedRequestEnvelope.snapshot_id}`,
