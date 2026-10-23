@@ -9,6 +9,7 @@ create temporary table rpc_security_expected (
 ) on commit drop;
 
 insert into rpc_security_expected values
+  ('public.prevent_model_pricing_version_mutation()', false, false, false),
   ('public.is_allowed_aal2()', false, true, false),
   ('public.claim_job_queue(text,integer)', false, false, true),
   ('public.claim_job_queue_internal(text,integer,uuid)', false, false, false),
@@ -40,10 +41,10 @@ insert into rpc_security_expected values
   ('public.create_on_demand_run_request(uuid,uuid,text,numeric,text,integer,text,jsonb)', false, false, true),
   ('public.consume_edge_request_quota(uuid,text,integer)', false, false, true),
   ('public.complete_deterministic_workflow_run(uuid)', false, false, true),
-  ('public.reserve_instrumented_ai_call(uuid,uuid,uuid,uuid,numeric,text,jsonb)', false, false, true),
+  ('public.reserve_instrumented_ai_call(uuid,uuid,uuid,uuid,numeric,text,jsonb,uuid)', false, false, true),
   ('public.settle_instrumented_ai_call(uuid,numeric,bigint,bigint,bigint,bigint,integer,jsonb,jsonb,boolean)', false, false, true),
   ('public.mark_instrumented_ai_call_submitted(uuid,text)', false, false, true),
-  ('public.calculate_instrumented_ai_cost(uuid,bigint,bigint,bigint,integer)', false, false, true),
+  ('public.calculate_instrumented_ai_cost(uuid,bigint,bigint,bigint,integer,bigint,uuid)', false, false, true),
   ('public.execute_digital_estate_workflow(uuid)', false, false, true),
   ('public.record_instrumented_ai_reconciliation_failure(uuid,text,jsonb)', false, false, true),
   ('public.commit_instrumented_ai_report(uuid,text,text,text,text,text,jsonb,jsonb,jsonb,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)', false, false, true),

@@ -119,12 +119,14 @@ export type Database = {
           actual_cost: number | null;
           actual_input_tokens: number | null;
           actual_output_tokens: number | null;
+          cache_write_tokens: number;
           cached_input_tokens: number;
           completed_at: string | null;
           created_at: string;
           estimated_cost: number;
           id: string;
           model_id: string | null;
+          model_pricing_id: string | null;
           model_route: string | null;
           prompt_version_id: string | null;
           provider_usage: NonNullable<Json>;
@@ -145,12 +147,14 @@ export type Database = {
           actual_cost?: number | null;
           actual_input_tokens?: number | null;
           actual_output_tokens?: number | null;
+          cache_write_tokens?: number;
           cached_input_tokens?: number;
           completed_at?: string | null;
           created_at?: string;
           estimated_cost?: number;
           id?: string;
           model_id?: string | null;
+          model_pricing_id?: string | null;
           model_route?: string | null;
           prompt_version_id?: string | null;
           provider_usage?: NonNullable<Json>;
@@ -171,12 +175,14 @@ export type Database = {
           actual_cost?: number | null;
           actual_input_tokens?: number | null;
           actual_output_tokens?: number | null;
+          cache_write_tokens?: number;
           cached_input_tokens?: number;
           completed_at?: string | null;
           created_at?: string;
           estimated_cost?: number;
           id?: string;
           model_id?: string | null;
+          model_pricing_id?: string | null;
           model_route?: string | null;
           prompt_version_id?: string | null;
           provider_usage?: NonNullable<Json>;
@@ -199,6 +205,13 @@ export type Database = {
             columns: ['model_id'];
             isOneToOne: false;
             referencedRelation: 'ai_model_catalog';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'ai_calls_model_pricing_id_fkey';
+            columns: ['model_pricing_id'];
+            isOneToOne: false;
+            referencedRelation: 'model_pricing';
             referencedColumns: ['id'];
           },
           {
@@ -6593,6 +6606,7 @@ export type Database = {
           cancelled_at: string | null;
           completed_at: string | null;
           correlation_id: string;
+          cost_root_run_id: string | null;
           error_code: string | null;
           id: string;
           idempotency_key: string;
@@ -6610,6 +6624,7 @@ export type Database = {
           cancelled_at?: string | null;
           completed_at?: string | null;
           correlation_id?: string;
+          cost_root_run_id?: string | null;
           error_code?: string | null;
           id?: string;
           idempotency_key: string;
@@ -6627,6 +6642,7 @@ export type Database = {
           cancelled_at?: string | null;
           completed_at?: string | null;
           correlation_id?: string;
+          cost_root_run_id?: string | null;
           error_code?: string | null;
           id?: string;
           idempotency_key?: string;
@@ -6640,6 +6656,13 @@ export type Database = {
           workflow_definition_id?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: 'workflow_runs_cost_root_run_id_fkey';
+            columns: ['cost_root_run_id'];
+            isOneToOne: false;
+            referencedRelation: 'workflow_runs';
+            referencedColumns: ['id'];
+          },
           {
             foreignKeyName: 'workflow_runs_user_id_fkey';
             columns: ['user_id'];
@@ -6756,10 +6779,12 @@ export type Database = {
       };
       calculate_instrumented_ai_cost: {
         Args: {
+          p_cache_write_tokens?: number;
           p_cached_input_tokens: number;
           p_input_tokens: number;
           p_model_id: string;
           p_output_tokens: number;
+          p_pricing_id?: string;
           p_search_calls: number;
         };
         Returns: number;
@@ -7382,6 +7407,7 @@ export type Database = {
         Args: {
           p_estimated_cost: number;
           p_model_id: string;
+          p_pricing_id?: string;
           p_prompt_version_id: string;
           p_redacted_trace?: Json;
           p_request_id: string;
@@ -7419,12 +7445,14 @@ export type Database = {
           actual_cost: number | null;
           actual_input_tokens: number | null;
           actual_output_tokens: number | null;
+          cache_write_tokens: number;
           cached_input_tokens: number;
           completed_at: string | null;
           created_at: string;
           estimated_cost: number;
           id: string;
           model_id: string | null;
+          model_pricing_id: string | null;
           model_route: string | null;
           prompt_version_id: string | null;
           provider_usage: NonNullable<Json>;

@@ -48,6 +48,7 @@ trigger functions that PostgreSQL invokes through their trigger—not RPCs:
 - `record_legacy_apple_bridge_freshness()`
 - `claim_job_queue_internal(text,integer,uuid)` (only the two service-role worker RPCs invoke it)
 - `enforce_notification_user_recipient()` (PostgreSQL invokes this trigger; it is not an RPC.)
+- `prevent_model_pricing_version_mutation()` (PostgreSQL invokes this trigger; it is not an RPC.)
 
 The test matrix requires every current public SECURITY DEFINER function to be
 classified. Adding another one requires an explicit caller decision and
