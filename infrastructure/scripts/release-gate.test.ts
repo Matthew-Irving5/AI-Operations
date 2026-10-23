@@ -1268,6 +1268,9 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /DISPATCH_SHA: \$\{\{ github\.sha \}\}/);
   assert.match(deployWorkflow, /DISPATCH_REF: \$\{\{ github\.ref \}\}/);
   const leaseCheck = deployWorkflow.indexOf('name: Check shared staging acceptance lease');
+  const migrationPreflight = deployWorkflow.indexOf(
+    'name: Preflight candidate migration history before deployment',
+  );
   const deployPending = deployWorkflow.indexOf('name: Set candidate status while staging deploys');
   const targetedAutoAccept = deployWorkflow.indexOf('name: Auto-accept targeted staging candidate');
   const authBrowserPending = deployWorkflow.indexOf(
@@ -1306,6 +1309,30 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.ok(
     leaseCheck < deployPending,
     'lease guard must run before the candidate staging status/deployment begins',
+  );
+  const workerDeploy = deployWorkflow.indexOf('name: Deploy Worker');
+  const stagingSecretWrite = deployWorkflow.indexOf(
+    'name: Configure staging finance archive gateway secret',
+  );
+  const migrationApply = deployWorkflow.indexOf('name: Apply staging migrations');
+  assert.ok(
+    migrationPreflight > leaseCheck &&
+      migrationPreflight < deployPending &&
+      migrationPreflight < workerDeploy &&
+      migrationPreflight < stagingSecretWrite &&
+      migrationPreflight < migrationApply,
+    'staging migration history must be checked before candidate status or any deploy mutation',
+  );
+  assert.match(deployWorkflow, /preflight-staging-migrations/);
+  const preflightBlock = deployWorkflow.slice(migrationPreflight, deployPending);
+  assert.doesNotMatch(
+    preflightBlock,
+    /^\s+if:/m,
+    'the migration preflight must guard both manual candidate and main-push deployments',
+  );
+  assert.match(
+    deployWorkflow,
+    /supabase db push --linked --include-all --password "\$DB_PASSWORD" --yes/,
   );
   const stagingSmoke = deployWorkflow.indexOf('name: Smoke test staging Worker');
   assert.ok(

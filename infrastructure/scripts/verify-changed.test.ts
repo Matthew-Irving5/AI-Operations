@@ -1,17 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import {
-  buildImpactPlan,
-  playwrightInstallArgs,
-  prettierFiles,
-  runChecks,
-  shellSafeArguments,
-} from './verify-changed';
+import { buildImpactPlan, prettierFiles, runChecks, shellSafeArguments } from './verify-changed';
 
-test('browser prerequisite installation has its own bounded download budget', () => {
+test('browser prerequisite setup has its own bounded install and launch budget', () => {
   const source = readFileSync(new URL('./verify-changed.ts', import.meta.url), 'utf8');
-  assert.match(source, /run\('corepack', playwrightInstallArgs\(\), \{ timeout: 1_200_000 \}\)/);
+  assert.match(source, /playwright-browser-setup\.ts', 'chromium'\][\s\S]*timeout: 1_200_000/);
 });
 
 test('release-only changes do not pay browser E2E', () => {
@@ -59,24 +53,6 @@ test('Windows command arguments preserve route-group paths through cmd.exe', () 
     '"apps/web/app/(app)/design-system/page.tsx"',
   ]);
   assert.deepEqual(shellSafeArguments(['--check', path], 'linux'), ['--check', path]);
-});
-
-test('clean Linux runners install Chromium system dependencies only when selected', () => {
-  assert.deepEqual(playwrightInstallArgs('linux'), [
-    'pnpm',
-    'exec',
-    'playwright',
-    'install',
-    '--with-deps',
-    'chromium',
-  ]);
-  assert.deepEqual(playwrightInstallArgs('win32'), [
-    'pnpm',
-    'exec',
-    'playwright',
-    'install',
-    'chromium',
-  ]);
 });
 
 test('independent changed-surface checks continue and summarize failures without leaking secrets', () => {

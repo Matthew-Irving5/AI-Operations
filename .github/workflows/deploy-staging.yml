@@ -170,6 +170,11 @@ jobs:
           NODE
           pnpm exec tsx infrastructure/scripts/release-gate.ts staging-slot-check < staging-slot-input.json > staging-slot-evidence.json
           jq -e '.available == true' staging-slot-evidence.json > /dev/null || { owner="$(jq -r '.owner.pullRequestNumber // "unknown"' staging-slot-evidence.json)"; echo "Staging is reserved for open PR #$owner until its hosted acceptance completes."; exit 1; }
+      - name: Preflight candidate migration history before deployment
+        env:
+          STAGING_SUPABASE_ACCESS_TOKEN: ${{ secrets.STAGING_SUPABASE_ACCESS_TOKEN }}
+          STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
+        run: pnpm environment:drift -- preflight-staging-migrations
       - name: Set candidate status while staging deploys
         if: inputs.candidate_sha != ''
         env:
@@ -221,7 +226,7 @@ jobs:
           DB_PASSWORD: ${{ secrets.STAGING_SUPABASE_DB_PASSWORD }}
         run: |
           pnpm exec supabase link --project-ref "$PROJECT_REF" --password "$DB_PASSWORD"
-          pnpm exec supabase db push --linked --password "$DB_PASSWORD" --yes
+          pnpm exec supabase db push --linked --include-all --password "$DB_PASSWORD" --yes
       - name: Deploy Supabase Edge Functions
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.STAGING_SUPABASE_ACCESS_TOKEN }}
