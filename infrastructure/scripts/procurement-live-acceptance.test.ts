@@ -7,6 +7,12 @@ import {
   ProcurementStagingAcceptanceEvidenceSchema,
   writeProcurementStagingAcceptanceEvidence,
 } from './procurement-live-acceptance.js';
+import {
+  acceptStagingCandidate,
+  createHostedStagingSuiteEvidence,
+  createStagingAcceptanceStatus,
+  createStagingReadyEvidence,
+} from './release-gate.js';
 
 const evidence = {
   schemaVersion: 1,
@@ -107,6 +113,91 @@ describe('AI-39 procurement staging evidence', () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it('passes the flat producer artifact through staging-status and staging-accept', () => {
+    const producerEvidence = ProcurementStagingAcceptanceEvidenceSchema.parse(evidence);
+    const hostedSuite = createHostedStagingSuiteEvidence(producerEvidence);
+    const deployment = {
+      schemaVersion: 1,
+      state: 'CANDIDATE_STAGING_DEPLOYED',
+      candidateSha: producerEvidence.candidateSha,
+      candidateTreeSha: producerEvidence.candidateTreeSha,
+      pullRequestNumber: producerEvidence.pullRequestNumber,
+      runId: producerEvidence.deploymentRunId,
+      runAttempt: '1',
+      origin: producerEvidence.stagingOrigin,
+      acceptanceProfile: 'procurement',
+      migrations: 'passed',
+      edgeFunctions: 'passed',
+      sourceDrift: 'passed',
+      readinessSmoke: 'passed',
+    } as const;
+
+    const staged = createStagingAcceptanceStatus({
+      candidateSha: producerEvidence.candidateSha,
+      currentPullRequestHeadSha: producerEvidence.candidateSha,
+      currentPullRequestTreeSha: producerEvidence.candidateTreeSha,
+      currentPullRequestNumber: producerEvidence.pullRequestNumber,
+      state: 'success',
+      deployment,
+      hostedSuite,
+    });
+
+    assert.equal(staged.status.state, 'success');
+    assert.deepEqual(staged.acceptance?.procurementEvidence, producerEvidence);
+    assert.equal(staged.acceptance?.candidateTreeSha, producerEvidence.candidateTreeSha);
+    assert.equal(staged.acceptance?.pullRequestNumber, producerEvidence.pullRequestNumber);
+
+    const ready = createStagingReadyEvidence({
+      candidateSha: producerEvidence.candidateSha,
+      pullRequestHeadSha: producerEvidence.candidateSha,
+      candidateTreeSha: producerEvidence.candidateTreeSha,
+      pullRequestTreeSha: producerEvidence.candidateTreeSha,
+      prNumber: producerEvidence.pullRequestNumber,
+      localQa: 'passed',
+      ci: 'passed',
+      deployment: {
+        candidateSha: producerEvidence.candidateSha,
+        runId: producerEvidence.deploymentRunId,
+        origin: producerEvidence.stagingOrigin,
+        workerVersion: 'worker-build-1',
+        migrations: 'passed',
+        edgeFunctions: 'passed',
+        sourceDrift: 'passed',
+        readinessSmoke: 'passed',
+      },
+    });
+    const accepted = acceptStagingCandidate({
+      ready,
+      currentPullRequestHeadSha: producerEvidence.candidateSha,
+      currentPullRequestTreeSha: producerEvidence.candidateTreeSha,
+      currentPullRequestNumber: producerEvidence.pullRequestNumber,
+      acceptance: staged.acceptance!,
+    });
+    assert.deepEqual(accepted.procurementEvidence, producerEvidence);
+    assert.throws(() =>
+      acceptStagingCandidate({
+        ready,
+        currentPullRequestHeadSha: producerEvidence.candidateSha,
+        currentPullRequestTreeSha: producerEvidence.candidateTreeSha,
+        currentPullRequestNumber: producerEvidence.pullRequestNumber,
+        acceptance: producerEvidence as unknown as typeof accepted,
+      }),
+    );
+
+    const prematurelyWrapped = {
+      candidateSha: producerEvidence.candidateSha,
+      deploymentRunId: producerEvidence.deploymentRunId,
+      stagingOrigin: producerEvidence.stagingOrigin,
+      acceptanceProfile: producerEvidence.acceptanceProfile,
+      humanMfa: producerEvidence.humanMfa,
+      checks: producerEvidence.checks,
+      procurementEvidence: producerEvidence,
+      correlationIds: producerEvidence.correlationIds,
+      acceptedAt: producerEvidence.acceptedAt,
+    };
+    assert.throws(() => createHostedStagingSuiteEvidence(prematurelyWrapped));
   });
 
   it('rejects incomplete checks, a budget overrun, mismatched revision lineage, invalid totals, and purchase success', () => {
