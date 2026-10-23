@@ -31,6 +31,38 @@ export function singleLineSqlArgument(sql: string): string {
   return sql.replace(/\s+/g, ' ').trim();
 }
 
+const RESET_RESTORE_PUBLIC_DATA_SQL = `
+DO $ai_ops_restore$
+DECLARE
+  public_tables text;
+BEGIN
+  SELECT string_agg(format('%I.%I', n.nspname, c.relname), ', ' ORDER BY c.relname)
+  INTO public_tables
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public'
+    AND c.relkind IN ('r', 'p')
+    AND NOT EXISTS (
+      SELECT 1 FROM pg_inherits i WHERE i.inhrelid = c.oid
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM pg_depend d
+      WHERE d.classid = 'pg_class'::regclass
+        AND d.objid = c.oid
+        AND d.deptype = 'e'
+    );
+
+  IF public_tables IS NOT NULL THEN
+    EXECUTE 'TRUNCATE TABLE ' || public_tables || ' RESTART IDENTITY';
+  END IF;
+END
+$ai_ops_restore$;
+`;
+
+export function databaseRestoreSql(databaseDumpSql: string): string {
+  return `${RESET_RESTORE_PUBLIC_DATA_SQL}\n${databaseDumpSql}`;
+}
+
 const OBJECT_QUERY = singleLineSqlArgument(`
   select distinct object_key, sha256, size_bytes, content_type
   from (
@@ -761,7 +793,8 @@ async function restoreBackup(
       throw new Error('restore_target_database_not_empty');
     }
     const dataPath = join(temp, 'database.sql');
-    await writeFile(dataPath, Buffer.from(payload.databaseSqlBase64, 'base64'), { mode: 0o600 });
+    const databaseDumpSql = Buffer.from(payload.databaseSqlBase64, 'base64').toString('utf8');
+    await writeFile(dataPath, databaseRestoreSql(databaseDumpSql), { mode: 0o600 });
     if (target.kind === 'local-recovery') {
       await restoreLocalDatabaseFile(target.projectRef, dataPath);
     } else {

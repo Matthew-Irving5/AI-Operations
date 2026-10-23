@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import {
   assertIsolatedRestoreTarget,
   corepackInvocation,
+  databaseRestoreSql,
   restoreLocalDatabaseFile,
   rowsMatching,
   singleLineSqlArgument,
@@ -182,6 +183,18 @@ test('restore requires an empty recovery bucket and follows every listing page',
       })),
     /restore_bucket_listing_invalid/,
   );
+});
+
+test('database restore clears migration-seeded public rows before replaying the full dump', () => {
+  const dump = 'COPY public.managers (code) FROM stdin;\nfinance\n\\.\n';
+  const restoreSql = databaseRestoreSql(dump);
+
+  assert.ok(restoreSql.indexOf("n.nspname = 'public'") < restoreSql.indexOf(dump));
+  assert.ok(restoreSql.indexOf("EXECUTE 'TRUNCATE TABLE '") < restoreSql.indexOf(dump));
+  assert.match(restoreSql, /d\.deptype = 'e'/);
+  assert.match(restoreSql, /RESTART IDENTITY/);
+  assert.ok(!/CASCADE|DROP SCHEMA|DROP DATABASE/i.test(restoreSql));
+  assert.ok(restoreSql.endsWith(dump));
 });
 
 test('local restore imports a full SQL dump with psql error propagation and cleanup', async () => {
