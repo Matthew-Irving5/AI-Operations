@@ -13,7 +13,7 @@
     "format:check": "prettier --check .github apps/web packages docs infrastructure supabase/migrations supabase/tests tests package.json pnpm-workspace.yaml turbo.json tsconfig.base.json playwright.config.ts playwright.live.config.ts README.md .prettierrc.json",
     "lint": "corepack pnpm -r --if-present run lint",
     "typecheck": "corepack pnpm -r --if-present run typecheck",
-    "test": "corepack pnpm -r --if-present run test && corepack pnpm exec tsx --test infrastructure/scripts/required-specs.test.ts infrastructure/scripts/environment-drift.test.ts infrastructure/scripts/edge-function-import-maps.test.ts infrastructure/scripts/release-gate.test.ts infrastructure/scripts/production-smoke.test.ts infrastructure/scripts/qa-doctor.test.ts infrastructure/scripts/local-qa-preflight.test.ts infrastructure/scripts/local-auth-config.test.ts infrastructure/scripts/qa-workspace-dependencies.test.ts infrastructure/scripts/verify-changed.test.ts infrastructure/scripts/qa-debug.test.ts && node --test infrastructure/scripts/ticket-readback.test.mjs",
+    "test": "corepack pnpm -r --if-present run test && corepack pnpm exec tsx --test infrastructure/scripts/required-specs.test.ts infrastructure/scripts/environment-drift.test.ts infrastructure/scripts/edge-function-import-maps.test.ts infrastructure/scripts/release-gate.test.ts infrastructure/scripts/production-smoke.test.ts infrastructure/scripts/qa-doctor.test.ts infrastructure/scripts/local-qa-preflight.test.ts infrastructure/scripts/local-auth-config.test.ts infrastructure/scripts/qa-workspace-dependencies.test.ts infrastructure/scripts/verify-changed.test.ts infrastructure/scripts/qa-debug.test.ts infrastructure/scripts/backup-integrity.test.ts infrastructure/scripts/backup-restore.test.ts && node --test infrastructure/scripts/ticket-readback.test.mjs",
     "test:release-gate": "corepack pnpm exec tsx --test infrastructure/scripts/release-gate.test.ts",
     "test:db": "corepack pnpm exec tsx infrastructure/scripts/test-agent-runtime-backfill.ts && corepack pnpm environment:drift -- repo-local",
     "test:e2e": "node --env-file-if-exists=.env --import tsx infrastructure/scripts/run-e2e.ts",
@@ -35,10 +35,12 @@
     "finish-pass": "tsx infrastructure/scripts/pass-finish.ts",
     "qa:doctor": "node --env-file-if-exists=.env --import tsx infrastructure/scripts/qa-doctor.ts",
     "qa:debug": "node --env-file-if-exists=.env --import tsx infrastructure/scripts/qa-debug.ts",
+    "backup:restore": "node --env-file-if-exists=.env --import tsx infrastructure/scripts/backup-restore.ts",
     "verify:changed": "node --env-file-if-exists=.env --import tsx infrastructure/scripts/verify-changed.ts",
     "repo:map": "node --import tsx infrastructure/scripts/repo-map.ts"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1154.0",
     "@axe-core/playwright": "4.10.2",
     "@playwright/test": "1.61.1",
     "@types/node": "22.15.3",
