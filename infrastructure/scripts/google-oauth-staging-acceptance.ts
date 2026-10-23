@@ -6,7 +6,7 @@ import { z } from 'zod';
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const correlationIdSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9:-]{0,127}$/);
 
-const GoogleOAuthChecksSchema = z
+export const GoogleOAuthChecksSchema = z
   .object({
     accountRole: z.literal('personal_data_source'),
     expectedAccountMatched: z.literal('passed'),
@@ -24,7 +24,7 @@ const GoogleOAuthChecksSchema = z
   })
   .strict();
 
-const GoogleOAuthEvidenceInputSchema = z
+export const GoogleOAuthStagingEvidenceSchema = z
   .object({
     schemaVersion: z.literal(1),
     state: z.literal('GOOGLE_OAUTH_STAGING_ACCEPTED'),
@@ -48,7 +48,7 @@ const GoogleOAuthEvidenceInputSchema = z
   })
   .strict();
 
-export type GoogleOAuthStagingEvidence = z.infer<typeof GoogleOAuthEvidenceInputSchema>;
+export type GoogleOAuthStagingEvidence = z.infer<typeof GoogleOAuthStagingEvidenceSchema>;
 
 export function fingerprintGoogleResourceId(resourceId: string): string {
   if (!resourceId || resourceId.length > 256) {
@@ -58,7 +58,7 @@ export function fingerprintGoogleResourceId(resourceId: string): string {
 }
 
 export function parseGoogleOAuthStagingEvidence(input: unknown): GoogleOAuthStagingEvidence {
-  return GoogleOAuthEvidenceInputSchema.parse(input);
+  return GoogleOAuthStagingEvidenceSchema.parse(input);
 }
 
 export async function writeGoogleOAuthStagingEvidence(path: string, input: unknown): Promise<void> {

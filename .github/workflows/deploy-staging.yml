@@ -18,7 +18,7 @@ on:
         required: false
         default: auto
         type: choice
-        options: [auto, targeted, auth-browser, cost-runtime]
+        options: [auto, targeted, auth-browser, cost-runtime, google-oauth]
       deployment_run_id:
         description: Successful candidate deployment run ID; required for acceptance.
         required: false
@@ -347,7 +347,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - name: Set candidate status while hosted acceptance is pending
-        if: inputs.candidate_sha != '' && (steps.acceptance-profile.outputs.acceptance_profile == 'auth-browser' || steps.acceptance-profile.outputs.acceptance_profile == 'cost-runtime')
+        if: inputs.candidate_sha != '' && (steps.acceptance-profile.outputs.acceptance_profile == 'auth-browser' || steps.acceptance-profile.outputs.acceptance_profile == 'cost-runtime' || steps.acceptance-profile.outputs.acceptance_profile == 'google-oauth')
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}

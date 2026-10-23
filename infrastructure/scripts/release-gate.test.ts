@@ -1702,3 +1702,163 @@ test('targeted hosted acceptance is valid without MFA and cannot satisfy an auth
     /acceptance_profile_mismatch/,
   );
 });
+
+test('AI-27 Google OAuth profile routes the exact candidate through its strict evidence consumer', () => {
+  const ai27Files = [
+    'docs/build/ticket-readbacks/AI-27.md',
+    'supabase/functions/google-connection-sources/index.ts',
+  ];
+  assert.equal(selectHostedAcceptanceProfile(ai27Files), 'google-oauth');
+  assert.equal(
+    selectHostedAcceptanceProfile(['tests/e2e-live/google-oauth-acceptance.spec.ts']),
+    'google-oauth',
+  );
+  assert.equal(selectHostedAcceptanceProfile(ai27Files, 'google-oauth'), 'google-oauth');
+  assert.throws(
+    () =>
+      selectHostedAcceptanceProfile(
+        ['supabase/functions/google-connection-sources/index.ts'],
+        'google-oauth',
+      ),
+    /google-oauth override requires the AI-27 readback or dedicated acceptance spec marker/,
+  );
+  assert.throws(
+    () =>
+      selectHostedAcceptanceProfile(
+        [...ai27Files, 'apps/web/app/api/auth/mfa/verify/route.ts'],
+        'auto',
+      ),
+    /Candidate requires both ticket-specific and generic auth-browser proof/,
+  );
+
+  const checks = {
+    accountRole: 'personal_data_source',
+    expectedAccountMatched: 'passed',
+    approvedScopesMatched: 'passed',
+    pickerSelectedDedicatedFile: 'passed',
+    selectedOnlySync: 'passed',
+    idempotencyReplay: 'passed',
+    providerUpdateAppliedOnce: 'passed',
+    selectionRevokeStoppedImport: 'passed',
+    deselectedProvenanceRetained: 'passed',
+    oauthRevokeDegradedWithoutDataLoss: 'passed',
+    reconnectRecoveredSync: 'passed',
+    freshnessRecovered: 'passed',
+    unrelatedResourceUntouched: 'passed',
+  } as const;
+  const googleSuite = createHostedStagingSuiteEvidence({
+    schemaVersion: 1,
+    state: 'GOOGLE_OAUTH_STAGING_ACCEPTED',
+    acceptanceProfile: 'google-oauth',
+    candidateSha,
+    candidateTreeSha,
+    pullRequestNumber: 152,
+    deploymentRunId: '36474707377',
+    stagingOrigin: origin,
+    humanMfa: 'user-completed',
+    checks,
+    resourceFingerprints: {
+      selectedFile: 'a'.repeat(64),
+      unselectedFile: 'b'.repeat(64),
+      deselectedFile: 'c'.repeat(64),
+    },
+    correlationIds: ['google-sync-1', 'google-update-1'],
+    acceptedAt: '2026-10-22T10:00:00.000Z',
+  });
+  if (googleSuite.acceptanceProfile !== 'google-oauth')
+    throw new Error('Google OAuth evidence selected the wrong hosted profile.');
+  const status = createStagingAcceptanceStatus({
+    candidateSha,
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    state: 'success',
+    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'google-oauth' }),
+    hostedSuite: googleSuite,
+  });
+  assert.equal(status.status.state, 'success');
+  assert.equal(status.acceptance?.acceptanceProfile, 'google-oauth');
+  assert.deepEqual(status.acceptance?.checks, checks);
+  assert.deepEqual(status.acceptance?.googleOAuthEvidence, googleSuite);
+  const googleAcceptance = status.acceptance;
+  if (!googleAcceptance || googleAcceptance.acceptanceProfile !== 'google-oauth')
+    throw new Error('Google OAuth acceptance selected the wrong profile.');
+  const googleAcceptanceInput = {
+    candidateSha,
+    deploymentRunId: googleSuite.deploymentRunId,
+    stagingOrigin: googleSuite.stagingOrigin,
+    acceptanceProfile: 'google-oauth',
+    humanMfa: googleSuite.humanMfa,
+    checks: googleSuite.checks,
+    googleOAuthEvidence: googleSuite,
+    correlationIds: googleSuite.correlationIds,
+    acceptedAt: googleSuite.acceptedAt,
+  };
+  const acceptedResult = runCli('staging-accept', {
+    ready: ready(),
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    acceptance: googleAcceptanceInput,
+  });
+  assert.equal(acceptedResult.status, 0, acceptedResult.stderr);
+  const acceptedEvidence = JSON.parse(acceptedResult.stdout) as StagingAcceptanceEvidence;
+  assert.equal(acceptedEvidence.acceptanceProfile, 'google-oauth');
+  assert.deepEqual(acceptedEvidence.googleOAuthEvidence, googleSuite);
+  assert.equal(
+    acceptStagingCandidate({
+      ready: ready(),
+      currentPullRequestHeadSha: candidateSha,
+      currentPullRequestTreeSha: candidateTreeSha,
+      currentPullRequestNumber: 152,
+      acceptance: googleAcceptance,
+    }).acceptanceProfile,
+    'google-oauth',
+  );
+  assert.equal(
+    acceptStagingCandidate({
+      ready: ready(),
+      currentPullRequestHeadSha: candidateSha,
+      currentPullRequestTreeSha: candidateTreeSha,
+      currentPullRequestNumber: 152,
+      acceptance: googleAcceptance,
+    }).acceptanceProfile,
+    'google-oauth',
+  );
+  assert.throws(
+    () =>
+      createStagingAcceptanceStatus({
+        candidateSha,
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        state: 'success',
+        deployment: candidateDeploymentEvidence({ acceptanceProfile: 'google-oauth' }),
+        hostedSuite: { ...googleSuite, candidateTreeSha: nextSha },
+      }),
+    /acceptance profile, MFA evidence, fresh-MFA action proof and check shape must agree/,
+  );
+  assert.throws(
+    () =>
+      acceptStagingCandidate({
+        ready: ready(),
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        acceptance: {
+          ...googleAcceptance,
+          googleOAuthEvidence: { ...googleSuite, candidateTreeSha: nextSha },
+        },
+      }),
+    /invalid_evidence/,
+  );
+  const flatProducer = runCli('staging-accept', {
+    ready: ready(),
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    acceptance: googleSuite,
+  });
+  assert.equal(flatProducer.status, 1);
+});
+
