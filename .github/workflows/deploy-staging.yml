@@ -18,7 +18,7 @@ on:
         required: false
         default: auto
         type: choice
-        options: [auto, targeted, auth-browser, cost-runtime, career, career-auth-browser]
+        options: [auto, targeted, auth-browser, cost-runtime, procurement]
       deployment_run_id:
         description: Successful candidate deployment run ID; required for acceptance.
         required: false
@@ -347,7 +347,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - name: Set candidate status while hosted acceptance is pending
-        if: inputs.candidate_sha != '' && (steps.acceptance-profile.outputs.acceptance_profile == 'auth-browser' || steps.acceptance-profile.outputs.acceptance_profile == 'cost-runtime' || steps.acceptance-profile.outputs.acceptance_profile == 'career' || steps.acceptance-profile.outputs.acceptance_profile == 'career-auth-browser')
+        if: inputs.candidate_sha != '' && (steps.acceptance-profile.outputs.acceptance_profile == 'auth-browser' || steps.acceptance-profile.outputs.acceptance_profile == 'cost-runtime' || steps.acceptance-profile.outputs.acceptance_profile == 'procurement')
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
@@ -357,10 +357,8 @@ jobs:
           set -euo pipefail
           if [[ "$ACCEPTANCE_PROFILE" == "cost-runtime" ]]; then
             description="Staging is deployed; waiting for one-call cost-runtime evidence."
-          elif [[ "$ACCEPTANCE_PROFILE" == "career-auth-browser" ]]; then
-            description="Staging is deployed; waiting for both Career sync and auth-browser acceptance evidence."
-          elif [[ "$ACCEPTANCE_PROFILE" == "career" ]]; then
-            description="Staging is deployed; waiting for authenticated Career acceptance evidence."
+          elif [[ "$ACCEPTANCE_PROFILE" == "procurement" ]]; then
+            description="Staging is deployed; waiting for Procurement acceptance."
           else
             description="Staging is deployed; waiting for auth-browser acceptance."
           fi
@@ -417,7 +415,7 @@ jobs:
           set -euo pipefail
           [[ "$CANDIDATE_SHA" =~ ^[a-f0-9]{40}$ && "$CANDIDATE_SHA" == "$DISPATCH_SHA" && "$DISPATCH_REF" == refs/heads/* && "$DISPATCH_REF" != "refs/heads/main" ]] || { echo "Acceptance dispatch must use the current non-main PR branch head."; exit 1; }
           [[ "$DEPLOYMENT_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]] || { echo "Deployment run ID is invalid."; exit 1; }
-          [[ "$ACCEPTANCE_PROFILE" == "auth-browser" || "$ACCEPTANCE_PROFILE" == "cost-runtime" || "$ACCEPTANCE_PROFILE" == "career" || "$ACCEPTANCE_PROFILE" == "career-auth-browser" ]] || { echo "Acceptance dispatch requires the exact auth-browser, cost-runtime, career or career-auth-browser profile."; exit 1; }
+          [[ "$ACCEPTANCE_PROFILE" == "auth-browser" || "$ACCEPTANCE_PROFILE" == "cost-runtime" || "$ACCEPTANCE_PROFILE" == "procurement" ]] || { echo "Acceptance dispatch requires the exact auth-browser, cost-runtime, or procurement profile."; exit 1; }
           [[ "$OUTCOME" == "accepted" || "$OUTCOME" == "failed" ]] || { echo "Acceptance outcome is invalid."; exit 1; }
           gh api "repos/$GH_REPOSITORY/commits/$CANDIDATE_SHA/pulls" > candidate-pulls.json
           pr_count="$(jq --arg repo "$GH_REPOSITORY" --arg sha "$CANDIDATE_SHA" '[.[] | select(.state == "open" and .base.ref == "main" and .head.sha == $sha and .head.repo.full_name == $repo)] | length' candidate-pulls.json)"

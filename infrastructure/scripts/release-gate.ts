@@ -2,9 +2,9 @@ import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { Ai20CostRuntimeProofSchema } from './ai20-cost-runtime-proof.js';
 import {
-  CareerStagingAcceptanceChecksSchema,
-  CareerStagingAcceptanceEvidenceSchema,
-} from './career-staging-acceptance-evidence.js';
+  ProcurementStagingAcceptanceChecksSchema,
+  ProcurementStagingAcceptanceEvidenceSchema,
+} from './procurement-live-acceptance.js';
 
 const ShaSchema = z
   .string()
@@ -203,13 +203,7 @@ const ReadyEvidenceSchema = z
   })
   .strict();
 
-const AcceptanceProfileSchema = z.enum([
-  'targeted',
-  'auth-browser',
-  'cost-runtime',
-  'career',
-  'career-auth-browser',
-]);
+const AcceptanceProfileSchema = z.enum(['targeted', 'auth-browser', 'cost-runtime', 'procurement']);
 
 const CapabilityResultsSchema = z
   .object({
@@ -265,13 +259,12 @@ const AcceptanceEvidenceSchema = z
       CapabilityResultsSchema,
       TargetedCapabilityResultsSchema,
       CostRuntimeChecksSchema,
-      CareerStagingAcceptanceChecksSchema,
+      ProcurementStagingAcceptanceChecksSchema,
     ]),
     freshMfaAction: FreshMfaActionEvidenceSchema.optional(),
+    procurementEvidence: ProcurementStagingAcceptanceEvidenceSchema.optional(),
     promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
     costRuntimeProof: Ai20CostRuntimeProofSchema.optional(),
-    careerEvidence: CareerStagingAcceptanceEvidenceSchema.optional(),
-    authBrowserEvidence: z.lazy(() => AuthBrowserStagingSuiteEvidenceSchema).optional(),
     correlationIds: z.array(SafeIdSchema).max(20),
     workflowRuns: Ai15WorkflowProofsSchema.optional(),
     acceptedAt: z.string().datetime({ offset: true }),
@@ -281,20 +274,18 @@ const AcceptanceEvidenceSchema = z
   .superRefine((value, context) => {
     const targeted = value.acceptanceProfile === 'targeted';
     const costRuntime = value.acceptanceProfile === 'cost-runtime';
-    const career =
-      value.acceptanceProfile === 'career' || value.acceptanceProfile === 'career-auth-browser';
-    const combinedCareer = value.acceptanceProfile === 'career-auth-browser';
+    const procurement = value.acceptanceProfile === 'procurement';
     const validMfa = targeted || costRuntime || value.humanMfa === 'user-completed';
     const validChecks = targeted
       ? Array.isArray(value.checks)
       : !Array.isArray(value.checks) &&
         (costRuntime
           ? 'localCostMatrix' in value.checks
-          : career
-            ? 'authenticatedCareerSync' in value.checks
+          : procurement
+            ? 'requirementsPersistedBeforeRanking' in value.checks
             : 'authAal2' in value.checks);
     const validFreshMfaAction =
-      targeted || costRuntime || (career && !combinedCareer)
+      targeted || costRuntime || procurement
         ? value.freshMfaAction === undefined
         : value.freshMfaAction !== undefined;
     const validCostRuntimeProof = costRuntime
@@ -302,41 +293,25 @@ const AcceptanceEvidenceSchema = z
         value.costRuntimeProof.localProofSha === value.candidateSha &&
         value.correlationIds.includes(value.costRuntimeProof.correlationId)
       : value.costRuntimeProof === undefined;
-    const careerEvidence = value.careerEvidence;
-    const validCareerEvidence = career
-      ? careerEvidence !== undefined &&
-        careerEvidence.candidateSha === value.candidateSha &&
-        careerEvidence.candidateTreeSha === value.candidateTreeSha &&
-        careerEvidence.pullRequestNumber === value.pullRequestNumber &&
-        careerEvidence.deploymentRunId === value.deploymentRunId &&
-        careerEvidence.stagingOrigin === value.stagingOrigin &&
-        careerEvidence.humanMfa === value.humanMfa &&
-        careerEvidence.acceptedAt === value.acceptedAt &&
-        careerEvidence.correlationIds.length === value.correlationIds.length &&
-        careerEvidence.correlationIds.every((id, index) => id === value.correlationIds[index]) &&
-        JSON.stringify(value.checks) === JSON.stringify(careerEvidence.checks)
-      : careerEvidence === undefined;
-    const validAuthBrowserEvidence = combinedCareer
-      ? value.authBrowserEvidence !== undefined &&
-        [
-          'candidateSha',
-          'candidateTreeSha',
-          'pullRequestNumber',
-          'deploymentRunId',
-          'stagingOrigin',
-        ].every(
-          (key) => Reflect.get(value.authBrowserEvidence!, key) === Reflect.get(value, key),
-        ) &&
-        JSON.stringify(value.freshMfaAction) ===
-          JSON.stringify(value.authBrowserEvidence.freshMfaAction)
-      : value.authBrowserEvidence === undefined;
+    const validProcurementEvidence = procurement
+      ? value.procurementEvidence !== undefined &&
+        value.procurementEvidence.candidateSha === value.candidateSha &&
+        value.procurementEvidence.candidateTreeSha === value.candidateTreeSha &&
+        value.procurementEvidence.pullRequestNumber === value.pullRequestNumber &&
+        value.procurementEvidence.deploymentRunId === value.deploymentRunId &&
+        value.procurementEvidence.stagingOrigin === value.stagingOrigin &&
+        JSON.stringify(value.procurementEvidence.checks) === JSON.stringify(value.checks) &&
+        value.procurementEvidence.correlationIds.length === value.correlationIds.length &&
+        value.procurementEvidence.correlationIds.every(
+          (id, index) => id === value.correlationIds[index],
+        )
+      : value.procurementEvidence === undefined;
     if (
-      !validAuthBrowserEvidence ||
       !validMfa ||
       !validChecks ||
       !validFreshMfaAction ||
       !validCostRuntimeProof ||
-      !validCareerEvidence
+      !validProcurementEvidence
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -426,29 +401,29 @@ const StagingAcceptanceInputSchema = z.discriminatedUnion('acceptanceProfile', [
       candidateSha: ShaSchema,
       deploymentRunId: RunIdSchema,
       stagingOrigin: StageOrigin,
-      acceptanceProfile: z.literal('career'),
+      acceptanceProfile: z.literal('procurement'),
       humanMfa: z.literal('user-completed'),
-      checks: CareerStagingAcceptanceChecksSchema,
-      careerEvidence: CareerStagingAcceptanceEvidenceSchema,
-      correlationIds: z.array(z.string().uuid()).length(3),
+      checks: ProcurementStagingAcceptanceChecksSchema,
+      procurementEvidence: ProcurementStagingAcceptanceEvidenceSchema,
+      correlationIds: z.array(SafeIdSchema).length(2),
       acceptedAt: z.string().datetime({ offset: true }),
     })
-    .strict(),
-  z
-    .object({
-      candidateSha: ShaSchema,
-      deploymentRunId: RunIdSchema,
-      stagingOrigin: StageOrigin,
-      acceptanceProfile: z.literal('career-auth-browser'),
-      humanMfa: z.literal('user-completed'),
-      checks: CareerStagingAcceptanceChecksSchema,
-      careerEvidence: CareerStagingAcceptanceEvidenceSchema,
-      authBrowserEvidence: z.lazy(() => AuthBrowserStagingSuiteEvidenceSchema),
-      freshMfaAction: FreshMfaActionEvidenceSchema,
-      correlationIds: z.array(SafeIdSchema).min(1).max(20),
-      acceptedAt: z.string().datetime({ offset: true }),
-    })
-    .strict(),
+    .strict()
+    .superRefine((value, context) => {
+      const proof = value.procurementEvidence;
+      if (
+        proof.candidateSha !== value.candidateSha ||
+        proof.deploymentRunId !== value.deploymentRunId ||
+        proof.stagingOrigin !== value.stagingOrigin ||
+        JSON.stringify(proof.checks) !== JSON.stringify(value.checks) ||
+        proof.correlationIds.some((id, index) => id !== value.correlationIds[index])
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'procurement acceptance metadata must match its evidence envelope',
+        });
+      }
+    }),
 ]);
 const CandidateStagingDeploymentEvidenceSchema = z
   .object({
@@ -544,59 +519,11 @@ const CostRuntimeStagingSuiteEvidenceSchema = z
     }
   });
 
-export const CareerAuthBrowserStagingEvidenceSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    state: z.literal('CAREER_AUTH_BROWSER_STAGING_ACCEPTED'),
-    acceptanceProfile: z.literal('career-auth-browser'),
-    candidateSha: ShaSchema,
-    candidateTreeSha: ShaSchema,
-    pullRequestNumber: z.number().int().positive(),
-    deploymentRunId: RunIdSchema,
-    stagingOrigin: StageOrigin,
-    humanMfa: z.literal('user-completed'),
-    checks: CareerStagingAcceptanceChecksSchema,
-    correlationIds: z.array(SafeIdSchema).min(1).max(20),
-    acceptedAt: z.string().datetime({ offset: true }),
-    careerEvidence: CareerStagingAcceptanceEvidenceSchema,
-    authBrowserEvidence: AuthBrowserStagingSuiteEvidenceSchema,
-  })
-  .strict()
-  .superRefine((value, context) => {
-    for (const proof of [value.careerEvidence, value.authBrowserEvidence]) {
-      for (const key of [
-        'candidateSha',
-        'candidateTreeSha',
-        'pullRequestNumber',
-        'deploymentRunId',
-        'stagingOrigin',
-      ] as const) {
-        if (proof[key] !== value[key])
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            message:
-              'Both Career and auth-browser proof must match the exact candidate deployment.',
-          });
-      }
-    }
-    if (
-      JSON.stringify(value.checks) !== JSON.stringify(value.careerEvidence.checks) ||
-      JSON.stringify(value.correlationIds) !==
-        JSON.stringify(value.careerEvidence.correlationIds) ||
-      value.acceptedAt !== value.careerEvidence.acceptedAt
-    )
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Combined Career metadata must preserve the actual Career result.',
-      });
-  });
-
 const HostedStagingSuiteEvidenceSchema = z.discriminatedUnion('acceptanceProfile', [
   AuthBrowserStagingSuiteEvidenceSchema,
   TargetedStagingSuiteEvidenceSchema,
   CostRuntimeStagingSuiteEvidenceSchema,
-  CareerStagingAcceptanceEvidenceSchema,
-  CareerAuthBrowserStagingEvidenceSchema,
+  ProcurementStagingAcceptanceEvidenceSchema,
 ]);
 
 const StagingAcceptanceCommandSchema = z
@@ -765,16 +692,8 @@ export function selectHostedAcceptanceProfile(
 ): HostedAcceptanceProfile {
   const normalizedFiles = files.map((raw) => raw.replaceAll('\\', '/'));
   const costRuntime = normalizedFiles.includes('docs/build/ticket-readbacks/AI-20.md');
-  const career = normalizedFiles.some(
-    (file) =>
-      file === 'docs/build/ticket-readbacks/AI-35.md' ||
-      file === 'tests/e2e-live/career-acceptance.spec.ts',
-  );
-  const careerSurfacePath = (file: string) =>
-    file.startsWith('apps/web/app/(app)/career/') ||
-    file.startsWith('supabase/functions/github-career-sync/');
+  const procurement = normalizedFiles.includes('docs/build/ticket-readbacks/AI-39.md');
   const authBrowser = normalizedFiles.some((file) => {
-    if (careerSurfacePath(file)) return false;
     return (
       file.startsWith('apps/web/app/api/auth/') ||
       file === 'apps/web/app/api/workflows/launch/route.ts' ||
@@ -792,33 +711,31 @@ export function selectHostedAcceptanceProfile(
       file === 'tests/e2e/platform-authenticated.spec.ts'
     );
   });
-  if (costRuntime && (authBrowser || career)) {
+  if (costRuntime && procurement) {
     throw new Error(
-      'AI-20 cost-runtime proof cannot share one acceptance profile with auth-browser or Career proof.',
+      'AI-20 cost-runtime and Procurement proof cannot share one acceptance profile.',
     );
   }
-
+  if (costRuntime && authBrowser) {
+    throw new Error(
+      'AI-20 cost-runtime and auth-browser proof cannot share one acceptance profile.',
+    );
+  }
   const inferred = costRuntime
     ? 'cost-runtime'
-    : career
-      ? authBrowser
-        ? 'career-auth-browser'
-        : 'career'
+    : procurement
+      ? 'procurement'
       : authBrowser
         ? 'auth-browser'
         : 'targeted';
   if (override !== 'auto' && override !== inferred) {
-    if (override === 'career' && !career) {
-      throw new Error(
-        'The career override requires the AI-35 readback or dedicated acceptance spec marker.',
-      );
-    }
     throw new Error(
-      "Requested staging profile '" + override + "' does not match inferred '" + inferred + "'.",
+      `Requested staging profile '${override}' does not match inferred '${inferred}'.`,
     );
   }
   return inferred;
 }
+
 export function createHostedStagingSuiteEvidence(input: unknown): HostedStagingSuiteEvidence {
   return parseEvidence(
     HostedStagingSuiteEvidenceSchema,
@@ -993,15 +910,9 @@ export function createStagingAcceptanceStatus(input: unknown): StagingAcceptance
     ...(parsed.hostedSuite.acceptanceProfile === 'cost-runtime'
       ? { costRuntimeProof: parsed.hostedSuite.costRuntimeProof }
       : {}),
-    ...(parsed.hostedSuite.acceptanceProfile === 'career'
-      ? { careerEvidence: parsed.hostedSuite }
-      : parsed.hostedSuite.acceptanceProfile === 'career-auth-browser'
-        ? {
-            careerEvidence: parsed.hostedSuite.careerEvidence,
-            authBrowserEvidence: parsed.hostedSuite.authBrowserEvidence,
-            freshMfaAction: parsed.hostedSuite.authBrowserEvidence.freshMfaAction,
-          }
-        : {}),
+    ...(parsed.hostedSuite.acceptanceProfile === 'procurement'
+      ? { procurementEvidence: parsed.hostedSuite }
+      : {}),
     correlationIds: parsed.hostedSuite.correlationIds,
     ...(parsed.hostedSuite.workflowRuns ? { workflowRuns: parsed.hostedSuite.workflowRuns } : {}),
     ...(parsed.hostedSuite.promptGovernanceProof
