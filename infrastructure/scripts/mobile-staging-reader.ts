@@ -8,6 +8,7 @@ const protectedMobileTables = {
       'snapshot_id',
       'request_id',
       'device_id',
+      'user_id',
       'received_at',
       'received_count',
       'client_type',
@@ -19,27 +20,39 @@ const protectedMobileTables = {
       'snapshot_id',
       'request_id',
       'device_id',
+      'user_id',
       'received_at',
       'received_count',
       'client_type',
       'status',
     ],
-    scope: [['device_id'], ['snapshot_id']],
+    scope: [
+      ['user_id', 'device_id'],
+      ['user_id', 'snapshot_id'],
+    ],
   },
   mobile_snapshot_sources: {
-    columns: ['id'],
-    filters: ['id', 'snapshot_internal_id'],
-    scope: [['snapshot_internal_id']],
+    columns: ['id', 'user_id'],
+    filters: ['id', 'user_id', 'snapshot_internal_id'],
+    scope: [['user_id', 'snapshot_internal_id']],
   },
   mobile_ingestion_records: {
-    columns: ['id', 'record_id'],
-    filters: ['id', 'snapshot_internal_id', 'record_id'],
-    scope: [['id'], ['snapshot_internal_id']],
+    columns: ['id', 'user_id', 'record_id'],
+    filters: ['id', 'user_id', 'snapshot_internal_id', 'record_id'],
+    scope: [['user_id', 'snapshot_internal_id']],
   },
   mobile_record_adaptations: {
-    columns: ['id', 'status', 'derived_row_id'],
-    filters: ['id', 'record_internal_id', 'adapter_name', 'adapter_version'],
-    scope: [['record_internal_id']],
+    columns: ['id', 'user_id', 'status', 'derived_row_id'],
+    filters: ['id', 'user_id', 'record_internal_id', 'adapter_name', 'adapter_version'],
+    scope: [['user_id', 'record_internal_id']],
+  },
+  mobile_calendar_event_items: {
+    columns: ['id', 'user_id', 'raw_record_id', 'title'],
+    filters: ['user_id', 'raw_record_id', 'title'],
+    scope: [
+      ['user_id', 'raw_record_id'],
+      ['user_id', 'title'],
+    ],
   },
 } as const;
 
@@ -58,6 +71,7 @@ function validateFilterValue(table: ProtectedMobileTable, column: string, value:
       'snapshot_id',
       'request_id',
       'device_id',
+      'user_id',
       'snapshot_internal_id',
       'record_internal_id',
     ].includes(column)
@@ -89,6 +103,17 @@ function parsePostgrestFilter(
   column: string,
   expression: string,
 ): string {
+  if (
+    table === 'mobile_calendar_event_items' &&
+    column === 'title' &&
+    expression.startsWith('like.')
+  ) {
+    const match = /^like\.(AI28_SYNTH_[A-Za-z0-9_-]{1,80})\*$/.exec(expression);
+    if (!match)
+      throw new Error('AI28 mobile SQL title filter must use a synthetic fixture prefix.');
+    const prefix = match[1]!;
+    return `left(title, ${prefix.length}) = ${quoteSqlString(prefix)}`;
+  }
   if (expression.startsWith('eq.')) {
     const value = expression.slice(3);
     validateFilterValue(table, column, value);

@@ -1,5 +1,5 @@
 begin;
-select plan(42);
+select plan(47);
 
 insert into auth.users (instance_id, id, aud, role, email, encrypted_password,
   email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -155,6 +155,31 @@ select ok(exists(
 ), 'Google source selection uses a narrow transactional RPC');
 select set_config('request.jwt.claims',
   '{"sub":"00000000-0000-0000-0000-000000000101","role":"authenticated","aal":"aal2"}', true);
+insert into public.mfa_action_gates(id, user_id, action_key, expires_at, created_at)
+values ('50000000-0000-4000-8000-000000000010',
+  '00000000-0000-0000-0000-000000000101', 'connection_revoke',
+  now() + interval '2 minutes', now());
+select is(public.revoke_apple_bridge_device(
+  '40000000-0000-4000-8000-000000000001',
+  '50000000-0000-4000-8000-000000000010'
+), '{"status":"revoked","device_id":"40000000-0000-4000-8000-000000000001"}'::jsonb,
+  'a fresh owner MFA gate revokes the paired device');
+select ok((select revoked_at is not null from public.apple_bridge_devices
+  where id = '40000000-0000-4000-8000-000000000001'),
+  'the device is disabled in the same revoke transaction');
+select ok((select consumed_at is not null from public.mfa_action_gates
+  where id = '50000000-0000-4000-8000-000000000010'),
+  'the revoke MFA gate is consumed exactly once');
+select is(public.revoke_apple_bridge_device(
+  '40000000-0000-4000-8000-000000000001',
+  '50000000-0000-4000-8000-000000000010'
+), '{"code":"mfa_gate_replayed"}'::jsonb,
+  'the consumed revoke gate cannot be replayed');
+select is((select count(*) from public.audit_events
+  where user_id = '00000000-0000-0000-0000-000000000101'
+    and action_type = 'apple_bridge_device_revoked'
+    and target_id = '40000000-0000-4000-8000-000000000001'), 1::bigint,
+  'successful revoke records exactly one audit event');
 select is(public.update_google_source_selection(
   '60000000-0000-4000-8000-000000000001', '{}', '{}',
   '50000000-0000-4000-8000-000000000001'

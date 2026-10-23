@@ -5,8 +5,11 @@ import { createInterface } from 'node:readline/promises';
 import { expect, test, type Page } from '@playwright/test';
 import { parseLiveE2eEnvironment, stagingTarget } from '../../apps/web/lib/live-e2e-safety';
 import { readMobileStagingRows } from '../../infrastructure/scripts/mobile-staging-reader';
+import { waitForMobileShortcutOperatorConfirmation } from '../../infrastructure/scripts/mobile-shortcut-operator-confirmation';
+import { parseMobileShortcutResume } from '../../infrastructure/scripts/mobile-shortcut-resume';
 
 const env = parseLiveE2eEnvironment(process.env, 'suite');
+const mobileResume = parseMobileShortcutResume(process.env);
 const anonKey = process.env.LIVE_E2E_SUPABASE_ANON_KEY ?? process.env.STAGING_SUPABASE_ANON_KEY;
 const candidateSha = process.env.LIVE_E2E_CANDIDATE_SHA;
 const candidateTreeSha = process.env.LIVE_E2E_CANDIDATE_TREE_SHA;
@@ -62,6 +65,7 @@ type IngestResult = {
 type EdgeResult = { status: number; body: IngestResult; correlationId: string };
 type RawSnapshot = {
   id: string;
+  user_id: string;
   snapshot_id: string;
   request_id: string;
   device_id: string;
@@ -146,14 +150,6 @@ const ownerReadContracts = {
     columns: ['state', 'last_success_at'],
     filters: ['user_id', 'source'],
     scopes: [['user_id', 'source']],
-  },
-  mobile_calendar_event_items: {
-    columns: ['id', 'raw_record_id'],
-    filters: ['user_id', 'raw_record_id', 'title'],
-    scopes: [
-      ['user_id', 'raw_record_id'],
-      ['user_id', 'title'],
-    ],
   },
 } as const;
 
@@ -332,6 +328,7 @@ async function seedAcceptedRawBeforeAdaptation(
 
 async function waitForSnapshot(
   deviceId: string,
+  userId: string,
   after: string,
   timeoutMs = 5 * 60_000,
 ): Promise<RawSnapshot> {
@@ -339,7 +336,8 @@ async function waitForSnapshot(
   while (Date.now() < deadline) {
     const rows = await protectedStagingRows<RawSnapshot>('mobile_snapshots', {
       select:
-        'id,snapshot_id,request_id,device_id,received_at,received_count,client_type,client_version,status',
+        'id,user_id,snapshot_id,request_id,device_id,received_at,received_count,client_type,client_version,status',
+      user_id: `eq.${userId}`,
       device_id: `eq.${deviceId}`,
       received_at: `gt.${after}`,
       received_count: 'eq.0',
@@ -355,10 +353,23 @@ async function waitForSnapshot(
   );
 }
 
-async function confirmShortcutRun(): Promise<void> {
+async function confirmShortcutRun(context: {
+  candidateSha: string;
+  candidateTreeSha: string;
+  deviceId: string;
+  snapshotId: string;
+}): Promise<void> {
+  const markerPath = process.env.LIVE_E2E_SHORTCUT_CONFIRMATION_MARKER_PATH;
+  if (markerPath) {
+    await waitForMobileShortcutOperatorConfirmation({
+      markerPath,
+      expected: context,
+    });
+    return;
+  }
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error(
-      'Apple Shortcut acceptance requires a visible interactive operator confirmation.',
+      'Apple Shortcut acceptance requires a matching operator marker or an interactive TTY.',
     );
   }
   const terminal = createInterface({ input: process.stdin, output: process.stdout });
@@ -413,66 +424,134 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
   }
   await expect(page).toHaveURL(/\/overview(?:\?|$)/, { timeout: 5 * 60_000 });
   expect(mfaRoutes.length, 'Initial sign-in must observe a real MFA route.').toBeGreaterThan(0);
+  const ownerUserId = readOwnerSession(await page.context().cookies(stagingTarget.origin)).userId;
 
   const runTag = randomUUID();
-  const deviceLabel = `AI28 synthetic ${runTag.slice(0, 8)}`;
-  await page.goto('/data-sources');
-  await page.getByLabel('Device name').fill(deviceLabel);
-  const beforePairingMfa = mfaRoutes.length;
-  const deviceResponsePromise = page.waitForResponse(
-    (response) =>
-      new URL(response.url()).pathname === '/api/apple-bridge/device' &&
-      response.request().method() === 'POST',
-    { timeout: 5 * 60_000 },
-  );
-  await page.getByRole('button', { name: 'Set up Apple Shortcut bridge' }).click();
-  await expect(page).toHaveURL(/\/mfa(?:\?|$)/, { timeout: 20_000 });
-  expect(mfaRoutes.length).toBeGreaterThan(beforePairingMfa);
-  process.stdout.write(
-    '\nPairing MFA checkpoint: complete the fresh challenge in this visible staging browser.\n',
-  );
-  await expect(page).toHaveURL(/\/data-sources\?resume=apple_bridge/, { timeout: 5 * 60_000 });
-  const deviceResponse = await deviceResponsePromise;
-  expect(deviceResponse.status()).toBe(201);
-  const deviceResult = (await deviceResponse.json()) as {
-    device?: { id?: string };
-    token?: string;
-  };
-  const deviceId = deviceResult.device?.id;
-  const token = deviceResult.token;
-  expect(deviceId).toMatch(/^[0-9a-f-]{36}$/i);
-  expect(token?.length ?? 0).toBeGreaterThan(20);
-  await expect(
-    page.getByText('Device created. Copy this token into the Shortcut now; it is shown only once.'),
-  ).toBeVisible();
+  let deviceLabel: string;
+  let deviceId: string;
+  let token: string;
+  let shortcutSnapshot: RawSnapshot;
+  let devices: { id: string; user_id: string; revoked_at: string | null }[];
 
-  const shortcutStartedAt = new Date().toISOString();
-  process.stdout.write(
-    '\nOperator checkpoint: copy the one-time token shown in this browser into a staging Apple Shortcut configured with an empty synthetic fixture (sources=[], records=[], attachments=[]), then run it. Do not use personal calendar or reminder data and do not send the token here.\n',
-  );
-  const shortcutSnapshot = await waitForSnapshot(deviceId!, shortcutStartedAt);
+  if (mobileResume) {
+    deviceLabel = mobileResume.deviceLabel;
+    deviceId = mobileResume.deviceId;
+    token = mobileResume.token;
+    expect(mobileResume.pairingMfaConfirmation).toBe('user-completed');
+    expect(mobileResume.shortcutRunConfirmation).toBe('operator-confirmed');
+    await page.goto('/data-sources');
+    devices = await ownerRows<{ id: string; user_id: string; revoked_at: string | null }>(
+      page,
+      'apple_bridge_devices',
+      { select: 'id,user_id,revoked_at', id: `eq.${deviceId}` },
+    );
+    expect(devices).toHaveLength(1);
+    expect(devices[0]?.user_id).toBe(ownerUserId);
+    expect(devices[0]?.revoked_at).toBeNull();
+
+    const resumeSnapshots = await protectedStagingRows<RawSnapshot>('mobile_snapshots', {
+      select:
+        'id,user_id,snapshot_id,request_id,device_id,received_at,received_count,client_type,client_version,status',
+      user_id: `eq.${ownerUserId}`,
+      device_id: `eq.${deviceId}`,
+      snapshot_id: `eq.${mobileResume.snapshotId}`,
+    });
+    expect(resumeSnapshots).toHaveLength(1);
+    shortcutSnapshot = resumeSnapshots[0]!;
+    expect(shortcutSnapshot.id).toBe(mobileResume.snapshotInternalId);
+    expect(Date.parse(shortcutSnapshot.received_at)).toBe(
+      Date.parse(mobileResume.snapshotReceivedAt),
+    );
+    expect(shortcutSnapshot).toMatchObject({
+      user_id: ownerUserId,
+      device_id: deviceId,
+      snapshot_id: mobileResume.snapshotId,
+      received_count: 0,
+      client_type: 'ios-shortcut',
+      client_version: '1.0.0',
+      status: 'accepted',
+    });
+  } else {
+    deviceLabel = `AI28 synthetic ${runTag.slice(0, 8)}`;
+    await page.goto('/data-sources');
+    await page.getByLabel('Device name').fill(deviceLabel);
+    const beforePairingMfa = mfaRoutes.length;
+    const deviceResponsePromise = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/apple-bridge/device' &&
+        response.request().method() === 'POST',
+      { timeout: 5 * 60_000 },
+    );
+    await page.getByRole('button', { name: 'Set up Apple Shortcut bridge' }).click();
+    await expect(page).toHaveURL(/\/mfa(?:\?|$)/, { timeout: 20_000 });
+    expect(mfaRoutes.length).toBeGreaterThan(beforePairingMfa);
+    process.stdout.write(
+      '\nPairing MFA checkpoint: complete the fresh challenge in this visible staging browser.\n',
+    );
+    await expect(page).toHaveURL(/\/data-sources\?resume=apple_bridge/, { timeout: 5 * 60_000 });
+    const deviceResponse = await deviceResponsePromise;
+    expect(deviceResponse.status()).toBe(201);
+    const deviceResult = (await deviceResponse.json()) as {
+      device?: { id?: string };
+      token?: string;
+    };
+    token = deviceResult.token ?? '';
+    const returnedDeviceId = deviceResult.device?.id;
+    expect(returnedDeviceId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(token.length).toBeGreaterThan(20);
+    deviceId = returnedDeviceId!;
+    await expect(
+      page.getByText(
+        'Device created. Copy this token into the Shortcut now; it is shown only once.',
+      ),
+    ).toBeVisible();
+
+    const shortcutStartedAt = new Date().toISOString();
+    process.stdout.write(
+      '\nOperator checkpoint: copy the one-time token shown in this browser into a staging Apple Shortcut configured with an empty synthetic fixture (sources=[], records=[], attachments=[]), then run it. Do not use personal calendar or reminder data and do not send the token here.\n',
+    );
+    shortcutSnapshot = await waitForSnapshot(deviceId, ownerUserId, shortcutStartedAt);
+    devices = await ownerRows<{ id: string; user_id: string; revoked_at: string | null }>(
+      page,
+      'apple_bridge_devices',
+      { select: 'id,user_id,revoked_at', id: `eq.${deviceId}` },
+    );
+  }
+
+  expect(shortcutSnapshot.user_id).toBe(ownerUserId);
   expect(shortcutSnapshot.status).toBe('accepted');
   expect(shortcutSnapshot.client_version).toBe('1.0.0');
-  const shortcutSources = await protectedStagingRows<{ id: string }>('mobile_snapshot_sources', {
-    select: 'id',
-    snapshot_internal_id: `eq.${shortcutSnapshot.id}`,
-  });
-  const shortcutRecords = await protectedStagingRows<{ id: string }>('mobile_ingestion_records', {
-    select: 'id',
-    snapshot_internal_id: `eq.${shortcutSnapshot.id}`,
-  });
+  const shortcutSources = await protectedStagingRows<{ id: string; user_id: string }>(
+    'mobile_snapshot_sources',
+    {
+      select: 'id,user_id',
+      user_id: `eq.${ownerUserId}`,
+      snapshot_internal_id: `eq.${shortcutSnapshot.id}`,
+    },
+  );
+  const shortcutRecords = await protectedStagingRows<{ id: string; user_id: string }>(
+    'mobile_ingestion_records',
+    {
+      select: 'id,user_id',
+      user_id: `eq.${ownerUserId}`,
+      snapshot_internal_id: `eq.${shortcutSnapshot.id}`,
+    },
+  );
   expect(shortcutSources).toHaveLength(0);
   expect(shortcutRecords).toHaveLength(0);
-  await confirmShortcutRun();
+  if (!mobileResume) {
+    await confirmShortcutRun({
+      candidateSha: candidateSha!,
+      candidateTreeSha: candidateTreeSha!,
+      deviceId: deviceId!,
+      snapshotId: shortcutSnapshot.snapshot_id,
+    });
+  }
 
-  const devices = await ownerRows<{ id: string; user_id: string; revoked_at: string | null }>(
-    page,
-    'apple_bridge_devices',
-    { select: 'id,user_id,revoked_at', id: `eq.${deviceId}` },
-  );
   expect(devices).toHaveLength(1);
   expect(devices[0]?.revoked_at).toBeNull();
   const userId = devices[0]!.user_id;
+  expect(userId).toBe(ownerUserId);
   const freshnessFilter = {
     select: 'state,last_success_at',
     user_id: `eq.${userId}`,
@@ -497,63 +576,71 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
   expect(validResult.body.adaptation).toMatchObject({ adapted: 2, duplicate: 0, rejected: 0 });
   const validSnapshotRows = await protectedStagingRows<RawSnapshot>('mobile_snapshots', {
     select:
-      'id,snapshot_id,request_id,device_id,received_at,received_count,client_type,client_version,status',
+      'id,user_id,snapshot_id,request_id,device_id,received_at,received_count,client_type,client_version,status',
+    user_id: `eq.${userId}`,
     device_id: `eq.${deviceId}`,
     snapshot_id: `eq.${validEnvelope.snapshot_id}`,
   });
   expect(validSnapshotRows).toHaveLength(1);
   const validRaw = validSnapshotRows[0]!;
-  const rawRecords = await protectedStagingRows<{ id: string; record_id: string }>(
-    'mobile_ingestion_records',
-    {
-      select: 'id,record_id',
-      snapshot_internal_id: `eq.${validRaw.id}`,
-      record_id: `eq.${firstEvent.record_id}`,
-    },
-  );
+  expect(validRaw.user_id).toBe(userId);
+  const rawRecords = await protectedStagingRows<{
+    id: string;
+    user_id: string;
+    record_id: string;
+  }>('mobile_ingestion_records', {
+    select: 'id,user_id,record_id',
+    user_id: `eq.${userId}`,
+    snapshot_internal_id: `eq.${validRaw.id}`,
+    record_id: `eq.${firstEvent.record_id}`,
+  });
   expect(rawRecords).toHaveLength(1);
+  expect(rawRecords[0]?.user_id).toBe(userId);
   const provenance = await protectedStagingRows<{
     id: string;
+    user_id: string;
     status: string;
     derived_row_id: string | null;
   }>('mobile_record_adaptations', {
-    select: 'id,status,derived_row_id',
+    select: 'id,user_id,status,derived_row_id',
+    user_id: `eq.${userId}`,
     record_internal_id: `eq.${rawRecords[0]!.id}`,
     adapter_name: 'eq.calendar',
     adapter_version: 'eq.v1',
   });
   expect(provenance).toHaveLength(1);
+  expect(provenance[0]?.user_id).toBe(userId);
   expect(provenance[0]).toMatchObject({ status: 'adapted' });
-  const canonical = await ownerRows<{ id: string; raw_record_id: string }>(
-    page,
-    'mobile_calendar_event_items',
-    {
-      select: 'id,raw_record_id',
-      user_id: `eq.${userId}`,
-      raw_record_id: `eq.${rawRecords[0]!.id}`,
-    },
-  );
+  const canonical = await protectedStagingRows<{
+    id: string;
+    user_id: string;
+    raw_record_id: string;
+  }>('mobile_calendar_event_items', {
+    select: 'id,user_id,raw_record_id',
+    user_id: `eq.${userId}`,
+    raw_record_id: `eq.${rawRecords[0]!.id}`,
+  });
   expect(canonical).toHaveLength(1);
+  expect(canonical[0]?.user_id).toBe(userId);
   expect(canonical[0]?.id).toBe(provenance[0]?.derived_row_id);
-  const canonicalBeforeReplay = await ownerRows<{ id: string }>(
-    page,
+  const canonicalBeforeReplay = await protectedStagingRows<{ id: string; user_id: string }>(
     'mobile_calendar_event_items',
     {
-      select: 'id',
+      select: 'id,user_id',
       user_id: `eq.${userId}`,
       title: `like.${titlePrefix}*`,
     },
   );
   expect(canonicalBeforeReplay).toHaveLength(2);
+  expect(canonicalBeforeReplay.every(({ user_id: ownerId }) => ownerId === userId)).toBe(true);
 
   const replayResult = await mobileRequest(token!, JSON.stringify(validEnvelope));
   expect(replayResult.status).toBe(200);
   expect(replayResult.body.replay).toBe(true);
-  const canonicalAfterReplay = await ownerRows<{ id: string }>(
-    page,
+  const canonicalAfterReplay = await protectedStagingRows<{ id: string; user_id: string }>(
     'mobile_calendar_event_items',
     {
-      select: 'id',
+      select: 'id,user_id',
       user_id: `eq.${userId}`,
       title: `like.${titlePrefix}*`,
     },
@@ -572,16 +659,16 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
   const updatedResult = await mobileRequest(token!, JSON.stringify(updatedEnvelope));
   expect(updatedResult.status).toBe(202);
   expect(updatedResult.body.adaptation).toMatchObject({ adapted: 1, duplicate: 1, rejected: 0 });
-  const canonicalAfterUpdate = await ownerRows<{ id: string }>(
-    page,
+  const canonicalAfterUpdate = await protectedStagingRows<{ id: string; user_id: string }>(
     'mobile_calendar_event_items',
     {
-      select: 'id',
+      select: 'id,user_id',
       user_id: `eq.${userId}`,
       title: `like.${titlePrefix}*`,
     },
   );
   expect(canonicalAfterUpdate).toHaveLength(3);
+  expect(canonicalAfterUpdate.every(({ user_id: ownerId }) => ownerId === userId)).toBe(true);
   const freshRows = await ownerRows<{ state: string; last_success_at: string | null }>(
     page,
     'data_freshness',
@@ -604,11 +691,15 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
     JSON.stringify(wrongTokenEnvelope),
   );
   expect(wrongTokenResult.status).toBe(401);
-  const rejectedInvalidSnapshots = await protectedStagingRows<{ id: string }>('mobile_snapshots', {
-    select: 'id',
-    device_id: `eq.${deviceId}`,
-    snapshot_id: `in.(${wrongSchemaEnvelope.snapshot_id},${wrongTokenEnvelope.snapshot_id})`,
-  });
+  const rejectedInvalidSnapshots = await protectedStagingRows<{ id: string; user_id: string }>(
+    'mobile_snapshots',
+    {
+      select: 'id,user_id',
+      user_id: `eq.${userId}`,
+      device_id: `eq.${deviceId}`,
+      snapshot_id: `in.(${wrongSchemaEnvelope.snapshot_id},${wrongTokenEnvelope.snapshot_id})`,
+    },
+  );
   expect(rejectedInvalidSnapshots).toHaveLength(0);
 
   const retryEvent = eventRecord(
@@ -624,34 +715,48 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
   expect(retryResult.body.adaptation).toMatchObject({ adapted: 1, duplicate: 0, rejected: 0 });
   const retrySnapshots = await protectedStagingRows<RawSnapshot>('mobile_snapshots', {
     select:
-      'id,snapshot_id,request_id,device_id,received_at,received_count,client_type,client_version,status',
+      'id,user_id,snapshot_id,request_id,device_id,received_at,received_count,client_type,client_version,status',
+    user_id: `eq.${userId}`,
     device_id: `eq.${deviceId}`,
     snapshot_id: `eq.${retryEnvelope.snapshot_id}`,
   });
   expect(retrySnapshots).toHaveLength(1);
-  const retryRawRows = await protectedStagingRows<{ id: string }>('mobile_ingestion_records', {
-    select: 'id',
-    snapshot_internal_id: `eq.${retrySnapshots[0]!.id}`,
-  });
+  expect(retrySnapshots[0]?.user_id).toBe(userId);
+  const retryRawRows = await protectedStagingRows<{ id: string; user_id: string }>(
+    'mobile_ingestion_records',
+    {
+      select: 'id,user_id',
+      user_id: `eq.${userId}`,
+      snapshot_internal_id: `eq.${retrySnapshots[0]!.id}`,
+    },
+  );
   expect(retryRawRows).toHaveLength(1);
+  expect(retryRawRows[0]?.user_id).toBe(userId);
   const retryProvenance = await protectedStagingRows<{
     id: string;
+    user_id: string;
     status: string;
     derived_row_id: string | null;
   }>('mobile_record_adaptations', {
-    select: 'id,status,derived_row_id',
+    select: 'id,user_id,status,derived_row_id',
+    user_id: `eq.${userId}`,
     record_internal_id: `eq.${retryRawRows[0]!.id}`,
     adapter_name: 'eq.calendar',
     adapter_version: 'eq.v1',
   });
   expect(retryProvenance).toHaveLength(1);
+  expect(retryProvenance[0]?.user_id).toBe(userId);
   expect(retryProvenance[0]?.status).toBe('adapted');
-  const retryCanonical = await ownerRows<{ id: string }>(page, 'mobile_calendar_event_items', {
-    select: 'id',
-    user_id: `eq.${userId}`,
-    raw_record_id: `eq.${retryRawRows[0]!.id}`,
-  });
+  const retryCanonical = await protectedStagingRows<{ id: string; user_id: string }>(
+    'mobile_calendar_event_items',
+    {
+      select: 'id,user_id',
+      user_id: `eq.${userId}`,
+      raw_record_id: `eq.${retryRawRows[0]!.id}`,
+    },
+  );
   expect(retryCanonical).toHaveLength(1);
+  expect(retryCanonical[0]?.user_id).toBe(userId);
   expect(retryCanonical[0]?.id).toBe(retryProvenance[0]?.derived_row_id);
 
   const card = page
@@ -674,11 +779,15 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
   const revokedRequestEnvelope = envelope([]);
   const revokedResult = await mobileRequest(token!, JSON.stringify(revokedRequestEnvelope));
   expect(revokedResult.status).toBe(401);
-  const revokedWrites = await protectedStagingRows<{ id: string }>('mobile_snapshots', {
-    select: 'id',
-    device_id: `eq.${deviceId}`,
-    snapshot_id: `eq.${revokedRequestEnvelope.snapshot_id}`,
-  });
+  const revokedWrites = await protectedStagingRows<{ id: string; user_id: string }>(
+    'mobile_snapshots',
+    {
+      select: 'id,user_id',
+      user_id: `eq.${userId}`,
+      device_id: `eq.${deviceId}`,
+      snapshot_id: `eq.${revokedRequestEnvelope.snapshot_id}`,
+    },
+  );
   expect(revokedWrites).toHaveLength(0);
 
   const releaseGate = (await import('../../infrastructure/scripts/release-gate.js')) as unknown as {

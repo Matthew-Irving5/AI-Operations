@@ -1250,13 +1250,14 @@ test('AI-28 mobile runner keeps protected reads off service-role PostgREST and b
   const snapshotId = '00000000-0000-4000-8000-000000000001';
   assert.match(
     buildMobileStagingSql('mobile_snapshots', {
-      select: 'id,snapshot_id',
+      select: 'id,user_id,snapshot_id',
+      user_id: `eq.${snapshotId}`,
       device_id: `eq.${snapshotId}`,
       received_at: 'gt.2026-10-23T10:00:00.000Z',
       received_count: 'eq.0',
       limit: '1',
     }),
-    /^select id, snapshot_id from public\.mobile_snapshots where .* limit 1$/,
+    /^select id, user_id, snapshot_id from public\.mobile_snapshots where .* limit 1$/,
   );
   assert.throws(
     () => buildMobileStagingSql('actions', { select: 'id', id: `eq.${snapshotId}` }),
@@ -1266,6 +1267,7 @@ test('AI-28 mobile runner keeps protected reads off service-role PostgREST and b
     () =>
       buildMobileStagingSql('mobile_snapshots', {
         select: 'raw_record',
+        user_id: `eq.${snapshotId}`,
         device_id: `eq.${snapshotId}`,
       }),
     /selected column is not allowlisted/,
@@ -1274,6 +1276,7 @@ test('AI-28 mobile runner keeps protected reads off service-role PostgREST and b
     () =>
       buildMobileStagingSql('mobile_snapshots', {
         select: 'id',
+        user_id: `eq.${snapshotId}`,
         device_id: `eq.${snapshotId}' OR true --`,
       }),
     /UUID filter is invalid/,
@@ -1305,6 +1308,7 @@ test('AI-28 mobile runner keeps protected reads off service-role PostgREST and b
     'mobile_snapshots',
     {
       select: 'id',
+      user_id: `eq.${snapshotId}`,
       snapshot_id: `eq.${snapshotId}`,
     },
     target,
@@ -1319,7 +1323,7 @@ test('AI-28 mobile runner keeps protected reads off service-role PostgREST and b
     'https://api.supabase.com/v1/projects/jqtssfrfocnibffdkqch/database/query',
   );
   assert.deepEqual(requestBody, {
-    query: `select id from public.mobile_snapshots where snapshot_id = '${snapshotId}' limit 500`,
+    query: `select id from public.mobile_snapshots where user_id = '${snapshotId}' and snapshot_id = '${snapshotId}' limit 500`,
     read_only: true,
   });
 });
