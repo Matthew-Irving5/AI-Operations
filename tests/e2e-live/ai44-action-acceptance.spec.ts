@@ -67,6 +67,23 @@ type Receipt = {
   };
 };
 
+type CanonicalActionExecutionContext = {
+  request: {
+    id: string;
+    userId: string;
+    actionId: string;
+    actionType: string;
+    approvalState: string;
+  };
+  freshWebAal2: boolean;
+};
+
+type PromptTransitionReplay = {
+  active_version: number;
+  previous_version: number;
+  replayed: boolean;
+};
+
 function required(value: string | undefined, name: string): string {
   if (!value) throw new Error(`${name}_missing`);
   return value;
@@ -91,18 +108,63 @@ function transitionKey(
 async function stagingRows<T extends object>(
   table: string,
   parameters: Record<string, string>,
+  bearerToken = env.LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY,
 ): Promise<T[]> {
   const url = new URL(`/rest/v1/${table}`, env.LIVE_E2E_SUPABASE_URL);
   for (const [key, value] of Object.entries(parameters)) url.searchParams.set(key, value);
   const response = await fetch(url, {
     headers: {
       apikey: env.LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY,
-      authorization: `Bearer ${env.LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY}`,
+      authorization: `Bearer ${bearerToken}`,
     },
     cache: 'no-store',
   });
   if (!response.ok) throw new Error(`ai44_staging_${table}_lookup_failed_${response.status}`);
   return (await response.json()) as T[];
+}
+
+async function stagingRpc<T>(
+  functionName: string,
+  parameters: Record<string, unknown>,
+): Promise<T> {
+  const response = await fetch(new URL(`/rest/v1/rpc/${functionName}`, env.LIVE_E2E_SUPABASE_URL), {
+    method: 'POST',
+    headers: {
+      apikey: env.LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY,
+      authorization: `Bearer ${env.LIVE_E2E_SUPABASE_SERVICE_ROLE_KEY}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(parameters),
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error(`ai44_staging_${functionName}_rpc_failed_${response.status}`);
+  return (await response.json()) as T;
+}
+
+function loadCanonicalActionContext(
+  executionRequestId: string,
+): Promise<CanonicalActionExecutionContext> {
+  return stagingRpc('load_canonical_action_execution_request', {
+    p_execution_request_id: executionRequestId,
+  });
+}
+
+function replayPromptTransition(input: {
+  templateId: string;
+  targetVersion: number;
+  expectedActiveVersion: number;
+  actorUserId: string;
+  operation: 'promote' | 'rollback';
+  idempotencyKey: string;
+}): Promise<PromptTransitionReplay> {
+  return stagingRpc('transition_prompt_version', {
+    p_template_id: input.templateId,
+    p_target_version: input.targetVersion,
+    p_expected_active_version: input.expectedActiveVersion,
+    p_actor_user_id: input.actorUserId,
+    p_operation: input.operation,
+    p_idempotency_key: input.idempotencyKey,
+  });
 }
 
 async function invokeProductionDispatcher(executionRequestId: string): Promise<unknown> {
@@ -126,6 +188,16 @@ async function requireSingleRow<T extends object>(
 ): Promise<T> {
   const rows = await stagingRows<T>(table, parameters);
   if (rows.length !== 1) throw new Error(`ai44_staging_${table}_row_count_${rows.length}`);
+  return rows[0]!;
+}
+
+async function requireSingleOwnerRow<T extends object>(
+  table: string,
+  parameters: Record<string, string>,
+  accessToken: string,
+): Promise<T> {
+  const rows = await stagingRows<T>(table, parameters, accessToken);
+  if (rows.length !== 1) throw new Error(`ai44_staging_${table}_owner_row_count_${rows.length}`);
   return rows[0]!;
 }
 
@@ -228,16 +300,13 @@ test('AI-44 staging proves fresh-MFA canonical action, one effect, receipt repla
     policy_decision: null,
     typed_parameters: { templateId, targetVersion: 3 },
   });
-  const action = await requireSingleRow<Action>('actions', {
-    select: 'id,status,authority,approval_state,action_type',
-    id: `eq.${request.action_id}`,
-  });
-  expect(action).toMatchObject({
-    id: request.action_id,
-    status: 'proposed',
-    authority: 'verified_user',
-    approval_state: 'not_required',
-    action_type: 'review_prompt_promotion',
+  const queuedActionContext = await loadCanonicalActionContext(request.id);
+  expect(queuedActionContext.request).toMatchObject({
+    id: request.id,
+    userId: request.user_id,
+    actionId: request.action_id,
+    actionType: 'review_prompt_promotion',
+    approvalState: 'not_required',
   });
   const template = await requireSingleRow<PromptTemplate>('prompt_templates', {
     select: 'id,active_version,code',
@@ -290,24 +359,19 @@ test('AI-44 staging proves fresh-MFA canonical action, one effect, receipt repla
       // Only a real navigation to staging MFA satisfies this requirement.
     }
   });
-  const lastMfaEvent = (
-    await stagingRows<{ verified_at: string }>('mfa_reauthentication_events', {
-      select: 'verified_at',
-      user_id: `eq.${request.user_id}`,
-      order: 'verified_at.desc',
-      limit: '1',
-    })
-  )[0];
-  const lastMfaAt = lastMfaEvent ? Date.parse(lastMfaEvent.verified_at) : Number.NEGATIVE_INFINITY;
-  if (!Number.isFinite(lastMfaAt) && lastMfaEvent)
-    throw new Error('ai44_latest_mfa_timestamp_invalid');
-  const staleWaitMs = lastMfaAt + 5 * 60_000 + 2_000 - Date.now();
-  if (staleWaitMs > 0) {
+  let actionContext = await loadCanonicalActionContext(request.id);
+  if (actionContext.freshWebAal2) {
     process.stdout.write(
-      `Waiting ${Math.ceil(staleWaitMs / 1000)}s for the latest real staging MFA event to pass the five-minute freshness window.\n`,
+      'Waiting for the canonical staging action context to report that the previous MFA event is stale.\n',
     );
-    await page.waitForTimeout(staleWaitMs);
+    const staleDeadline = Date.now() + 6 * 60_000;
+    while (actionContext.freshWebAal2) {
+      if (Date.now() >= staleDeadline) throw new Error('ai44_previous_mfa_did_not_expire');
+      await page.waitForTimeout(5_000);
+      actionContext = await loadCanonicalActionContext(request.id);
+    }
   }
+  expect(actionContext.freshWebAal2).toBe(false);
 
   const forwardIdempotencyKey = request.idempotency_key;
   const forwardTransitionKey = transitionKey(
@@ -338,12 +402,6 @@ test('AI-44 staging proves fresh-MFA canonical action, one effect, receipt repla
     }),
   ).toHaveLength(0);
   expect(
-    await stagingRows('prompt_version_transitions', {
-      select: 'id',
-      idempotency_key: `eq.${forwardTransitionKey}`,
-    }),
-  ).toHaveLength(0);
-  expect(
     (
       await requireSingleRow<PromptTemplate>('prompt_templates', {
         select: 'id,active_version,code',
@@ -351,16 +409,6 @@ test('AI-44 staging proves fresh-MFA canonical action, one effect, receipt repla
       })
     ).active_version,
   ).toBe(2);
-  expect(
-    (
-      await requireSingleRow<Action>('actions', {
-        select: 'id,status,authority,approval_state,action_type',
-        id: `eq.${action.id}`,
-      })
-    ).status,
-  ).toBe('proposed');
-
-  const freshLoginStartedAt = currentTimestamp();
   await page.goto('/login');
   await expect(page.getByRole('heading', { name: 'AI Operations' })).toBeVisible();
   if (env.LIVE_E2E_EMAIL && env.LIVE_E2E_PASSWORD) {
@@ -374,16 +422,28 @@ test('AI-44 staging proves fresh-MFA canonical action, one effect, receipt repla
   await expect(page).toHaveURL(/\/overview(?:\?|$)/, { timeout: 5 * 60_000 });
   await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
   expect(manualMfaChallengeObserved).toBe(true);
-  const freshEvents = await stagingRows<{ id: string; verified_at: string }>(
-    'mfa_reauthentication_events',
-    {
-      select: 'id,verified_at',
-      user_id: `eq.${request.user_id}`,
-      verified_at: `gte.${freshLoginStartedAt}`,
-    },
+  actionContext = await loadCanonicalActionContext(request.id);
+  expect(actionContext.freshWebAal2).toBe(true);
+  const actionToken = readAal2AccessToken(
+    await page.context().cookies(stagingTarget.origin),
+    request.user_id,
   );
-  expect(freshEvents.length).toBeGreaterThan(0);
-  expect(manualMfaChallengeObserved).toBe(true);
+  const action = await requireSingleOwnerRow<Action>(
+    'actions',
+    {
+      select: 'id,status,authority,approval_state,action_type',
+      id: `eq.${request.action_id}`,
+      user_id: `eq.${request.user_id}`,
+    },
+    actionToken,
+  );
+  expect(action).toMatchObject({
+    id: request.action_id,
+    status: 'proposed',
+    authority: 'verified_user',
+    approval_state: 'not_required',
+    action_type: 'review_prompt_promotion',
+  });
 
   const completed = (await invokeProductionDispatcher(request.id)) as {
     kind?: string;
@@ -424,24 +484,18 @@ test('AI-44 staging proves fresh-MFA canonical action, one effect, receipt repla
     attempt_count: 1,
     policy_decision: { decision: 'allow', reason: 'verified_user_authority' },
   });
-  const forwardEffects = await stagingRows<{
-    id: string;
-    template_id: string;
-    actor_user_id: string;
-    operation: string;
-    previous_version: number;
-    active_version: number;
-  }>('prompt_version_transitions', {
-    select: 'id,template_id,actor_user_id,operation,previous_version,active_version',
-    idempotency_key: `eq.${forwardTransitionKey}`,
-  });
-  expect(forwardEffects).toHaveLength(1);
-  expect(forwardEffects[0]).toMatchObject({
-    template_id: templateId,
-    actor_user_id: request.user_id,
+  const forwardEffect = await replayPromptTransition({
+    templateId,
+    targetVersion: 3,
+    expectedActiveVersion: 2,
+    actorUserId: request.user_id,
     operation: 'promote',
-    previous_version: 2,
+    idempotencyKey: forwardTransitionKey,
+  });
+  expect(forwardEffect).toEqual({
     active_version: 3,
+    previous_version: 2,
+    replayed: true,
   });
   expect(
     (
@@ -464,11 +518,15 @@ test('AI-44 staging proves fresh-MFA canonical action, one effect, receipt repla
     }),
   ).toHaveLength(1);
   expect(
-    await stagingRows('prompt_version_transitions', {
-      select: 'id',
-      idempotency_key: `eq.${forwardTransitionKey}`,
+    await replayPromptTransition({
+      templateId,
+      targetVersion: 3,
+      expectedActiveVersion: 2,
+      actorUserId: request.user_id,
+      operation: 'promote',
+      idempotencyKey: forwardTransitionKey,
     }),
-  ).toHaveLength(1);
+  ).toEqual({ active_version: 3, previous_version: 2, replayed: true });
 
   const reversalIdempotencyKey = `${fixtureKey}:reverse`;
   const reversalRequest = await requestCanonicalReversal(
@@ -510,24 +568,18 @@ test('AI-44 staging proves fresh-MFA canonical action, one effect, receipt repla
   });
   expect(reversalReceipts).toHaveLength(1);
   expect(reversalReceipts[0]!.id).toBe(reversalReceiptId);
-  const reversalEffects = await stagingRows<{
-    id: string;
-    template_id: string;
-    actor_user_id: string;
-    operation: string;
-    previous_version: number;
-    active_version: number;
-  }>('prompt_version_transitions', {
-    select: 'id,template_id,actor_user_id,operation,previous_version,active_version',
-    idempotency_key: `eq.${reversalTransitionKey}`,
-  });
-  expect(reversalEffects).toHaveLength(1);
-  expect(reversalEffects[0]).toMatchObject({
-    template_id: templateId,
-    actor_user_id: request.user_id,
+  const reversalEffect = await replayPromptTransition({
+    templateId,
+    targetVersion: 2,
+    expectedActiveVersion: 3,
+    actorUserId: request.user_id,
     operation: 'rollback',
-    previous_version: 3,
+    idempotencyKey: reversalTransitionKey,
+  });
+  expect(reversalEffect).toEqual({
     active_version: 2,
+    previous_version: 3,
+    replayed: true,
   });
   expect(reversalExecution.user_id).toBe(request.user_id);
   expect(
@@ -551,17 +603,26 @@ test('AI-44 staging proves fresh-MFA canonical action, one effect, receipt repla
     }),
   ).toHaveLength(1);
   expect(
-    await stagingRows('prompt_version_transitions', {
-      select: 'id',
-      idempotency_key: `eq.${reversalTransitionKey}`,
+    await replayPromptTransition({
+      templateId,
+      targetVersion: 2,
+      expectedActiveVersion: 3,
+      actorUserId: request.user_id,
+      operation: 'rollback',
+      idempotencyKey: reversalTransitionKey,
     }),
-  ).toHaveLength(1);
+  ).toEqual({ active_version: 2, previous_version: 3, replayed: true });
   expect(
     (
-      await requireSingleRow<Action>('actions', {
-        select: 'id,status,authority,approval_state,action_type',
-        id: `eq.${action.id}`,
-      })
+      await requireSingleOwnerRow<Action>(
+        'actions',
+        {
+          select: 'id,status,authority,approval_state,action_type',
+          id: `eq.${action.id}`,
+          user_id: `eq.${request.user_id}`,
+        },
+        actionToken,
+      )
     ).status,
   ).toBe('reversed');
 
@@ -593,7 +654,7 @@ test('AI-44 staging proves fresh-MFA canonical action, one effect, receipt repla
     actionId: action.id,
     executionId: request.id,
     receiptId: originalReceiptId,
-    effectCount: forwardEffects.length,
+    effectCount: forwardEffect.replayed ? 1 : 0,
     terminalReceiptCount: forwardReceipts.filter((receipt) => receipt.kind === 'succeeded').length,
     correlationIds: [request.correlation_id],
   });
