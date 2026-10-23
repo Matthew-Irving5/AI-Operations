@@ -83,6 +83,15 @@ describe('live auth acceptance harness', () => {
       readFile(runnerPath, 'utf8'),
       readFile(combinedJourneyPath, 'utf8'),
     ]);
+    const authJourneyStart = journey.indexOf(
+      "test('staging proves AI-16 prompt promotion/rollback and AI-19 correlated workflows",
+    );
+    const costJourneyStart = journey.indexOf(
+      "test('staging proves one candidate-bound AI-20 Responses cost lifecycle",
+    );
+    assert.ok(authJourneyStart >= 0 && costJourneyStart > authJourneyStart);
+    const authTestBody = journey.slice(authJourneyStart, costJourneyStart);
+    const authSuite = journey.slice(0, costJourneyStart);
 
     assert.match(
       runner,
@@ -94,14 +103,17 @@ describe('live auth acceptance harness', () => {
     );
     const suiteBranch = suiteSelection.slice(suiteSelection.indexOf(": mode === 'suite'"));
     assert.doesNotMatch(suiteBranch, /auth-acceptance\.spec\.ts/);
-    assert.match(journey, /staleDenied: 'passed'/);
-    assert.match(journey, /freshReauthAccepted: 'passed'/);
-    assert.equal([...journey.matchAll(/await signInWithFreshMfa\(page\)/g)].length, 1);
-    assert.match(journey, /acceptanceProfile: 'auth-browser'/);
-    assert.match(journey, /promptGovernanceProof: governanceProof\.evidence/);
-    assert.doesNotMatch(journey, /serviceRows(?:<[^>]+>)?\(\s*['"]prompt_version_transitions['"]/);
-    assert.match(journey, /promotionIdempotencyKey: promotionKey/);
-    assert.match(journey, /rollbackIdempotencyKey: rollbackKey/);
+    assert.match(authSuite, /staleDenied: 'passed'/);
+    assert.match(authSuite, /freshReauthAccepted: 'passed'/);
+    assert.equal([...authTestBody.matchAll(/await signInWithFreshMfa\(page\)/g)].length, 1);
+    assert.match(authSuite, /acceptanceProfile: 'auth-browser'/);
+    assert.match(authSuite, /promptGovernanceProof: governanceProof\.evidence/);
+    assert.doesNotMatch(
+      authSuite,
+      /serviceRows(?:<[^>]+>)?\(\s*['"]prompt_version_transitions['"]/,
+    );
+    assert.match(authSuite, /promotionIdempotencyKey: promotionKey/);
+    assert.match(authSuite, /rollbackIdempotencyKey: rollbackKey/);
   });
 
   it('never uses the service role to read user-owned schedules', async () => {

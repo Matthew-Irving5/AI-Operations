@@ -21,6 +21,7 @@ on:
         options:
           [
             auto,
+            targeted,
             auth-browser,
             cost-runtime,
             procurement,
@@ -108,11 +109,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
           PULL_REQUEST_NUMBER: ${{ steps.candidate.outputs.pull_request_number }}
-          HOSTED_PROFILE_OVERRIDE: ${{ inputs.acceptance_profile || 'auto' }}
+          ACCEPTANCE_PROFILE: ${{ inputs.acceptance_profile || 'auto' }}
         run: |
           set -euo pipefail
           gh api --paginate "repos/$GH_REPOSITORY/pulls/$PULL_REQUEST_NUMBER/files?per_page=100" --jq '.[].filename' > candidate-files.txt
-          pnpm exec tsx infrastructure/scripts/acceptance-profile.ts candidate-files.txt "$HOSTED_PROFILE_OVERRIDE"
+          pnpm exec tsx infrastructure/scripts/acceptance-profile.ts candidate-files.txt "$ACCEPTANCE_PROFILE"
       - name: Validate manual candidate required workflows
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'candidate'
         env:
@@ -179,16 +180,6 @@ jobs:
           NODE
           pnpm exec tsx infrastructure/scripts/release-gate.ts staging-slot-check < staging-slot-input.json > staging-slot-evidence.json
           jq -e '.available == true' staging-slot-evidence.json > /dev/null || { owner="$(jq -r '.owner.pullRequestNumber // "unknown"' staging-slot-evidence.json)"; echo "Staging is reserved for open PR #$owner until its hosted acceptance completes."; exit 1; }
-      - name: Set candidate status while staging deploys
-        if: inputs.candidate_sha != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPOSITORY: ${{ github.repository }}
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-        run: |
-          set -euo pipefail
-          jq -n '{state:"pending",context:"AI Operations / Staging capability acceptance",description:"Candidate staging deployment is in progress."}' > commit-status.json
-          gh api "repos/$GH_REPOSITORY/statuses/$CANDIDATE_SHA" --method POST --input commit-status.json > /dev/null
       - name: Validate staging environment identity
         env:
           GITHUB_CONFIG_SECRET_NAMES: ${{ secrets.CLOUDFLARE_ACCOUNT_ID != '' && 'CLOUDFLARE_ACCOUNT_ID,' || '' }}${{ secrets.CLOUDFLARE_API_TOKEN != '' && 'CLOUDFLARE_API_TOKEN,' || '' }}${{ secrets.FINANCE_ARCHIVE_GATEWAY_SECRET != '' && 'FINANCE_ARCHIVE_GATEWAY_SECRET,' || '' }}${{ secrets.STAGING_SUPABASE_ACCESS_TOKEN != '' && 'STAGING_SUPABASE_ACCESS_TOKEN,' || '' }}${{ secrets.STAGING_SUPABASE_ANON_KEY != '' && 'STAGING_SUPABASE_ANON_KEY,' || '' }}${{ secrets.STAGING_SUPABASE_DB_PASSWORD != '' && 'STAGING_SUPABASE_DB_PASSWORD,' || '' }}${{ secrets.STAGING_SUPABASE_PROJECT_REF != '' && 'STAGING_SUPABASE_PROJECT_REF,' || '' }}${{ secrets.STAGING_SUPABASE_URL != '' && 'STAGING_SUPABASE_URL' || '' }}
@@ -206,6 +197,16 @@ jobs:
           STAGING_SUPABASE_PROJECT_REF: ${{ secrets.STAGING_SUPABASE_PROJECT_REF }}
           STAGING_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
         run: pnpm environment:drift -- preflight-staging-migrations
+      - name: Set candidate status while staging deploys
+        if: inputs.candidate_sha != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          jq -n '{state:"pending",context:"AI Operations / Staging capability acceptance",description:"Candidate staging deployment is in progress."}' > commit-status.json
+          gh api "repos/$GH_REPOSITORY/statuses/$CANDIDATE_SHA" --method POST --input commit-status.json > /dev/null
       - name: Capture staging Edge Function source attestation
         env:
           RELEASE_SHA: ${{ inputs.candidate_sha || github.sha }}
@@ -424,12 +425,14 @@ jobs:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           DEPLOYMENT_RUN_ID: ${{ inputs.deployment_run_id }}
           OUTCOME: ${{ inputs.acceptance_outcome }}
+          ACCEPTANCE_PROFILE: ${{ inputs.acceptance_profile }}
           DISPATCH_SHA: ${{ github.sha }}
           DISPATCH_REF: ${{ github.ref }}
         run: |
           set -euo pipefail
           [[ "$CANDIDATE_SHA" =~ ^[a-f0-9]{40}$ && "$CANDIDATE_SHA" == "$DISPATCH_SHA" && "$DISPATCH_REF" == refs/heads/* && "$DISPATCH_REF" != "refs/heads/main" ]] || { echo "Acceptance dispatch must use the current non-main PR branch head."; exit 1; }
           [[ "$DEPLOYMENT_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]] || { echo "Deployment run ID is invalid."; exit 1; }
+          [[ "$ACCEPTANCE_PROFILE" == "auth-browser" || "$ACCEPTANCE_PROFILE" == "cost-runtime" ]] || { echo "Acceptance dispatch requires the exact auth-browser or cost-runtime profile."; exit 1; }
           [[ "$OUTCOME" == "accepted" || "$OUTCOME" == "failed" ]] || { echo "Acceptance outcome is invalid."; exit 1; }
           gh api "repos/$GH_REPOSITORY/commits/$CANDIDATE_SHA/pulls" > candidate-pulls.json
           pr_count="$(jq --arg repo "$GH_REPOSITORY" --arg sha "$CANDIDATE_SHA" '[.[] | select(.state == "open" and .base.ref == "main" and .head.sha == $sha and .head.repo.full_name == $repo)] | length' candidate-pulls.json)"
@@ -473,6 +476,7 @@ jobs:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           DEPLOYMENT_RUN_ID: ${{ inputs.deployment_run_id }}
           ACCEPTANCE_EVIDENCE: ${{ inputs.acceptance_evidence }}
+          ACCEPTANCE_PROFILE: ${{ inputs.acceptance_profile }}
         run: |
           set -euo pipefail
           node --input-type=module <<'NODE'
@@ -480,6 +484,7 @@ jobs:
           const sha = process.env.CANDIDATE_SHA;
           const runId = process.env.DEPLOYMENT_RUN_ID;
           const submitted = JSON.parse(process.env.ACCEPTANCE_EVIDENCE ?? '');
+          const expectedProfile = process.env.ACCEPTANCE_PROFILE;
           const deployment = JSON.parse(readFileSync('deployment-evidence/candidate-staging-deployment.json', 'utf8'));
           const run = JSON.parse(readFileSync('deployment-run.json', 'utf8'));
           const currentPr = JSON.parse(readFileSync('current-pr.json', 'utf8'));
@@ -490,6 +495,9 @@ jobs:
           }
           if (submitted.candidateSha !== sha || submitted.candidateTreeSha !== candidateTreeSha || submitted.pullRequestNumber !== currentPr.number || submitted.deploymentRunId !== runId) {
             throw new Error('Hosted acceptance does not match the exact candidate SHA, tree, PR, and deployment run.');
+          }
+          if (submitted.acceptanceProfile !== expectedProfile || deployment.acceptanceProfile !== expectedProfile) {
+            throw new Error('Hosted acceptance profile does not match the exact staged candidate profile.');
           }
           writeFileSync('staging-status-input.json', JSON.stringify({
             candidateSha: sha,

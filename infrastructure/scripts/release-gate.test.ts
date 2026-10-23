@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { createAi20CostRuntimeProof } from './ai20-cost-runtime-proof.js';
 import {
   resolveGitTreeSha,
   writeLiveStagingAcceptanceEvidence,
@@ -17,6 +18,7 @@ import {
   authorizeProductionPromotion,
   createStagingReadyEvidence,
   createCandidateReadinessEvidence,
+  createHostedStagingSuiteEvidence,
   createStagingAcceptanceStatus,
   createHostedStagingSuiteEvidence,
   inspectStagingAcceptanceLease,
@@ -197,6 +199,7 @@ function hostedSuiteEvidence(overrides: Record<string, unknown> = {}) {
 }
 
 function costRuntimeSuiteEvidence(overrides: Record<string, unknown> = {}) {
+  const correlationId = '11111111-1111-4111-8111-111111111111';
   return {
     schemaVersion: 1,
     state: 'COST_RUNTIME_STAGING_ACCEPTED',
@@ -219,27 +222,49 @@ function costRuntimeSuiteEvidence(overrides: Record<string, unknown> = {}) {
         providerDiscrepancy: 'passed',
         nestedManagerAttribution: 'passed',
       },
+      workflowCode: 'systems-weekly-quality-platform',
+      requestScope: 'empty',
       provider: 'openai-responses',
       providerCallCount: 1,
       searchCalls: 0,
+      toolCalls: 0,
+      actionsExecuted: 0,
       model: 'gpt-5.6-luna',
-      runId: 'ai20-run-1',
-      responseId: 'resp-ai20-1',
-      correlationId: 'ai20-trace-1',
-      reservationId: 'ai20-reservation-1',
-      pricingRecordId: 'openai-luna-effective-1',
-      estimatedUsd: '0.01000000',
-      reservedUsd: '0.02000000',
-      hardCapUsd: '0.05000000',
-      calculatedActualUsd: '0.01200000',
-      reservationState: 'settled',
-      providerUsage: { inputTokens: 1000, cachedInputTokens: 100, outputTokens: 300 },
+      runId: '22222222-2222-4222-8222-222222222222',
+      responseId: 'resp_123456789',
+      correlationId,
+      aiCallId: '33333333-3333-4333-8333-333333333333',
+      reservationId: '44444444-4444-4444-8444-444444444444',
+      pricingRecordId: '55555555-5555-4555-8555-555555555555',
+      estimatedUsd: '0.00002',
+      reservedUsd: '0.00002',
+      hardCapUsd: '0.05',
+      calculatedActualUsd: '0.000006',
+      reservationConsumedUsd: '0.000006',
+      reservationReleasedUsd: '0.000014',
+      onDemandReservedAfterUsd: '0',
+      onDemandActualUsd: '0.000006',
+      reservationState: 'consumed',
+      providerUsage: {
+        inputTokens: 20,
+        cachedInputTokens: 4,
+        cacheWriteTokens: 1,
+        outputTokens: 5,
+        reasoningTokens: 2,
+      },
+      pricingInputs: {
+        inputPerMillion: '0.15',
+        cachedInputPerMillion: '0.075',
+        outputPerMillion: '0.6',
+        cacheWriteMultiplier: '1.25',
+        webSearchPerCall: '0.01',
+      },
       usageReconciliation: 'passed',
       costReconciliation: 'passed',
       traceReconciliation: 'passed',
     },
-    correlationIds: ['ai20-trace-1'],
-    acceptedAt: '2026-09-29T10:00:00.000Z',
+    correlationIds: [correlationId],
+    acceptedAt: '2026-10-22T12:00:00.000Z',
     ...overrides,
   };
 }
@@ -1973,6 +1998,14 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
       `${removedWorkflow} must not restore the privileged workflow_run candidate path`,
     );
   assert.match(deployWorkflow, /candidate_sha:/);
+  assert.match(
+    deployWorkflow,
+    /acceptance_profile:[\s\S]*options:\s*\[\s*auto,\s*targeted,\s*auth-browser,\s*cost-runtime,\s*procurement,\s*career,\s*mobile-shortcuts,\s*mobile-shortcuts-action,?\s*\]/,
+  );
+  assert.match(
+    deployWorkflow,
+    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \|\| 'auto' \}\}[\s\S]*acceptance-profile\.ts candidate-files\.txt "\$ACCEPTANCE_PROFILE"/,
+  );
   assert.match(deployWorkflow, /deployment_run_id:/);
   assert.match(deployWorkflow, /acceptance_evidence:/);
   assert.match(deployWorkflow, /outcome:[\s\S]*options: \[accepted, failed\]/);
@@ -2033,11 +2066,11 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.doesNotMatch(deployWorkflow, /run-live-e2e|live:e2e -- suite/);
   assert.match(
     deployWorkflow,
-    /HOSTED_PROFILE_OVERRIDE: \$\{\{ inputs\.acceptance_profile \|\| 'auto' \}\}/,
+    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \|\| 'auto' \}\}/,
   );
   assert.match(
     deployWorkflow,
-    /acceptance-profile\.ts candidate-files\.txt "\$HOSTED_PROFILE_OVERRIDE"/,
+    /acceptance-profile\.ts candidate-files\.txt "\$ACCEPTANCE_PROFILE"/,
   );
   const leaseCheck = deployWorkflow.indexOf('name: Check shared staging acceptance lease');
   const deployPending = deployWorkflow.indexOf('name: Set candidate status while staging deploys');
@@ -2097,6 +2130,30 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.ok(
     leaseCheck < deployPending,
     'lease guard must run before the candidate staging status/deployment begins',
+  );
+  const workerDeploy = deployWorkflow.indexOf('name: Deploy Worker');
+  const stagingSecretWrite = deployWorkflow.indexOf(
+    'name: Configure staging finance archive gateway secret',
+  );
+  const migrationApply = deployWorkflow.indexOf('name: Apply staging migrations');
+  assert.ok(
+    migrationPreflight > leaseCheck &&
+      migrationPreflight < deployPending &&
+      migrationPreflight < workerDeploy &&
+      migrationPreflight < stagingSecretWrite &&
+      migrationPreflight < migrationApply,
+    'staging migration history must be checked before candidate status or any deploy mutation',
+  );
+  assert.match(deployWorkflow, /preflight-staging-migrations/);
+  const preflightBlock = deployWorkflow.slice(migrationPreflight, deployPending);
+  assert.doesNotMatch(
+    preflightBlock,
+    /^\s+if:/m,
+    'the migration preflight must guard both manual candidate and main-push deployments',
+  );
+  assert.match(
+    deployWorkflow,
+    /supabase db push --linked --include-all --password "\$DB_PASSWORD" --yes/,
   );
   const stagingSmoke = deployWorkflow.indexOf('name: Smoke test staging Worker');
   assert.ok(
@@ -2158,6 +2215,10 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(hostedSuite, /workflowRuns: \[deterministicProof, responsesProof\]/);
   assert.match(hostedSuite, /promptGovernanceProof: governanceProof\.evidence/);
+  assert.match(
+    hostedSuite,
+    /staging proves one candidate-bound AI-20 Responses cost lifecycle @ai20-cost-runtime-acceptance/,
+  );
   assert.match(hostedSuite, /let webkitProbeId: string \| null = null/);
   assert.match(hostedSuite, /webkitProbeId = webkitProbe\.body\.probeId/);
   assert.match(hostedSuite, /Hosted acceptance evidence requires the passing WebKit probe result/);
@@ -2182,6 +2243,19 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(targetedAutoAcceptStep, /WORKFLOW_RUN_URL:/);
   assert.match(targetedAutoAcceptStep, /target_url:\$url/);
   assert.match(deployWorkflow, /state:"pending"[\s\S]*waiting for auth-browser acceptance/);
+  assert.match(deployWorkflow, /waiting for one-call cost-runtime evidence/);
+  assert.match(
+    deployWorkflow,
+    /Hosted acceptance profile does not match the exact staged candidate profile/,
+  );
+  assert.match(
+    deployWorkflow,
+    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \]\]/,
+  );
+  assert.match(
+    deployWorkflow,
+    /steps\.acceptance-profile\.outputs\.acceptance_profile == 'cost-runtime'/,
+  );
   assert.match(deployWorkflow, /failure_code="stage_deployment_failed"/);
   assert.match(deployWorkflow, /failure_code="staging_slot_busy"/);
 });
@@ -2369,7 +2443,15 @@ test('explicit issue proof override upgrades a targeted candidate to auth-browse
   );
   assert.throws(
     () => selectHostedAcceptanceProfile(['apps/web/app/api/auth/mfa/verify/route.ts'], 'targeted'),
-    /Hosted acceptance profile override must be 'auto', 'auth-browser', 'cost-runtime', 'procurement', 'career', 'mobile-shortcuts', or 'mobile-shortcuts-action'\./,
+    /A required hosted proof cannot be replaced by targeted auto-acceptance/,
+  );
+  assert.equal(
+    selectHostedAcceptanceProfile(['docs/testing/local-autonomous-qa.md'], 'targeted'),
+    'targeted',
+  );
+  assert.throws(
+    () => selectHostedAcceptanceProfile(ai28CandidateFiles, 'targeted'),
+    /A required hosted proof cannot be replaced by targeted auto-acceptance/,
   );
 });
 
@@ -2514,5 +2596,50 @@ test('targeted hosted acceptance is valid without MFA and cannot satisfy an auth
         hostedSuite: targetedSuite,
       }),
     /acceptance_profile_mismatch/,
+  );
+});
+
+test('AI-20 producer proof passes the hosted validator and becomes candidate-bound accepted status', () => {
+  for (const humanMfa of ['not-required', 'user-completed'] as const) {
+    const produced = createAi20CostRuntimeProof(costRuntimeSuiteEvidence({ humanMfa }));
+    assert.equal('accepted' in produced, false);
+    const hostedSuite = createHostedStagingSuiteEvidence(produced);
+    assert.equal(hostedSuite.humanMfa, humanMfa);
+
+    const accepted = createStagingAcceptanceStatus({
+      candidateSha,
+      currentPullRequestHeadSha: candidateSha,
+      currentPullRequestTreeSha: candidateTreeSha,
+      currentPullRequestNumber: 152,
+      state: 'success',
+      deployment: candidateDeploymentEvidence({ acceptanceProfile: 'cost-runtime' }),
+      hostedSuite,
+    });
+    assert.equal(accepted.status.state, 'success');
+    assert.equal(accepted.acceptance?.acceptanceProfile, 'cost-runtime');
+    assert.equal(accepted.acceptance?.humanMfa, humanMfa);
+    assert.deepEqual(accepted.acceptance?.costRuntimeProof, produced.costRuntimeProof);
+  }
+
+  const baseProof = costRuntimeSuiteEvidence().costRuntimeProof as Record<string, unknown>;
+  const mismatched = costRuntimeSuiteEvidence({
+    costRuntimeProof: {
+      ...baseProof,
+      localProofSha: nextSha,
+    },
+  });
+  assert.throws(() => createAi20CostRuntimeProof(mismatched));
+});
+
+test('AI-20 live acceptance command runs only its tagged provider proof', async () => {
+  const runner = await readFile(new URL('./run-live-e2e.ts', import.meta.url), 'utf8');
+  const manifest = JSON.parse(
+    await readFile(new URL('../../package.json', import.meta.url), 'utf8'),
+  ) as { scripts?: Record<string, string> };
+  assert.match(runner, /mode === 'cost-acceptance'/);
+  assert.match(runner, /--grep=@ai20-cost-runtime-acceptance/);
+  assert.equal(
+    manifest.scripts?.['test:e2e:live:cost-acceptance'],
+    'node --env-file-if-exists=.env --import tsx infrastructure/scripts/run-live-e2e.ts cost-acceptance',
   );
 });

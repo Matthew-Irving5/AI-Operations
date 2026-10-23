@@ -20,7 +20,13 @@ export type LiveE2eEnvironment = z.infer<typeof environmentSchema>;
 
 export function parseLiveE2eEnvironment(
   env: Record<string, string | undefined>,
-  mode: 'suite' | 'auth-acceptance' | 'fixtures' | 'fixture-mismatch' | 'mismatch',
+  mode:
+    | 'suite'
+    | 'auth-acceptance'
+    | 'cost-acceptance'
+    | 'fixtures'
+    | 'fixture-mismatch'
+    | 'mismatch',
 ): LiveE2eEnvironment {
   const parsed = environmentSchema.safeParse({
     LIVE_E2E_BASE_URL: env.LIVE_E2E_BASE_URL ?? stagingTarget.origin,

@@ -8,6 +8,7 @@ import {
   CareerStagingAcceptanceChecksSchema,
   CareerStagingAcceptanceEvidenceSchema,
 } from './career-staging-acceptance-evidence.js';
+import { Ai20CostRuntimeProofSchema } from './ai20-cost-runtime-proof.js';
 
 const ShaSchema = z
   .string()
@@ -15,7 +16,6 @@ const ShaSchema = z
   .transform((value) => value.toLowerCase());
 const RunIdSchema = z.string().regex(/^[1-9][0-9]{0,19}$/);
 const SafeIdSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9:-]{0,127}$/);
-const ModelIdSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,127}$/);
 const DiagnosticCodeSchema = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/);
 const StageOrigin = z.literal('https://ai-operations-staging.ai-operations.workers.dev');
 const FreshMfaActionEvidenceSchema = z
@@ -236,6 +236,13 @@ const CapabilityResultsSchema = z
   })
   .strict();
 
+const CostRuntimeChecksSchema = z
+  .object({
+    localCostMatrix: z.literal('passed'),
+    oneBoundedProviderCall: z.literal('passed'),
+  })
+  .strict();
+
 const TargetedCapabilityResultsSchema = z
   .array(
     z
@@ -247,31 +254,6 @@ const TargetedCapabilityResultsSchema = z
   )
   .min(1)
   .max(20);
-
-const CostRuntimeChecksSchema = z
-  .object({
-    localCostMatrix: z.literal('passed'),
-    oneBoundedProviderCall: z.literal('passed'),
-  })
-  .strict();
-const DecimalUsdSchema = z.string().regex(/^(?:0|[1-9][0-9]{0,5})(?:\.[0-9]{1,8})?$/);
-
-function decimalUsdUnits(value: string): bigint {
-  const [whole = '', fraction = ''] = value.split('.');
-  return BigInt(whole) * 100_000_000n + BigInt(fraction.padEnd(8, '0'));
-}
-
-const CostRuntimeLocalMatrixSchema = z
-  .object({
-    estimateReservationReconciliation: z.literal('passed'),
-    hardCapConcurrency: z.literal('passed'),
-    cancellationFailureRelease: z.literal('passed'),
-    staleUnknownPricing: z.literal('passed'),
-    forecastInputsConfidence: z.literal('passed'),
-    providerDiscrepancy: z.literal('passed'),
-    nestedManagerAttribution: z.literal('passed'),
-  })
-  .strict();
 
 const MobileShortcutChecksSchema = z
   .object({
@@ -460,57 +442,6 @@ const MobileActionStagingEvidenceSchema = z
     }
   });
 
-const CostRuntimeProofSchema = z
-  .object({
-    localProofSha: ShaSchema,
-    localMatrix: CostRuntimeLocalMatrixSchema,
-    provider: z.literal('openai-responses'),
-    providerCallCount: z.literal(1),
-    searchCalls: z.literal(0),
-    model: ModelIdSchema,
-    runId: SafeIdSchema,
-    responseId: SafeIdSchema,
-    correlationId: SafeIdSchema,
-    reservationId: SafeIdSchema,
-    pricingRecordId: SafeIdSchema,
-    estimatedUsd: DecimalUsdSchema,
-    reservedUsd: DecimalUsdSchema,
-    hardCapUsd: DecimalUsdSchema,
-    calculatedActualUsd: DecimalUsdSchema,
-    reservationState: z.literal('settled'),
-    providerUsage: z
-      .object({
-        inputTokens: z.number().int().positive(),
-        cachedInputTokens: z.number().int().nonnegative(),
-        outputTokens: z.number().int().positive(),
-      })
-      .strict(),
-    usageReconciliation: z.literal('passed'),
-    costReconciliation: z.literal('passed'),
-    traceReconciliation: z.literal('passed'),
-  })
-  .strict()
-  .superRefine((proof, context) => {
-    const estimated = decimalUsdUnits(proof.estimatedUsd);
-    const reserved = decimalUsdUnits(proof.reservedUsd);
-    const hardCap = decimalUsdUnits(proof.hardCapUsd);
-    const actual = decimalUsdUnits(proof.calculatedActualUsd);
-    if (
-      estimated <= 0n ||
-      reserved < estimated ||
-      hardCap <= 0n ||
-      reserved > hardCap ||
-      actual <= 0n ||
-      actual > hardCap ||
-      proof.providerUsage.cachedInputTokens > proof.providerUsage.inputTokens
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'cost-runtime reservation, hard-cap, usage, and actual-cost evidence must agree',
-      });
-    }
-  });
-
 const AcceptanceEvidenceSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -534,11 +465,11 @@ const AcceptanceEvidenceSchema = z
     freshMfaAction: FreshMfaActionEvidenceSchema.optional(),
     mobileEvidence: MobileShortcutStagingEvidenceSchema.optional(),
     promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
+    costRuntimeProof: Ai20CostRuntimeProofSchema.optional(),
     correlationIds: z.array(SafeIdSchema).max(20),
     workflowRuns: Ai15WorkflowProofsSchema.optional(),
     acceptedAt: z.string().datetime({ offset: true }),
     accepted: z.literal(true),
-    costRuntimeProof: CostRuntimeProofSchema.optional(),
     procurementEvidence: ProcurementStagingAcceptanceEvidenceSchema.optional(),
     careerEvidence: CareerStagingAcceptanceEvidenceSchema.optional(),
     mobileActionEvidence: MobileActionStagingEvidenceSchema.optional(),
@@ -551,9 +482,10 @@ const AcceptanceEvidenceSchema = z
     const mobileShortcuts = value.acceptanceProfile === 'mobile-shortcuts';
     const mobileAction = value.acceptanceProfile === 'mobile-shortcuts-action';
     const career = value.acceptanceProfile === 'career';
-    const validMfa =
-      targeted || costRuntime
-        ? value.humanMfa === 'not-required'
+    const validMfa = targeted
+      ? value.humanMfa === 'not-required'
+      : costRuntime
+        ? ['user-completed', 'not-required'].includes(value.humanMfa)
         : value.humanMfa === 'user-completed';
     const validChecks = targeted
       ? Array.isArray(value.checks)
@@ -726,9 +658,9 @@ const StagingAcceptanceInputSchema = z.discriminatedUnion('acceptanceProfile', [
       deploymentRunId: RunIdSchema,
       stagingOrigin: StageOrigin,
       acceptanceProfile: z.literal('cost-runtime'),
-      humanMfa: z.literal('not-required'),
+      humanMfa: z.enum(['user-completed', 'not-required']),
       checks: CostRuntimeChecksSchema,
-      costRuntimeProof: CostRuntimeProofSchema,
+      costRuntimeProof: Ai20CostRuntimeProofSchema,
       correlationIds: z.array(SafeIdSchema).min(1).max(20),
       acceptedAt: z.string().datetime({ offset: true }),
     })
@@ -861,9 +793,9 @@ const CostRuntimeStagingSuiteEvidenceSchema = z
     pullRequestNumber: z.number().int().positive(),
     deploymentRunId: RunIdSchema,
     stagingOrigin: StageOrigin,
-    humanMfa: z.literal('not-required'),
+    humanMfa: z.enum(['user-completed', 'not-required']),
     checks: CostRuntimeChecksSchema,
-    costRuntimeProof: CostRuntimeProofSchema,
+    costRuntimeProof: Ai20CostRuntimeProofSchema,
     correlationIds: z.array(SafeIdSchema).min(1).max(20),
     acceptedAt: z.string().datetime({ offset: true }),
   })
@@ -1159,6 +1091,11 @@ export function selectHostedAcceptanceProfile(
         'The career override requires the AI-35 readback or dedicated acceptance spec marker.',
       );
     return 'career';
+  }
+  if (override === 'targeted') {
+    if (ticketProfiles.length > 0 || authBrowser)
+      throw new Error('A required hosted proof cannot be replaced by targeted auto-acceptance.');
+    return 'targeted';
   }
   if (override !== 'auto')
     throw new Error(

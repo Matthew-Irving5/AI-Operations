@@ -24,6 +24,10 @@ import {
   validateReportOutputSchema,
 } from "../../../packages/ai-runtime/src/governance.ts";
 import {
+  estimateCost,
+  isPricingFresh,
+} from "../../../packages/ai-runtime/src/index.ts";
+import {
   type ExecuteWorkflowOutcome,
   loadTrustedWorkflowExecution,
   type WorkflowExecutionSource,
@@ -545,7 +549,7 @@ async function executeAiWorkflow(
   const pricing = await service
     .from("model_pricing")
     .select(
-      "input_per_million,output_per_million,cached_input_per_million,web_search_per_call",
+      "id,input_per_million,output_per_million,cached_input_per_million,cache_write_multiplier,web_search_per_call,source_url,verified_at",
     )
     .eq("model_id", modelResult.data.id)
     .lte("effective_from", new Date().toISOString())
@@ -555,12 +559,64 @@ async function executeAiWorkflow(
   if (pricing.error || !pricing.data) {
     return outcomeFor(run.id, "terminal_failure", "model_pricing_unavailable");
   }
-  const estimatedCost = Math.ceil(
-    ((8_000 * pricing.data.input_per_million +
-      2_000 * pricing.data.output_per_million) /
-      1_000_000) *
-      1_000_000,
-  ) / 1_000_000;
+  if (
+    typeof pricing.data.source_url !== "string" ||
+    typeof pricing.data.verified_at !== "string" ||
+    !isPricingFresh({
+      sourceUrl: pricing.data.source_url,
+      verifiedAt: pricing.data.verified_at,
+    })
+  ) {
+    return outcomeFor(
+      run.id,
+      "terminal_failure",
+      "model_pricing_stale_or_unverified",
+    );
+  }
+  const searchCalls =
+    promptGovernance.toolPolicy.tools.filter((tool) =>
+      isRecord(tool) && tool.type === "web_search"
+    ).length;
+  if (searchCalls > 0) {
+    return outcomeFor(
+      run.id,
+      "terminal_failure",
+      "search_cost_ceiling_unavailable",
+    );
+  }
+  const instructions =
+    `${selectedPromptVersion.data.system_text}\n\n${selectedPromptVersion.data.developer_text}`;
+  const maximumOutputTokens = 2_000;
+  const maximumInputTokens = new TextEncoder().encode(
+    `${instructions}\n\n${workflowInput}\n\n${
+      JSON.stringify(selectedPromptVersion.data.json_schema)
+    }`,
+  ).byteLength + 128;
+  let estimatedCost: number;
+  try {
+    estimatedCost = estimateCost(
+      {
+        inputPerMillion: Number(pricing.data.input_per_million),
+        cachedInputPerMillion: Number(pricing.data.cached_input_per_million),
+        outputPerMillion: Number(pricing.data.output_per_million),
+        webSearchPerCall: Number(pricing.data.web_search_per_call),
+        cacheWriteMultiplier: Number(pricing.data.cache_write_multiplier),
+      },
+      {
+        inputTokens: maximumInputTokens,
+        cachedInputTokens: 0,
+        cacheWriteTokens: maximumInputTokens,
+        outputTokens: maximumOutputTokens,
+        searchCalls,
+        // Every retry is a distinct call with its own atomic reservation.
+        retryAllowance: 0,
+        // The request omits service_tier, so the provider's default rate applies.
+        serviceTierMultiplier: 1,
+      },
+    );
+  } catch {
+    return outcomeFor(run.id, "terminal_failure", "model_pricing_invalid");
+  }
   if (
     budget &&
     estimatedCost > Number(budget.hard_cap) - Number(budget.reserved_amount)
@@ -676,6 +732,7 @@ async function executeAiWorkflow(
       p_prompt_version_id: selectedPromptVersion.data.id,
       p_estimated_cost: estimatedCost,
       p_request_id: requestId,
+      p_pricing_id: pricing.data.id,
       p_redacted_trace: {
         workflow: definition.code,
         prompt_version: promptResult.data.active_version,
@@ -717,11 +774,11 @@ async function executeAiWorkflow(
         body: JSON.stringify({
           model: selectedModel,
           reasoning: { effort: definitionConfig.default_reasoning },
-          instructions:
-            `${selectedPromptVersion.data.system_text}\n\n${selectedPromptVersion.data.developer_text}`,
+          instructions: instructions,
           input: workflowInput,
           background: true,
-          max_output_tokens: 2_000,
+          max_output_tokens: maximumOutputTokens,
+          service_tier: "default",
           store: false,
           tools: promptGovernance.toolPolicy.tools,
           text: {
@@ -757,7 +814,14 @@ async function executeAiWorkflow(
       p_cached_input_tokens: 0,
       p_reasoning_tokens: 0,
       p_search_calls: 0,
-      p_provider_usage: {},
+      p_provider_usage: {
+        input_tokens: 0,
+        output_tokens: 0,
+        cached_input_tokens: 0,
+        cache_write_tokens: 0,
+        reasoning_tokens: 0,
+        search_calls: 0,
+      },
       p_redacted_trace: {
         workflow: definition.code,
         provider_result: "failed_or_incomplete",

@@ -200,16 +200,25 @@ export function validateReportOutput(
   };
 }
 
+export type RedactedProviderUsage = Readonly<{
+  input_tokens: number;
+  output_tokens: number;
+  cached_input_tokens: number;
+  cache_write_tokens: number;
+  has_cache_write_usage: boolean;
+  has_complete_usage: boolean;
+  reasoning_tokens: number;
+}>;
+
 export function redactedProviderUsage(
   response: Record<string, unknown>,
-): Record<string, number> {
+): RedactedProviderUsage {
   const usage = isRecord(response.usage) ? response.usage : {};
-  const asNonNegative = (key: string) => {
-    const value = usage[key];
+  const asNonNegative = (value: unknown) => {
     return typeof value === "number" && Number.isSafeInteger(value) &&
         value >= 0
       ? value
-      : 0;
+      : null;
   };
   const details = isRecord(usage.input_tokens_details)
     ? usage.input_tokens_details
@@ -217,19 +226,24 @@ export function redactedProviderUsage(
   const outputDetails = isRecord(usage.output_tokens_details)
     ? usage.output_tokens_details
     : {};
+  const cacheWriteValue = details.cache_write_tokens;
+  const cacheWriteTokens = typeof cacheWriteValue === "number" &&
+      Number.isSafeInteger(cacheWriteValue) && cacheWriteValue >= 0
+    ? cacheWriteValue
+    : null;
+  const inputTokens = asNonNegative(usage.input_tokens);
+  const outputTokens = asNonNegative(usage.output_tokens);
+  const cachedInputTokens = asNonNegative(details.cached_tokens);
+  const reasoningTokens = asNonNegative(outputDetails.reasoning_tokens);
   return {
-    input_tokens: asNonNegative("input_tokens"),
-    output_tokens: asNonNegative("output_tokens"),
-    cached_input_tokens: typeof details.cached_tokens === "number" &&
-        Number.isSafeInteger(details.cached_tokens) &&
-        details.cached_tokens >= 0
-      ? details.cached_tokens
-      : 0,
-    reasoning_tokens: typeof outputDetails.reasoning_tokens === "number" &&
-        Number.isSafeInteger(outputDetails.reasoning_tokens) &&
-        outputDetails.reasoning_tokens >= 0
-      ? outputDetails.reasoning_tokens
-      : 0,
+    input_tokens: inputTokens ?? 0,
+    output_tokens: outputTokens ?? 0,
+    cached_input_tokens: cachedInputTokens ?? 0,
+    cache_write_tokens: cacheWriteTokens ?? 0,
+    has_cache_write_usage: cacheWriteTokens !== null,
+    has_complete_usage: inputTokens !== null && outputTokens !== null &&
+      cachedInputTokens !== null && cacheWriteTokens !== null,
+    reasoning_tokens: reasoningTokens ?? 0,
   };
 }
 

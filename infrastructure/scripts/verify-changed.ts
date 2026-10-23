@@ -1,7 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { chromium } from '@playwright/test';
 import { localFunctionDirectories } from './edge-function-inventory.js';
 import { sanitize } from './qa-debug.js';
 
@@ -377,13 +376,6 @@ function runCore(plan: ImpactPlan): CheckResult[] {
   return runChecks(checks);
 }
 
-export function playwrightInstallArgs(platform = process.platform): string[] {
-  const args = ['pnpm', 'exec', 'playwright', 'install'];
-  if (platform === 'linux') args.push('--with-deps');
-  args.push('chromium');
-  return args;
-}
-
 function runBoundary(plan: ImpactPlan): CheckResult[] {
   const checks: CheckTask[] = [];
   const add = (
@@ -441,12 +433,13 @@ function runBoundary(plan: ImpactPlan): CheckResult[] {
   if (plan.browser) {
     checks.push({
       name: 'Chromium browser setup',
-      command: 'corepack pnpm exec playwright install chromium',
-      execute: () => {
-        if (!existsSync(chromium.executablePath())) {
-          run('corepack', playwrightInstallArgs(), { timeout: 1_200_000 });
-        }
-      },
+      command: 'corepack pnpm exec tsx infrastructure/scripts/playwright-browser-setup.ts chromium',
+      execute: () =>
+        run(
+          'corepack',
+          ['pnpm', 'exec', 'tsx', 'infrastructure/scripts/playwright-browser-setup.ts', 'chromium'],
+          { timeout: 1_200_000 },
+        ),
     });
     add(
       'Local Chromium E2E',

@@ -165,7 +165,7 @@ Deno.test("provider usage strips untrusted provider response fields", () => {
       usage: {
         input_tokens: 12,
         output_tokens: 8,
-        input_tokens_details: { cached_tokens: 2 },
+        input_tokens_details: { cached_tokens: 2, cache_write_tokens: 3 },
         output_tokens_details: { reasoning_tokens: 1 },
         raw: "never persisted",
       },
@@ -174,9 +174,25 @@ Deno.test("provider usage strips untrusted provider response fields", () => {
       input_tokens: 12,
       output_tokens: 8,
       cached_input_tokens: 2,
+      cache_write_tokens: 3,
+      has_cache_write_usage: true,
+      has_complete_usage: true,
       reasoning_tokens: 1,
     },
   );
+});
+
+Deno.test("provider usage marks missing cache-write accounting as incomplete", () => {
+  const usage = redactedProviderUsage({
+    usage: {
+      input_tokens: 12,
+      output_tokens: 8,
+      input_tokens_details: { cached_tokens: 2 },
+    },
+  });
+  assertEquals(usage.cache_write_tokens, 0);
+  assertEquals(usage.has_cache_write_usage, false);
+  assertEquals(usage.has_complete_usage, false);
 });
 
 Deno.test("raw Responses output is extracted without persisting provider payloads", () => {

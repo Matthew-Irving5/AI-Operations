@@ -12,6 +12,7 @@ export const localSupabaseWorkspaceFiles = [
   'packages/contracts/src/observability.ts',
   'packages/db/src/database.types.ts',
   'packages/ai-runtime/src/governance.ts',
+  'packages/ai-runtime/src/index.ts',
   'packages/ai-runtime/src/eval.ts',
   'packages/ai-runtime/src/manager-eval-fixtures.ts',
   'packages/observability/src/index.ts',
