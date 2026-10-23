@@ -27,12 +27,13 @@ async function main(): Promise<void> {
   if (
     mode !== 'suite' &&
     mode !== 'auth-acceptance' &&
+    mode !== 'cost-acceptance' &&
     mode !== 'fixtures' &&
     mode !== 'fixture-mismatch' &&
     mode !== 'mismatch'
   ) {
     throw new Error(
-      'Choose one live E2E mode: suite, auth-acceptance, fixtures, fixture-mismatch, or mismatch.',
+      'Choose one live E2E mode: suite, auth-acceptance, cost-acceptance, fixtures, fixture-mismatch, or mismatch.',
     );
   }
 
@@ -67,7 +68,7 @@ async function main(): Promise<void> {
   }
 
   if (
-    (mode === 'suite' || mode === 'auth-acceptance') &&
+    (mode === 'suite' || mode === 'auth-acceptance' || mode === 'cost-acceptance') &&
     process.env.LIVE_E2E_MANUAL_MFA !== 'true'
   ) {
     throw new Error(
@@ -81,7 +82,7 @@ async function main(): Promise<void> {
   let acceptanceDeploymentRunId: string | undefined;
   let acceptanceCandidateTreeSha: string | undefined;
   let acceptancePullRequestNumber: number | undefined;
-  if (mode === 'suite' || mode === 'auth-acceptance') {
+  if (mode === 'suite' || mode === 'auth-acceptance' || mode === 'cost-acceptance') {
     acceptanceCandidateSha = process.env.LIVE_E2E_CANDIDATE_SHA;
     acceptanceDeploymentRunId = process.env.LIVE_E2E_DEPLOYMENT_RUN_ID;
     acceptanceCandidateTreeSha = process.env.LIVE_E2E_CANDIDATE_TREE_SHA;
@@ -307,9 +308,11 @@ async function main(): Promise<void> {
     const acceptanceSpecs =
       mode === 'auth-acceptance'
         ? ['tests/e2e-live/auth-acceptance.spec.ts']
-        : mode === 'suite'
-          ? ['tests/e2e-live/staging.spec.ts', '--grep=@ai16-ai19-acceptance']
-          : [];
+        : mode === 'cost-acceptance'
+          ? ['tests/e2e-live/staging.spec.ts', '--grep=@ai20-cost-runtime-acceptance']
+          : mode === 'suite'
+            ? ['tests/e2e-live/staging.spec.ts', '--grep=@ai16-ai19-acceptance']
+            : [];
     const liveArgs = [
       'pnpm',
       'exec',

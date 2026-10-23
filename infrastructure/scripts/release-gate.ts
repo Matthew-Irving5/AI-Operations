@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
+import { Ai20CostRuntimeProofSchema } from './ai20-cost-runtime-proof.js';
 
 const ShaSchema = z
   .string()
@@ -198,7 +199,7 @@ const ReadyEvidenceSchema = z
   })
   .strict();
 
-const AcceptanceProfileSchema = z.enum(['targeted', 'auth-browser']);
+const AcceptanceProfileSchema = z.enum(['targeted', 'auth-browser', 'cost-runtime']);
 
 const CapabilityResultsSchema = z
   .object({
@@ -209,6 +210,13 @@ const CapabilityResultsSchema = z
     migrations: z.literal('passed'),
     edgeFunctions: z.literal('passed'),
     releaseVersion: z.literal('passed'),
+  })
+  .strict();
+
+const CostRuntimeChecksSchema = z
+  .object({
+    localCostMatrix: z.literal('passed'),
+    oneBoundedProviderCall: z.literal('passed'),
   })
   .strict();
 
@@ -243,9 +251,14 @@ const AcceptanceEvidenceSchema = z
     stagingOrigin: StageOrigin,
     acceptanceProfile: AcceptanceProfileSchema,
     humanMfa: z.enum(['user-completed', 'not-required']),
-    checks: z.union([CapabilityResultsSchema, TargetedCapabilityResultsSchema]),
+    checks: z.union([
+      CapabilityResultsSchema,
+      TargetedCapabilityResultsSchema,
+      CostRuntimeChecksSchema,
+    ]),
     freshMfaAction: FreshMfaActionEvidenceSchema.optional(),
     promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
+    costRuntimeProof: Ai20CostRuntimeProofSchema.optional(),
     correlationIds: z.array(SafeIdSchema).max(20),
     workflowRuns: Ai15WorkflowProofsSchema.optional(),
     acceptedAt: z.string().datetime({ offset: true }),
@@ -254,12 +267,22 @@ const AcceptanceEvidenceSchema = z
   .strict()
   .superRefine((value, context) => {
     const targeted = value.acceptanceProfile === 'targeted';
-    const validMfa = targeted || value.humanMfa === 'user-completed';
-    const validChecks = targeted ? Array.isArray(value.checks) : !Array.isArray(value.checks);
-    const validFreshMfaAction = targeted
-      ? value.freshMfaAction === undefined
-      : value.freshMfaAction !== undefined;
-    if (!validMfa || !validChecks || !validFreshMfaAction) {
+    const costRuntime = value.acceptanceProfile === 'cost-runtime';
+    const validMfa = targeted || costRuntime || value.humanMfa === 'user-completed';
+    const validChecks = targeted
+      ? Array.isArray(value.checks)
+      : !Array.isArray(value.checks) &&
+        (costRuntime ? 'localCostMatrix' in value.checks : 'authAal2' in value.checks);
+    const validFreshMfaAction =
+      targeted || costRuntime
+        ? value.freshMfaAction === undefined
+        : value.freshMfaAction !== undefined;
+    const validCostRuntimeProof = costRuntime
+      ? value.costRuntimeProof !== undefined &&
+        value.costRuntimeProof.localProofSha === value.candidateSha &&
+        value.correlationIds.includes(value.costRuntimeProof.correlationId)
+      : value.costRuntimeProof === undefined;
+    if (!validMfa || !validChecks || !validFreshMfaAction || !validCostRuntimeProof) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message:
@@ -314,21 +337,36 @@ const StagingReadyInputSchema = z
   })
   .strict();
 
-const StagingAcceptanceInputSchema = z
-  .object({
-    candidateSha: ShaSchema,
-    deploymentRunId: RunIdSchema,
-    stagingOrigin: StageOrigin,
-    acceptanceProfile: z.literal('auth-browser'),
-    humanMfa: z.literal('user-completed'),
-    checks: CapabilityResultsSchema,
-    freshMfaAction: FreshMfaActionEvidenceSchema,
-    correlationIds: z.array(SafeIdSchema).max(20),
-    workflowRuns: Ai15WorkflowProofsSchema.optional(),
-    promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
-    acceptedAt: z.string().datetime({ offset: true }),
-  })
-  .strict();
+const StagingAcceptanceInputSchema = z.discriminatedUnion('acceptanceProfile', [
+  z
+    .object({
+      candidateSha: ShaSchema,
+      deploymentRunId: RunIdSchema,
+      stagingOrigin: StageOrigin,
+      acceptanceProfile: z.literal('auth-browser'),
+      humanMfa: z.literal('user-completed'),
+      checks: CapabilityResultsSchema,
+      freshMfaAction: FreshMfaActionEvidenceSchema,
+      correlationIds: z.array(SafeIdSchema).max(20),
+      workflowRuns: Ai15WorkflowProofsSchema.optional(),
+      promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
+      acceptedAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+  z
+    .object({
+      candidateSha: ShaSchema,
+      deploymentRunId: RunIdSchema,
+      stagingOrigin: StageOrigin,
+      acceptanceProfile: z.literal('cost-runtime'),
+      humanMfa: z.enum(['user-completed', 'not-required']),
+      checks: CostRuntimeChecksSchema,
+      costRuntimeProof: Ai20CostRuntimeProofSchema,
+      correlationIds: z.array(SafeIdSchema).min(1).max(20),
+      acceptedAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+]);
 const CandidateStagingDeploymentEvidenceSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -394,9 +432,39 @@ const TargetedStagingSuiteEvidenceSchema = z
   })
   .strict();
 
+const CostRuntimeStagingSuiteEvidenceSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    state: z.literal('COST_RUNTIME_STAGING_ACCEPTED'),
+    acceptanceProfile: z.literal('cost-runtime'),
+    candidateSha: ShaSchema,
+    candidateTreeSha: ShaSchema,
+    pullRequestNumber: z.number().int().positive(),
+    deploymentRunId: RunIdSchema,
+    stagingOrigin: StageOrigin,
+    humanMfa: z.enum(['user-completed', 'not-required']),
+    checks: CostRuntimeChecksSchema,
+    costRuntimeProof: Ai20CostRuntimeProofSchema,
+    correlationIds: z.array(SafeIdSchema).min(1).max(20),
+    acceptedAt: z.string().datetime({ offset: true }),
+  })
+  .strict()
+  .superRefine((evidence, context) => {
+    if (
+      evidence.costRuntimeProof.localProofSha !== evidence.candidateSha ||
+      !evidence.correlationIds.includes(evidence.costRuntimeProof.correlationId)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'cost-runtime proof must be for the current candidate and include its trace ID',
+      });
+    }
+  });
+
 const HostedStagingSuiteEvidenceSchema = z.discriminatedUnion('acceptanceProfile', [
   AuthBrowserStagingSuiteEvidenceSchema,
   TargetedStagingSuiteEvidenceSchema,
+  CostRuntimeStagingSuiteEvidenceSchema,
 ]);
 
 const StagingAcceptanceCommandSchema = z
@@ -559,9 +627,13 @@ export interface CandidateReadinessEvidence {
 export type HostedAcceptanceProfile = z.infer<typeof AcceptanceProfileSchema>;
 export type HostedStagingSuiteEvidence = z.infer<typeof HostedStagingSuiteEvidenceSchema>;
 
-export function selectHostedAcceptanceProfile(files: string[]): HostedAcceptanceProfile {
-  const authBrowser = files.some((raw) => {
-    const file = raw.replaceAll('\\', '/');
+export function selectHostedAcceptanceProfile(
+  files: string[],
+  override: string = 'auto',
+): HostedAcceptanceProfile {
+  const normalizedFiles = files.map((raw) => raw.replaceAll('\\', '/'));
+  const costRuntime = normalizedFiles.includes('docs/build/ticket-readbacks/AI-20.md');
+  const authBrowser = normalizedFiles.some((file) => {
     return (
       file.startsWith('apps/web/app/api/auth/') ||
       file === 'apps/web/app/api/workflows/launch/route.ts' ||
@@ -579,7 +651,18 @@ export function selectHostedAcceptanceProfile(files: string[]): HostedAcceptance
       file === 'tests/e2e/platform-authenticated.spec.ts'
     );
   });
-  return authBrowser ? 'auth-browser' : 'targeted';
+  if (costRuntime && authBrowser) {
+    throw new Error(
+      'AI-20 cost-runtime and auth-browser proof cannot share one acceptance profile.',
+    );
+  }
+  const inferred = costRuntime ? 'cost-runtime' : authBrowser ? 'auth-browser' : 'targeted';
+  if (override !== 'auto' && override !== inferred) {
+    throw new Error(
+      `Requested staging profile '${override}' does not match inferred '${inferred}'.`,
+    );
+  }
+  return inferred;
 }
 
 export function createHostedStagingSuiteEvidence(input: unknown): HostedStagingSuiteEvidence {
@@ -752,6 +835,9 @@ export function createStagingAcceptanceStatus(input: unknown): StagingAcceptance
     checks,
     ...(parsed.hostedSuite.acceptanceProfile === 'auth-browser'
       ? { freshMfaAction: parsed.hostedSuite.freshMfaAction }
+      : {}),
+    ...(parsed.hostedSuite.acceptanceProfile === 'cost-runtime'
+      ? { costRuntimeProof: parsed.hostedSuite.costRuntimeProof }
       : {}),
     correlationIds: parsed.hostedSuite.correlationIds,
     ...(parsed.hostedSuite.workflowRuns ? { workflowRuns: parsed.hostedSuite.workflowRuns } : {}),

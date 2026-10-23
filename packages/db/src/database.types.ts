@@ -119,12 +119,14 @@ export type Database = {
           actual_cost: number | null;
           actual_input_tokens: number | null;
           actual_output_tokens: number | null;
+          cache_write_tokens: number;
           cached_input_tokens: number;
           completed_at: string | null;
           created_at: string;
           estimated_cost: number;
           id: string;
           model_id: string | null;
+          model_pricing_id: string | null;
           model_route: string | null;
           prompt_version_id: string | null;
           provider_usage: NonNullable<Json>;
@@ -145,12 +147,14 @@ export type Database = {
           actual_cost?: number | null;
           actual_input_tokens?: number | null;
           actual_output_tokens?: number | null;
+          cache_write_tokens?: number;
           cached_input_tokens?: number;
           completed_at?: string | null;
           created_at?: string;
           estimated_cost?: number;
           id?: string;
           model_id?: string | null;
+          model_pricing_id?: string | null;
           model_route?: string | null;
           prompt_version_id?: string | null;
           provider_usage?: NonNullable<Json>;
@@ -171,12 +175,14 @@ export type Database = {
           actual_cost?: number | null;
           actual_input_tokens?: number | null;
           actual_output_tokens?: number | null;
+          cache_write_tokens?: number;
           cached_input_tokens?: number;
           completed_at?: string | null;
           created_at?: string;
           estimated_cost?: number;
           id?: string;
           model_id?: string | null;
+          model_pricing_id?: string | null;
           model_route?: string | null;
           prompt_version_id?: string | null;
           provider_usage?: NonNullable<Json>;
@@ -199,6 +205,13 @@ export type Database = {
             columns: ['model_id'];
             isOneToOne: false;
             referencedRelation: 'ai_model_catalog';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'ai_calls_model_pricing_id_fkey';
+            columns: ['model_pricing_id'];
+            isOneToOne: false;
+            referencedRelation: 'model_pricing';
             referencedColumns: ['id'];
           },
           {
@@ -2166,6 +2179,9 @@ export type Database = {
           attempt_count: number;
           authority: string;
           cancelled_at: string | null;
+          channel: Database['public']['Enums']['conversation_channel'];
+          claim_token: string | null;
+          claimed_at: string | null;
           command_type: string;
           command_version: number;
           completed_at: string | null;
@@ -2175,12 +2191,15 @@ export type Database = {
           created_at: string;
           dependency: string | null;
           error_code: string | null;
+          execution_mode: string;
           id: string;
           idempotency_key: string;
           intent: string;
           interpreting_manager_code: string;
           mechanism: string;
+          policy_decision: Json | null;
           redacted_error: string | null;
+          request_fingerprint: string | null;
           required_capability: string;
           result_reference: string | null;
           scope: string;
@@ -2199,6 +2218,9 @@ export type Database = {
           attempt_count?: number;
           authority: string;
           cancelled_at?: string | null;
+          channel?: Database['public']['Enums']['conversation_channel'];
+          claim_token?: string | null;
+          claimed_at?: string | null;
           command_type: string;
           command_version?: number;
           completed_at?: string | null;
@@ -2208,12 +2230,15 @@ export type Database = {
           created_at?: string;
           dependency?: string | null;
           error_code?: string | null;
+          execution_mode?: string;
           id?: string;
           idempotency_key: string;
           intent: string;
           interpreting_manager_code: string;
           mechanism: string;
+          policy_decision?: Json | null;
           redacted_error?: string | null;
+          request_fingerprint?: string | null;
           required_capability: string;
           result_reference?: string | null;
           scope: string;
@@ -2232,6 +2257,9 @@ export type Database = {
           attempt_count?: number;
           authority?: string;
           cancelled_at?: string | null;
+          channel?: Database['public']['Enums']['conversation_channel'];
+          claim_token?: string | null;
+          claimed_at?: string | null;
           command_type?: string;
           command_version?: number;
           completed_at?: string | null;
@@ -2241,12 +2269,15 @@ export type Database = {
           created_at?: string;
           dependency?: string | null;
           error_code?: string | null;
+          execution_mode?: string;
           id?: string;
           idempotency_key?: string;
           intent?: string;
           interpreting_manager_code?: string;
           mechanism?: string;
+          policy_decision?: Json | null;
           redacted_error?: string | null;
+          request_fingerprint?: string | null;
           required_capability?: string;
           result_reference?: string | null;
           scope?: string;
@@ -4296,6 +4327,7 @@ export type Database = {
           id: string;
           is_completed: boolean;
           is_flagged: boolean;
+          list_name: string | null;
           notes: string;
           priority: string;
           raw_record_id: string;
@@ -4312,6 +4344,7 @@ export type Database = {
           id?: string;
           is_completed: boolean;
           is_flagged: boolean;
+          list_name?: string | null;
           notes: string;
           priority: string;
           raw_record_id: string;
@@ -4328,6 +4361,7 @@ export type Database = {
           id?: string;
           is_completed?: boolean;
           is_flagged?: boolean;
+          list_name?: string | null;
           notes?: string;
           priority?: string;
           raw_record_id?: string;
@@ -6180,8 +6214,8 @@ export type Database = {
           ai_call_id: string | null;
           archive_reference: Json | null;
           build_version: string | null;
-          correlation_id: string;
           contract_version: number;
+          correlation_id: string;
           created_at: string;
           environment: string | null;
           event_type: string;
@@ -6199,8 +6233,8 @@ export type Database = {
           ai_call_id?: string | null;
           archive_reference?: Json | null;
           build_version?: string | null;
-          correlation_id: string;
           contract_version?: number;
+          correlation_id: string;
           created_at?: string;
           environment?: string | null;
           event_type: string;
@@ -6218,8 +6252,8 @@ export type Database = {
           ai_call_id?: string | null;
           archive_reference?: Json | null;
           build_version?: string | null;
-          correlation_id?: string;
           contract_version?: number;
+          correlation_id?: string;
           created_at?: string;
           environment?: string | null;
           event_type?: string;
@@ -6572,6 +6606,7 @@ export type Database = {
           cancelled_at: string | null;
           completed_at: string | null;
           correlation_id: string;
+          cost_root_run_id: string | null;
           error_code: string | null;
           id: string;
           idempotency_key: string;
@@ -6589,6 +6624,7 @@ export type Database = {
           cancelled_at?: string | null;
           completed_at?: string | null;
           correlation_id?: string;
+          cost_root_run_id?: string | null;
           error_code?: string | null;
           id?: string;
           idempotency_key: string;
@@ -6606,6 +6642,7 @@ export type Database = {
           cancelled_at?: string | null;
           completed_at?: string | null;
           correlation_id?: string;
+          cost_root_run_id?: string | null;
           error_code?: string | null;
           id?: string;
           idempotency_key?: string;
@@ -6619,6 +6656,13 @@ export type Database = {
           workflow_definition_id?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: 'workflow_runs_cost_root_run_id_fkey';
+            columns: ['cost_root_run_id'];
+            isOneToOne: false;
+            referencedRelation: 'workflow_runs';
+            referencedColumns: ['id'];
+          },
           {
             foreignKeyName: 'workflow_runs_user_id_fkey';
             columns: ['user_id'];
@@ -6698,18 +6742,10 @@ export type Database = {
     };
     Functions: {
       adapt_mobile_record_v1: { Args: { p_record_id: string }; Returns: string };
+      adapt_mobile_reminder_v2: { Args: { p_record_id: string }; Returns: string };
       adapt_mobile_snapshot: {
         Args: { p_snapshot_id: string; p_token_hash: string };
         Returns: Json;
-      };
-      transition_ai14_contract_handoff: {
-        Args: {
-          p_aal2_verified: boolean;
-          p_handoff_id: string;
-          p_status: Database['public']['Enums']['handoff_status'];
-          p_user_id: string;
-        };
-        Returns: Database['public']['Tables']['conversation_handoffs']['Row'][];
       };
       add_model_pricing: {
         Args: {
@@ -6743,10 +6779,12 @@ export type Database = {
       };
       calculate_instrumented_ai_cost: {
         Args: {
+          p_cache_write_tokens?: number;
           p_cached_input_tokens: number;
           p_input_tokens: number;
           p_model_id: string;
           p_output_tokens: number;
+          p_pricing_id?: string;
           p_search_calls: number;
         };
         Returns: number;
@@ -6775,6 +6813,15 @@ export type Database = {
         };
       };
       cancel_queued_run: { Args: { p_run_id: string; p_user_id: string }; Returns: boolean };
+      claim_canonical_action_execution: {
+        Args: {
+          p_execution_request_id: string;
+          p_idempotency_key: string;
+          p_request_fingerprint: string;
+          p_user_id: string;
+        };
+        Returns: Json;
+      };
       claim_job_queue: {
         Args: { p_limit?: number; p_worker_id: string };
         Returns: {
@@ -6880,6 +6927,61 @@ export type Database = {
           isOneToOne: false;
           isSetofReturn: true;
         };
+      };
+      commit_instrumented_ai_report: {
+        Args: {
+          p_actions: Json;
+          p_actual_cost: number;
+          p_cached_input_tokens: number;
+          p_call_id: string;
+          p_input_tokens: number;
+          p_markdown: string;
+          p_notification_policy: string;
+          p_output_tokens: number;
+          p_provider_usage: Json;
+          p_reasoning_tokens: number;
+          p_redacted_trace: Json;
+          p_report_type: string;
+          p_sections: Json;
+          p_structured_metrics: Json;
+          p_summary: string;
+          p_title: string;
+        };
+        Returns: string;
+      };
+      commit_instrumented_ai_report_with_queue: {
+        Args: {
+          p_actions: Json;
+          p_actual_cost: number;
+          p_cached_input_tokens: number;
+          p_call_id: string;
+          p_input_tokens: number;
+          p_job_id: string;
+          p_markdown: string;
+          p_notification_policy: string;
+          p_output_tokens: number;
+          p_provider_usage: Json;
+          p_reasoning_tokens: number;
+          p_redacted_trace: Json;
+          p_report_type: string;
+          p_response_id: string;
+          p_sections: Json;
+          p_structured_metrics: Json;
+          p_summary: string;
+          p_title: string;
+        };
+        Returns: string;
+      };
+      complete_canonical_action_execution: {
+        Args: {
+          p_claim_token: string;
+          p_execution_request_id: string;
+          p_idempotency_key: string;
+          p_receipt: Json;
+          p_request_fingerprint: string;
+          p_user_id: string;
+        };
+        Returns: Json;
       };
       complete_deterministic_workflow_run: { Args: { p_run_id: string }; Returns: string };
       complete_job_queue:
@@ -7053,6 +7155,22 @@ export type Database = {
         };
         Returns: string;
       };
+      create_prompt_candidate: {
+        Args: {
+          p_developer_text: string;
+          p_json_schema: Json;
+          p_model_route: string;
+          p_schema_version: number;
+          p_system_text: string;
+          p_template_id: string;
+          p_tool_policy: Json;
+          p_tool_policy_version: number;
+        };
+        Returns: {
+          id: string;
+          version: number;
+        }[];
+      };
       create_worker_device_from_mfa_gate: {
         Args: {
           p_gate_id: string;
@@ -7103,6 +7221,22 @@ export type Database = {
       execute_health_finance_workflow: { Args: { p_run_id: string }; Returns: string };
       execute_personal_workflow: { Args: { p_run_id: string }; Returns: string };
       execute_systems_workflow: { Args: { p_run_id: string }; Returns: string };
+      fail_instrumented_ai_provider_response: {
+        Args: {
+          p_actual_cost: number;
+          p_cached_input_tokens: number;
+          p_call_id: string;
+          p_error_code: string;
+          p_input_tokens: number;
+          p_job_id: string;
+          p_output_tokens: number;
+          p_provider_usage: Json;
+          p_reasoning_tokens: number;
+          p_redacted_trace: Json;
+          p_response_id: string;
+        };
+        Returns: boolean;
+      };
       ingest_apple_bridge_snapshot: {
         Args: {
           p_events: Json;
@@ -7129,6 +7263,23 @@ export type Database = {
         Returns: Json;
       };
       is_allowed_aal2: { Args: Record<PropertyKey, never>; Returns: boolean };
+      load_canonical_action_execution_request: {
+        Args: { p_execution_request_id: string };
+        Returns: Json;
+      };
+      load_prompt_promotion_target: {
+        Args: { p_target_version: number; p_template_id: string };
+        Returns: Json;
+      };
+      lookup_canonical_action_execution: {
+        Args: {
+          p_execution_request_id: string;
+          p_idempotency_key: string;
+          p_request_fingerprint: string;
+          p_user_id: string;
+        };
+        Returns: Json;
+      };
       mark_instrumented_ai_call_submitted: {
         Args: { p_call_id: string; p_response_id: string };
         Returns: undefined;
@@ -7140,6 +7291,10 @@ export type Database = {
       mobile_is_valid_optional_offset_timestamp: { Args: { p_value: string }; Returns: boolean };
       mobile_parse_offset_timestamp: {
         Args: { p_allow_empty?: boolean; p_value: string };
+        Returns: string;
+      };
+      mobile_reminder_scope_code: {
+        Args: { p_enabled_lists: string[]; p_records: Json };
         Returns: string;
       };
       mobile_shortcut_numeric: { Args: { p_field: string; p_payload: Json }; Returns: number };
@@ -7156,8 +7311,22 @@ export type Database = {
         Args: { p_snapshot_internal_id: string };
         Returns: Json;
       };
+      record_canonical_action_policy_decision: {
+        Args: {
+          p_execution_request_id: string;
+          p_idempotency_key: string;
+          p_policy_decision: Json;
+          p_request_fingerprint: string;
+          p_user_id: string;
+        };
+        Returns: boolean;
+      };
       record_instrumented_ai_reconciliation_failure: {
         Args: { p_call_id: string; p_error_code: string; p_redacted_trace?: Json };
+        Returns: undefined;
+      };
+      record_prompt_evaluation: {
+        Args: { p_evaluation_result: Json; p_prompt_version_id: string };
         Returns: undefined;
       };
       record_provider_usage_reconciliation: {
@@ -7187,23 +7356,6 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
-      };
-      record_prompt_evaluation: {
-        Args: { p_evaluation_result: Json; p_prompt_version_id: string };
-        Returns: undefined;
-      };
-      create_prompt_candidate: {
-        Args: {
-          p_developer_text: string;
-          p_json_schema: Json;
-          p_model_route: string;
-          p_schema_version: number;
-          p_system_text: string;
-          p_template_id: string;
-          p_tool_policy: Json;
-          p_tool_policy_version: number;
-        };
-        Returns: { id: string; version: number }[];
       };
       record_source_freshness: {
         Args: {
@@ -7235,10 +7387,27 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      record_workflow_stage: {
+        Args: {
+          p_input_reference?: string;
+          p_output_reference?: string;
+          p_redacted_error?: string;
+          p_run_id: string;
+          p_sequence: number;
+          p_status: string;
+          p_step_code: string;
+        };
+        Returns: undefined;
+      };
+      request_canonical_action_reversal: {
+        Args: { p_idempotency_key: string; p_original_receipt_id: string };
+        Returns: Json;
+      };
       reserve_instrumented_ai_call: {
         Args: {
           p_estimated_cost: number;
           p_model_id: string;
+          p_pricing_id?: string;
           p_prompt_version_id: string;
           p_redacted_trace?: Json;
           p_request_id: string;
@@ -7276,12 +7445,14 @@ export type Database = {
           actual_cost: number | null;
           actual_input_tokens: number | null;
           actual_output_tokens: number | null;
+          cache_write_tokens: number;
           cached_input_tokens: number;
           completed_at: string | null;
           created_at: string;
           estimated_cost: number;
           id: string;
           model_id: string | null;
+          model_pricing_id: string | null;
           model_route: string | null;
           prompt_version_id: string | null;
           provider_usage: NonNullable<Json>;
@@ -7331,18 +7502,34 @@ export type Database = {
           isSetofReturn: false;
         };
       };
-      update_google_source_selection: {
+      transition_ai14_contract_handoff: {
         Args: {
-          p_connection_id: string;
-          p_gate_id: string;
-          p_selected_calendar_ids: string[];
-          p_selected_drive_file_ids: string[];
+          p_aal2_verified: boolean;
+          p_handoff_id: string;
+          p_status: Database['public']['Enums']['handoff_status'];
+          p_user_id: string;
         };
-        Returns: Json;
-      };
-      update_onboarding_checklist_item: {
-        Args: { p_code: string; p_completed_at: string; p_metadata?: Json; p_user_id: string };
-        Returns: undefined;
+        Returns: {
+          accepted_at: string | null;
+          contract_version: number;
+          conversation_id: string;
+          correlation_id: string;
+          from_manager_code: string;
+          id: string;
+          idempotency_key: string;
+          initiated_at: string;
+          reason: string;
+          source_message_id: string | null;
+          status: Database['public']['Enums']['handoff_status'];
+          to_manager_code: string;
+          user_id: string;
+        }[];
+        SetofOptions: {
+          from: '*';
+          to: 'conversation_handoffs';
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
       };
       transition_prompt_version: {
         Args: {
@@ -7355,76 +7542,17 @@ export type Database = {
         };
         Returns: Json;
       };
-      commit_instrumented_ai_report: {
+      update_google_source_selection: {
         Args: {
-          p_actions: Json;
-          p_actual_cost: number;
-          p_cached_input_tokens: number;
-          p_call_id: string;
-          p_input_tokens: number;
-          p_markdown: string;
-          p_notification_policy: string;
-          p_output_tokens: number;
-          p_provider_usage: Json;
-          p_reasoning_tokens: number;
-          p_redacted_trace: Json;
-          p_report_type: string;
-          p_sections: Json;
-          p_structured_metrics: Json;
-          p_summary: string;
-          p_title: string;
+          p_connection_id: string;
+          p_gate_id: string;
+          p_selected_calendar_ids: string[];
+          p_selected_drive_file_ids: string[];
         };
-        Returns: string;
+        Returns: Json;
       };
-      commit_instrumented_ai_report_with_queue: {
-        Args: {
-          p_actions: Json;
-          p_actual_cost: number;
-          p_cached_input_tokens: number;
-          p_call_id: string;
-          p_input_tokens: number;
-          p_job_id: string;
-          p_markdown: string;
-          p_notification_policy: string;
-          p_output_tokens: number;
-          p_provider_usage: Json;
-          p_reasoning_tokens: number;
-          p_redacted_trace: Json;
-          p_report_type: string;
-          p_response_id: string;
-          p_sections: Json;
-          p_structured_metrics: Json;
-          p_summary: string;
-          p_title: string;
-        };
-        Returns: string;
-      };
-      fail_instrumented_ai_provider_response: {
-        Args: {
-          p_actual_cost: number;
-          p_cached_input_tokens: number;
-          p_call_id: string;
-          p_error_code: string;
-          p_input_tokens: number;
-          p_job_id: string;
-          p_output_tokens: number;
-          p_provider_usage: Json;
-          p_reasoning_tokens: number;
-          p_redacted_trace: Json;
-          p_response_id: string;
-        };
-        Returns: boolean;
-      };
-      record_workflow_stage: {
-        Args: {
-          p_input_reference?: string;
-          p_output_reference?: string;
-          p_redacted_error?: string;
-          p_run_id: string;
-          p_sequence: number;
-          p_status: string;
-          p_step_code: string;
-        };
+      update_onboarding_checklist_item: {
+        Args: { p_code: string; p_completed_at: string; p_metadata?: Json; p_user_id: string };
         Returns: undefined;
       };
     };
