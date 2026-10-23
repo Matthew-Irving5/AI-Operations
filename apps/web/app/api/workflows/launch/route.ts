@@ -3,18 +3,38 @@ import { z } from 'zod';
 import { requireSameOrigin } from '../../../../lib/request-security';
 import { getAuthenticatedServerAccessToken } from '../../../../lib/supabase-server';
 
-const onDemandSchema = z.object({
-  workflowCode: z.enum(['travel-on-demand-plan', 'procurement-on-demand-research']),
-  managerCode: z.enum(['travel', 'procurement']),
+const onDemandRequestFields = {
   hardCapUsd: z.number().positive().max(1000),
   modelCeiling: z.enum(['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol']),
   searchCeiling: z.number().int().min(0).max(20),
   idempotencyKey: z.string().uuid(),
-  request: z.object({
-    purpose: z.string().trim().min(3).max(2000),
-    constraints: z.string().trim().max(4000),
-  }),
-});
+  request: z
+    .object({
+      purpose: z.string().trim().min(3).max(2000),
+      constraints: z.string().trim().max(4000),
+    })
+    .strict(),
+};
+
+const onDemandSchema = z
+  .object({
+    workflowCode: z.enum(['travel-on-demand-plan', 'procurement-on-demand-research']),
+    managerCode: z.enum(['travel', 'procurement']),
+    ...onDemandRequestFields,
+  })
+  .strict();
+
+const plannerLaunchSchema = z
+  .object({
+    workflowCode: z.literal('personal-on-demand-plan'),
+    managerCode: z.literal('personal'),
+    hardCapUsd: z.number().positive().max(2),
+    modelCeiling: z.enum(['gpt-5.6-luna', 'gpt-5.6-terra']),
+    searchCeiling: z.literal(0),
+    idempotencyKey: z.string().uuid(),
+    request: onDemandSchema.shape.request,
+  })
+  .strict();
 
 const systemsAcceptanceSchema = z.union([
   z
@@ -52,7 +72,7 @@ const systemsAcceptanceSchema = z.union([
     .strict(),
 ]);
 
-const schema = z.union([onDemandSchema, systemsAcceptanceSchema]);
+const schema = z.union([plannerLaunchSchema, onDemandSchema, systemsAcceptanceSchema]);
 
 export async function POST(request: Request) {
   const rejected = requireSameOrigin(request);

@@ -7013,6 +7013,22 @@ export type Database = {
         Returns: Json;
       };
       complete_deterministic_workflow_run: { Args: { p_run_id: string }; Returns: string };
+      complete_inter_agent_plan_with_queue: {
+        Args: {
+          p_actual_cost: number;
+          p_cached_input_tokens: number;
+          p_call_id: string;
+          p_input_tokens: number;
+          p_job_id: string;
+          p_output_tokens: number;
+          p_provider_usage: Json;
+          p_reasoning_tokens: number;
+          p_redacted_trace: Json;
+          p_request_id: string;
+          p_response_id: string;
+        };
+        Returns: boolean;
+      };
       complete_inter_agent_request: {
         Args: { p_completed_at: string; p_reply: Json; p_request_id: string; p_status: string };
         Returns: Json;

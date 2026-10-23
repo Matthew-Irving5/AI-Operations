@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { evaluateGoldenCase, type GoldenCase } from './eval';
 import {
@@ -257,5 +258,71 @@ describe('synthetic manager evaluation gate', () => {
       toolAuthorityPassed: false,
       latencyPassed: false,
     });
+  });
+});
+
+describe('AI-17 Planner prompt seed', () => {
+  it('uses the governed draft/evaluate/approve path with real evaluator output', () => {
+    const migration = readFileSync(
+      new URL(
+        '../../../supabase/migrations/20261022134700_ai17_planner_specialist_runtime.sql',
+        import.meta.url,
+      ),
+      'utf8',
+    );
+    const capture = (pattern: RegExp, label: string) => {
+      const match = migration.match(pattern);
+      if (!match?.[1]) throw new Error('planner_seed_missing_' + label);
+      return match[1];
+    };
+    const guardReplacement = migration.indexOf(
+      'create or replace function public.guard_ai16_prompt_version()',
+    );
+    const candidateRpc = migration.indexOf(
+      'create or replace function public.create_prompt_candidate(',
+    );
+    const evaluationRpc = migration.indexOf(
+      'create or replace function public.record_prompt_evaluation(',
+    );
+    const candidateCreation = migration.indexOf('from public.create_prompt_candidate(');
+    const evaluationStorage = migration.indexOf('perform public.record_prompt_evaluation(');
+    const approval = migration.indexOf("set evaluation_status='approved'");
+
+    expect(guardReplacement).toBeGreaterThan(0);
+    expect(migration.slice(0, guardReplacement)).not.toContain(
+      'insert into public.prompt_versions',
+    );
+    expect(candidateRpc).toBeGreaterThan(guardReplacement);
+    expect(evaluationRpc).toBeGreaterThan(candidateRpc);
+    expect(candidateCreation).toBeGreaterThan(evaluationRpc);
+    expect(evaluationStorage).toBeGreaterThan(candidateCreation);
+    expect(approval).toBeGreaterThan(evaluationStorage);
+
+    const evaluation = JSON.parse(
+      capture(/planner_evaluation jsonb := '({[^']+})'::jsonb;/, 'evaluation'),
+    );
+    const candidate = {
+      systemText: capture(
+        /planner_system text := \$ai17_system\$([\s\S]*?)\$ai17_system\$;/,
+        'system',
+      ),
+      developerText: capture(
+        /planner_developer text := \$ai17_developer\$([\s\S]*?)\$ai17_developer\$;/,
+        'developer',
+      ),
+      schema: JSON.parse(
+        capture(
+          /planner_schema jsonb := \$ai17_schema\$([\s\S]*?)\$ai17_schema\$::jsonb;/,
+          'schema',
+        ),
+      ),
+      modelRoute: capture(/planner_model_route text := '([^']+)';/, 'model_route'),
+      toolPolicy: JSON.parse(
+        capture(/planner_tool_policy jsonb := '([^']+)'::jsonb;/, 'tool_policy'),
+      ),
+    };
+
+    expect(evaluatePromptCandidate(candidate)).toEqual(evaluation);
+    expect(canPromotePrompt(evaluation)).toBe(true);
   });
 });

@@ -2,19 +2,29 @@
 
 import { useState } from 'react';
 
-export function OnDemandLaunchForm({ manager }: Readonly<{ manager: 'travel' | 'procurement' }>) {
+export function OnDemandLaunchForm({
+  manager,
+}: Readonly<{ manager: 'travel' | 'procurement' | 'personal' }>) {
   const [status, setStatus] = useState('');
   async function submit(formData: FormData) {
-    setStatus('Submitting bounded research request...');
+    setStatus(
+      manager === 'personal'
+        ? 'Submitting bounded planning request...'
+        : 'Submitting bounded research request...',
+    );
     const response = await fetch('/api/workflows/launch', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         workflowCode:
-          manager === 'travel' ? 'travel-on-demand-plan' : 'procurement-on-demand-research',
+          manager === 'personal'
+            ? 'personal-on-demand-plan'
+            : manager === 'travel'
+              ? 'travel-on-demand-plan'
+              : 'procurement-on-demand-research',
         managerCode: manager,
         hardCapUsd: Number(formData.get('hardCapUsd')),
-        searchCeiling: Number(formData.get('searchCeiling')),
+        searchCeiling: manager === 'personal' ? 0 : Number(formData.get('searchCeiling')),
         modelCeiling: 'gpt-5.6-terra',
         idempotencyKey: crypto.randomUUID(),
         request: { purpose: formData.get('purpose'), constraints: formData.get('constraints') },
@@ -28,7 +38,7 @@ export function OnDemandLaunchForm({ manager }: Readonly<{ manager: 'travel' | '
   }
   return (
     <form className="stack card" action={submit}>
-      <h2>Launch bounded research</h2>
+      <h2>{manager === 'personal' ? 'Launch a bounded plan' : 'Launch bounded research'}</h2>
       <label>
         Purpose <textarea name="purpose" required minLength={3} maxLength={2000} />
       </label>
@@ -37,13 +47,23 @@ export function OnDemandLaunchForm({ manager }: Readonly<{ manager: 'travel' | '
       </label>
       <label>
         Hard cap (USD){' '}
-        <input name="hardCapUsd" type="number" min="0.01" max="1000" step="0.01" required />
+        <input
+          name="hardCapUsd"
+          type="number"
+          min="0.01"
+          max={manager === 'personal' ? '2' : '1000'}
+          step="0.01"
+          defaultValue={manager === 'personal' ? '0.25' : undefined}
+          required
+        />
       </label>
-      <label>
-        Search ceiling{' '}
-        <input name="searchCeiling" type="number" min="0" max="20" defaultValue="10" required />
-      </label>
-      <button type="submit">Queue research</button>
+      {manager === 'personal' ? null : (
+        <label>
+          Search ceiling{' '}
+          <input name="searchCeiling" type="number" min="0" max="20" defaultValue="10" required />
+        </label>
+      )}
+      <button type="submit">{manager === 'personal' ? 'Queue plan' : 'Queue research'}</button>
       <p aria-live="polite">{status}</p>
     </form>
   );

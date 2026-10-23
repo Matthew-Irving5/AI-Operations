@@ -171,3 +171,36 @@ Deno.test("rejects unauthorized, malformed, non-running, and unregistered routes
     throw new Error("rejected_requests_must_not_reach_persistence");
   }
 });
+
+Deno.test("allows an idempotent provider retry after delegation has parked its source", async () => {
+  const response = await createInterAgentDelegationHandler({
+    isAuthorized: (request) =>
+      request.headers.get("x-worker-secret") === "worker-secret",
+    loadSourceRun: () =>
+      Promise.resolve({ ...source, status: "waiting_for_dependency" }),
+    authorizer: { canDelegate: () => Promise.resolve(true) },
+    persistence: {
+      ...createPersistence(),
+      createAndQueueRequest: () =>
+        Promise.resolve({
+          requestId: "33333333-3333-4333-8333-333333333333",
+          destinationRunId: "44444444-4444-4444-8444-444444444444",
+          duplicate: true,
+        }),
+    },
+  })(post({
+    sourceRunId,
+    destinationManagerCode: "travel",
+    destinationWorkflowCode: "travel-on-demand-plan",
+    objective: "Compare two trip options.",
+    requiredOutputContract: { type: "object" },
+  }));
+
+  if (response.status !== 202) {
+    throw new Error("parked_source_duplicate_retry_must_be_accepted");
+  }
+  const body = await response.json();
+  if (body.duplicate !== true) {
+    throw new Error("parked_source_retry_must_resolve_as_existing_request");
+  }
+});

@@ -81,7 +81,10 @@ export function createInterAgentDelegationHandler(
       return json({ code: "source_run_unavailable" }, 503);
     }
     if (!source) return json({ code: "source_run_not_found" }, 404);
-    if (source.id !== parsed.data.sourceRunId || source.status !== "running") {
+    if (
+      source.id !== parsed.data.sourceRunId ||
+      !["running", "waiting_for_dependency"].includes(source.status)
+    ) {
       return json({ code: "source_run_not_delegatable" }, 409);
     }
 

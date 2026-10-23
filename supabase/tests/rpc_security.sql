@@ -55,6 +55,7 @@ insert into rpc_security_expected values
   ('public.expire_inter_agent_requests(integer)', false, false, false),
   ('public.create_conversation_handoff(jsonb)', false, false, true),
   ('public.resolve_conversation_handoff(uuid,uuid,text,text,uuid,timestamptz)', false, false, true),
+  ('public.complete_inter_agent_plan_with_queue(uuid,text,uuid,uuid,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)', false, false, true),
   ('public.execute_digital_estate_workflow(uuid)', false, false, true),
   ('public.record_instrumented_ai_reconciliation_failure(uuid,text,jsonb)', false, false, true),
   ('public.commit_instrumented_ai_report(uuid,text,text,text,text,text,jsonb,jsonb,jsonb,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)', false, false, true),
