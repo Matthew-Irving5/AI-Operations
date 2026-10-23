@@ -289,9 +289,15 @@ test('Supabase database query parser ignores CLI diagnostics around the JSON env
   });
 });
 
-test('multiline SQL is made safe for Windows Corepack CLI argv', () => {
+test('multiline restore SQL is flattened for the Supabase CLI argv boundary', () => {
   assert.equal(
     singleLineSqlArgument('\n  select a, b\n  from records\n  where a is not null  '),
     'select a, b from records where a is not null',
+  );
+  assert.equal(
+    singleLineSqlArgument(`insert into public.backup_restore_drills
+      (user_id, backup_key, drill_status)
+      values ('synthetic-user-id', 'synthetic-backup-key', 'passed')`),
+    "insert into public.backup_restore_drills (user_id, backup_key, drill_status) values ('synthetic-user-id', 'synthetic-backup-key', 'passed')",
   );
 });
