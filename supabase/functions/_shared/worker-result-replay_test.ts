@@ -29,26 +29,3 @@ Deno.test("unfinished scans retain normal first-result persistence", () => {
     ) throw new Error("first_scan_result_must_not_be_treated_as_replay");
   }
 });
-
-Deno.test("result handler authenticates and verifies signatures before the replay guard, and guards before writes", async () => {
-  const source = await Deno.readTextFile(
-    new URL("../worker-submit-result/index.ts", import.meta.url),
-  );
-  const markers = [
-    "await authenticateWorker",
-    "await crypto.subtle.verify",
-    "const replay = completedWorkerScanResponse",
-    "if (replay)",
-    "return replay",
-    'from("digital_inventory_items").upsert',
-    'from("audit_events").insert',
-  ];
-  let previous = -1;
-  for (const marker of markers) {
-    const next = source.indexOf(marker, previous + 1);
-    if (next <= previous) {
-      throw new Error(`worker_result_boundary_order_missing:${marker}`);
-    }
-    previous = next;
-  }
-});

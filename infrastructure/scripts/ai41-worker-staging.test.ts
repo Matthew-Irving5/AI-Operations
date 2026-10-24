@@ -69,3 +69,23 @@ test('AI41 runner requires exact immutable artifact and deployment inputs', () =
   ])
     assert.throws(() => validateWorkerAcceptanceInputs({ ...input, ...patch }));
 });
+
+test('worker result verifies identity and signature, then guards completed replay before writes', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile('supabase/functions/worker-submit-result/index.ts', 'utf8');
+  const markers = [
+    'await authenticateWorker',
+    'await crypto.subtle.verify',
+    'const replay = completedWorkerScanResponse',
+    'if (replay)',
+    'return replay',
+    'from("digital_inventory_items").upsert',
+    'from("audit_events").insert',
+  ];
+  let previous = -1;
+  for (const marker of markers) {
+    const next = source.indexOf(marker, previous + 1);
+    assert.ok(next > previous, `missing worker result boundary: ${marker}`);
+    previous = next;
+  }
+});
