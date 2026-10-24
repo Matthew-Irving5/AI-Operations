@@ -14,7 +14,7 @@ const CandidateSchema = z
     pullRequestNumber: z.literal(182),
     runId: z.string().regex(/^[1-9][0-9]{0,19}$/),
     origin: z.literal(stagingTarget.origin),
-    acceptanceProfile: z.literal('career'),
+    acceptanceProfile: z.enum(['career', 'career-auth-browser']),
     migrations: z.literal('passed'),
     edgeFunctions: z.literal('passed'),
     sourceDrift: z.literal('passed'),

@@ -1,3 +1,4 @@
+import { combineCareerAuthStagingResults } from './career-auth-staging-result.js';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
@@ -1300,7 +1301,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /candidate_sha:/);
   assert.match(
     deployWorkflow,
-    /acceptance_profile:[\s\S]*options: \[auto, targeted, auth-browser, cost-runtime, career\]/,
+    /acceptance_profile:[\s\S]*options: \[auto, targeted, auth-browser, cost-runtime, career, career-auth-browser\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1505,7 +1506,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(
     deployWorkflow,
-    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "career" \]\]/,
+    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "career" \|\| "\$ACCEPTANCE_PROFILE" == "career-auth-browser" \]\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1731,7 +1732,7 @@ test('AI-35 Career readback selects its dedicated profile and rejects incompatib
         ['docs/build/ticket-readbacks/AI-35.md', 'apps/web/app/api/auth/session/route.ts'],
         'career',
       ),
-    /both ticket-specific Career and generic auth-browser proof/,
+    /does not match inferred/,
   );
 });
 
@@ -1846,4 +1847,74 @@ test('targeted hosted acceptance is valid without MFA and cannot satisfy an auth
       }),
     /acceptance_profile_mismatch/,
   );
+});
+
+test('Career shared MFA changes require both exact-candidate Career and auth-browser proofs', () => {
+  const paths = ['docs/build/ticket-readbacks/AI-35.md', 'apps/web/app/mfa/page.tsx'];
+  assert.equal(selectHostedAcceptanceProfile(paths), 'career-auth-browser');
+  assert.throws(() => selectHostedAcceptanceProfile(paths, 'career'), /does not match inferred/);
+  const career = careerSuiteEvidence();
+  const auth = hostedSuiteEvidence();
+  const combined = {
+    schemaVersion: 1,
+    state: 'CAREER_AUTH_BROWSER_STAGING_ACCEPTED',
+    acceptanceProfile: 'career-auth-browser',
+    candidateSha,
+    candidateTreeSha,
+    pullRequestNumber: 152,
+    deploymentRunId: '36474707377',
+    stagingOrigin: origin,
+    humanMfa: 'user-completed',
+    checks: career.checks,
+    correlationIds: career.correlationIds,
+    acceptedAt: career.acceptedAt,
+    careerEvidence: career,
+    authBrowserEvidence: auth,
+  };
+  const hosted = combineCareerAuthStagingResults(career, auth);
+  assert.deepEqual(hosted, createHostedStagingSuiteEvidence(combined));
+  const status = createStagingAcceptanceStatus({
+    candidateSha,
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    state: 'success',
+    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'career-auth-browser' }),
+    hostedSuite: hosted,
+  });
+  assert.equal(status.status.state, 'success');
+  assert.deepEqual(status.acceptance?.careerEvidence, career);
+  assert.deepEqual(status.acceptance?.authBrowserEvidence, auth);
+  assert.throws(
+    () => createHostedStagingSuiteEvidence({ ...combined, authBrowserEvidence: undefined }),
+    /invalid_evidence/,
+  );
+  for (const key of [
+    'candidateSha',
+    'candidateTreeSha',
+    'pullRequestNumber',
+    'deploymentRunId',
+    'stagingOrigin',
+  ])
+    assert.throws(() =>
+      createHostedStagingSuiteEvidence({
+        ...combined,
+        authBrowserEvidence: { ...auth, [key]: key === 'pullRequestNumber' ? 999 : 'wrong' },
+      }),
+    );
+});
+
+test('Career combined proof rejects valid-shaped evidence from another candidate or deployment', () => {
+  const career = careerSuiteEvidence();
+  for (const mismatch of [
+    { candidateSha: nextSha },
+    { candidateTreeSha: nextSha },
+    { deploymentRunId: '36474707378' },
+    { pullRequestNumber: 153 },
+  ]) {
+    assert.throws(
+      () => combineCareerAuthStagingResults(career, hostedSuiteEvidence(mismatch)),
+      /invalid_evidence/,
+    );
+  }
 });
