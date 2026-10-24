@@ -40,3 +40,17 @@ test('Google freshness reader uses read-only management endpoint and validates r
     ),
   );
 });
+import { readFileSync } from 'node:fs';
+test('Google acceptance preflights the actual protected reader before opening a browser', () => {
+  const runner = readFileSync(
+    'infrastructure/scripts/run-google-oauth-staging-acceptance.ts',
+    'utf8',
+  );
+  assert.ok(
+    runner.indexOf("await readGoogleStagingFreshness('00000000") <
+      runner.indexOf('    execFileSync('),
+  );
+  const spec = readFileSync('tests/e2e-live/google-oauth-acceptance.spec.ts', 'utf8');
+  assert.match(spec, /return readGoogleStagingFreshness\(userId\)/);
+  assert.doesNotMatch(spec, /serviceRows<[^>]+>\('data_freshness'/);
+});
