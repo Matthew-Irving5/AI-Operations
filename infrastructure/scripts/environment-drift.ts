@@ -533,6 +533,11 @@ export function compareMigrations(expected: string[], applied: string[], label: 
     : [`${label}: applied migration versions differ`];
 }
 
+export function missingAppliedMigrationVersions(applied: string[], candidate: string[]): string[] {
+  const candidateVersions = new Set(candidate);
+  return sorted([...new Set(applied.filter((version) => !candidateVersions.has(version)))]);
+}
+
 export function migrationVersionFromFilename(fileName: string): string {
   const match = /^(\d{12}|\d{14})_[^/\\]+\.sql$/.exec(fileName);
   if (!match?.[1]) throw new Error(`Invalid Supabase migration filename: ${fileName}`);
@@ -699,6 +704,25 @@ async function getMigrations(projectRef: string, token: string): Promise<string[
     }),
   });
   return rows.map(({ version }) => version);
+}
+
+async function preflightMigrationHistory(name: EnvironmentName): Promise<void> {
+  const prefix = name.toUpperCase();
+  const projectRef = requiredEnv(`${prefix}_SUPABASE_PROJECT_REF`);
+  if (projectRef !== manifest.environments[name].projectRef) {
+    throw new Error(`${name}: project ref does not match the configured environment.`);
+  }
+  const applied = await getMigrations(projectRef, requiredEnv(`${prefix}_SUPABASE_ACCESS_TOKEN`));
+  const candidate = localMigrations();
+  const missing = missingAppliedMigrationVersions(applied, candidate);
+  if (missing.length > 0) {
+    throw new Error(
+      `${name}: remote migration history contains versions absent from the candidate checkout: ${missing.join(', ')}. Include the approved migration files; never repair applied history to make a behind candidate deploy.`,
+    );
+  }
+  console.log(
+    `${name}: candidate checkout contains all ${applied.length} applied migration versions.`,
+  );
 }
 
 async function getSchemaDigest(projectRef: string, token: string): Promise<string> {
@@ -1436,6 +1460,10 @@ function summarize(value: Awaited<ReturnType<typeof inventory>>) {
 
 async function main(): Promise<void> {
   const mode = process.argv[2] === '--' ? process.argv[3] : process.argv[2];
+  if (mode === 'preflight-staging-migrations') {
+    await preflightMigrationHistory('staging');
+    return;
+  }
   if (mode === 'repo-local') {
     const report = checkLocalDatabaseTypeParity();
     console.log(JSON.stringify(report, null, 2));

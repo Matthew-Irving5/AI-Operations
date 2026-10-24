@@ -35,18 +35,31 @@
     "https://deno.land/std@0.224.0/internal/format.ts": "0a98ee226fd3d43450245b1844b47003419d34d210fa989900861c79820d21c2",
     "https://deno.land/std@0.224.0/internal/mod.ts": "534125398c8e7426183e12dc255bb635d94e06d0f93c60a297723abe69d3b22e",
     "https://esm.sh/@supabase/supabase-js@2.57.0": "119dc185b1310fd98a9ee7cb6a660879a2562ea3730ebed9b80e85ecc8c7e3ee",
-    "https://esm.sh/zod@4.1.5": "716d4c669ca0dcea7c085f01741ee8cdd092826892d169cc025a5b1b79871b1f",
-    "https://esm.sh/zod@4.1.5/denonext/v4/classic/checks.mjs": "794b1208b30b8cf8dcac1ed2fc511db492561839155944ffca90c428132c68e5",
-    "https://esm.sh/zod@4.1.5/denonext/v4/classic/errors.mjs": "434d1cf901612b374546ab30340d4a3bcfa85c713b01dfac562d990b1564deae",
-    "https://esm.sh/zod@4.1.5/denonext/v4/classic/external.mjs": "7e5aca293ed36080de0c902cea065675bd1b493587b0b74fe87570121db42f42",
-    "https://esm.sh/zod@4.1.5/denonext/v4/classic/iso.mjs": "f20d0d7f242ab105d67e1a27d67b0994944a97ee78f766233491a0d3a95823d4",
-    "https://esm.sh/zod@4.1.5/denonext/v4/classic/parse.mjs": "89c9a9a5e43914079d8574a9371da96adcbe591909d9c91eb1724f858f3428ca",
-    "https://esm.sh/zod@4.1.5/denonext/v4/classic/schemas.mjs": "b76d410beaa8c3831de0d4ccf4826a3d6cb2caf5671163c6d91b669658983ef1",
-    "https://esm.sh/zod@4.1.5/denonext/v4/core.mjs": "61adc6f671b7fe6453ffea4f075f0b963bdbcf69a850f6f5ba2dd54d92653492",
-    "https://esm.sh/zod@4.1.5/denonext/v4/core/util.mjs": "b9ccf3eca8090204d5427145d7c3b35e3f013b39adcd26fb9e68f9ac67f17fe2",
-    "https://esm.sh/zod@4.1.5/denonext/v4/locales.mjs": "1e929f4c9b05f9ad74aa53fa5e5dda2c65892d14a1fe08e87016af27dff6db9d",
-    "https://esm.sh/zod@4.1.5/denonext/v4/locales/en.mjs": "acc44214962a50e87ad246e98d78f907612deff2903250a1eafc683931b02a3b",
-    "https://esm.sh/zod@4.1.5/denonext/zod.mjs": "0ed26a04fb50769f9df45d88151b3a3c06fccd4e2ebd83648d8d2c12c00d52c7"
+    "https://esm.sh/zod@4.6.6": "5c89d1961d458b9de7f82592a7bb96a2c3e220c7e956c61a7324b9e87d01746e",
+    "https://esm.sh/zod@4.6.6/denonext/v4/classic/checks.mjs": "45dee4454c247dfaf48e2773f3475c04d7cb78131486b2d2d0036a27df3e94f1",
+    "https://esm.sh/zod@4.6.6/denonext/v4/classic/errors.mjs": "65e0707330a0ced1784762ff708de11d226c6203d372756521ff0c888accf020",
+    "https://esm.sh/zod@4.6.6/denonext/v4/classic/external.mjs": "c214005371fb855e34e1169868c686d132946f11d0106d394cd87ba399f318e8",
+    "https://esm.sh/zod@4.6.6/denonext/v4/classic/parse.mjs": "bd676377eaab60b02d3380b6a3cec9cc48dd142854702bdcac182f9793dccf42",
+    "https://esm.sh/zod@4.6.6/denonext/v4/classic/schemas.mjs": "d3c2fc0d21e3db7a05973bfb69812e17159b0127cb9cb29d3dcc29f1e43e1637",
+    "https://esm.sh/zod@4.6.6/denonext/v4/core.mjs": "fea27c6a41178ffd3b8f42e433f6b5cce70152fb5227e38dc9b581972951aefd",
+    "https://esm.sh/zod@4.6.6/denonext/v4/core/checks.mjs": "ec7e3fd06c4e51a74c384fa942db60a4a8dfdb417727359b4655e94676ffaa05",
+    "https://esm.sh/zod@4.6.6/denonext/v4/core/compile.mjs": "e1f4a7f0208006548cbc8a8704013a3e3761ae738e597d37c8fb5b7d745e9899",
+    "https://esm.sh/zod@4.6.6/denonext/v4/core/core.mjs": "4dc6b79b2882dbb096a52ac9dff713d6a2a7b38602a944b018dc81aae22bee8f",
+    "https://esm.sh/zod@4.6.6/denonext/v4/core/doc.mjs": "a39b0ca543f436ca3d4ccd251970871d209897cdae04d680a4e61b90471213f8",
+    "https://esm.sh/zod@4.6.6/denonext/v4/core/errors.mjs": "4ed8d360564f7b88117c55d774e9dc4052fedffb256dd44151fcd1d8a1e4dfdf",
+    "https://esm.sh/zod@4.6.6/denonext/v4/core/json-schema-processors.mjs": "a510ca2cebe2c8e168e8d7c2903abb6e0bb89aeadb1413cbf56f66f54a74dd56",
+    "https://esm.sh/zod@4.6.6/denonext/v4/core/memoizer.mjs": "f7228df30779979a176d87fd84cd3e2d890f380aa7a7d4bc138711a663844a85",
+    "https://esm.sh/zod@4.6.6/denonext/v4/core/parse.mjs": "f7306cfba5f0a0ec16337255ff086204cfbbaae1f589a61e728cd0e3511ed7c5",
+    "https://esm.sh/zod@4.6.6/denonext/v4/core/regexes.mjs": "9534d28d04eb48f0923662ed8811b19b29862fcda6c825f357d8aefbf32744bd",
+    "https://esm.sh/zod@4.6.6/denonext/v4/core/registries.mjs": "643d8d5470e572490fc4c49df73ff230d7f334af12c25b29fddd937140490ffd",
+    "https://esm.sh/zod@4.6.6/denonext/v4/core/schemas.mjs": "a409a7718a9e2a9f033d3c96b974793b9c8f5d25fc69c6cf223b9515dca40056",
+    "https://esm.sh/zod@4.6.6/denonext/v4/core/to-json-schema.mjs": "2c301219e5d1792ed35ba3ea072ace23621935f82e810849d57fdfd16577cd8d",
+    "https://esm.sh/zod@4.6.6/denonext/v4/core/util.mjs": "221f1e24a7815ef94908ffa7fa601d90938021ae82de068411d6ba1048cbb277",
+    "https://esm.sh/zod@4.6.6/denonext/v4/core/versions.mjs": "4096464c8c0e83cb46bc0690d7d2afc0882d946719eb70110b57a9cbc691b624",
+    "https://esm.sh/zod@4.6.6/denonext/v4/core/visit.mjs": "45fda09edeba839bece5014679179c6547ee0d0a947b85a37486e1e10cb28737",
+    "https://esm.sh/zod@4.6.6/denonext/v4/locales.mjs": "eed318f5659d12f8130aca7587f2948c6e1bf1904b02dbb65bd6fbbd2a68ac0d",
+    "https://esm.sh/zod@4.6.6/denonext/v4/locales/en.mjs": "f6baaa4a68187786627af823b16687ff5c9cdc2889fab25419a0fef5335c6ac3",
+    "https://esm.sh/zod@4.6.6/denonext/zod.mjs": "99adc154586e672087a58f20c0d38158bd3f79a56a96e71daba5f50a570e09fc"
   },
   "workspace": {
     "packageJson": {
@@ -60,9 +73,111 @@
         "npm:tsx@4.20.3",
         "npm:turbo@2.9.14",
         "npm:typescript@5.8.3",
+        "npm:vite@7.3.7",
         "npm:vitest@4.1.11",
-        "npm:zod@4.1.5"
+        "npm:zod@4.6.6"
       ]
+    },
+    "members": {
+      "apps/web": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@fontsource-variable/mona-sans@5.3.0",
+            "npm:@fontsource/ibm-plex-mono@5.3.0",
+            "npm:@opennextjs/cloudflare@1.20.2",
+            "npm:@supabase/ssr@0.7.0",
+            "npm:@supabase/supabase-js@2.57.0",
+            "npm:@types/react-dom@19.1.7",
+            "npm:@types/react@19.1.10",
+            "npm:echarts@^6.1.0",
+            "npm:eslint-config-next@16.3.8",
+            "npm:eslint@9.34.0",
+            "npm:next@16.3.8",
+            "npm:react-dom@19.1.1",
+            "npm:react@19.1.1",
+            "npm:wrangler@4.118.0",
+            "npm:zod@4.6.6"
+          ]
+        }
+      },
+      "packages/ai-runtime": {
+        "packageJson": {
+          "dependencies": [
+            "npm:openai@^7.3.0",
+            "npm:typescript@5.8.3",
+            "npm:vitest@3.2.6",
+            "npm:zod@4.6.6"
+          ]
+        }
+      },
+      "packages/braces-safe": {
+        "packageJson": {
+          "dependencies": [
+            "npm:fill-range@7.1.1"
+          ]
+        }
+      },
+      "packages/contracts": {
+        "packageJson": {
+          "dependencies": [
+            "npm:typescript@5.8.3",
+            "npm:vitest@3.2.6",
+            "npm:zod@4.6.6"
+          ]
+        }
+      },
+      "packages/db": {
+        "packageJson": {
+          "dependencies": [
+            "npm:typescript@5.8.3",
+            "npm:vitest@3.2.6"
+          ]
+        }
+      },
+      "packages/integrations": {
+        "packageJson": {
+          "dependencies": [
+            "npm:typescript@5.8.3",
+            "npm:vitest@3.2.6"
+          ]
+        }
+      },
+      "packages/manager-core": {
+        "packageJson": {
+          "dependencies": [
+            "npm:typescript@5.8.3",
+            "npm:vitest@3.2.6"
+          ]
+        }
+      },
+      "packages/observability": {
+        "packageJson": {
+          "dependencies": [
+            "npm:typescript@5.8.3",
+            "npm:vitest@3.2.6"
+          ]
+        }
+      },
+      "packages/test-fixtures": {
+        "packageJson": {
+          "dependencies": [
+            "npm:typescript@5.8.3",
+            "npm:vitest@3.2.6"
+          ]
+        }
+      },
+      "packages/ui": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@types/react-dom@19.1.7",
+            "npm:@types/react@19.1.10",
+            "npm:react-dom@19.1.1",
+            "npm:react@19.1.1",
+            "npm:typescript@5.8.3",
+            "npm:vitest@3.2.6"
+          ]
+        }
+      }
     }
   }
 }

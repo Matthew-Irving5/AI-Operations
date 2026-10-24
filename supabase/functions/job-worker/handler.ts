@@ -1,4 +1,4 @@
-import { z } from "npm:zod@4.1.5";
+import { z } from "npm:zod@4.6.6";
 
 const uuidSchema = z.string().uuid();
 const runTargetSchema = z.object({ runId: uuidSchema.optional() }).strict();
