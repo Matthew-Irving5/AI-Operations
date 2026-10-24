@@ -29,10 +29,10 @@ test('Node and deployed Edge boundaries use the patched Zod release', () => {
     }
   }
   inspect('supabase/functions');
-  assert.equal(
-    z.array(z.string()).max(2).safeParse(['invalid', 'oversized', 'collection']).success,
-    false,
-  );
+  const oversized = z.array(z.string()).max(2).safeParse(Array<number>(5000).fill(1));
+  assert.equal(oversized.success, false);
+  assert.equal(oversized.error?.issues.length, 1);
+  assert.equal(oversized.error?.issues[0]?.code, 'too_big');
 });
 
 test('tooling transitive security patches remain pinned', () => {
