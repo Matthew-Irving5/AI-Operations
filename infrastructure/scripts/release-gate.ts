@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
-import { GoogleOAuthChecksSchema, GoogleOAuthStagingEvidenceSchema } from './google-oauth-staging-acceptance.js';
+import {
+  GoogleOAuthChecksSchema,
+  GoogleOAuthStagingEvidenceSchema,
+} from './google-oauth-staging-acceptance.js';
 import { Ai20CostRuntimeProofSchema } from './ai20-cost-runtime-proof.js';
 
 const ShaSchema = z
@@ -200,7 +203,12 @@ const ReadyEvidenceSchema = z
   })
   .strict();
 
-const AcceptanceProfileSchema = z.enum(['targeted', 'auth-browser', 'cost-runtime', 'google-oauth']);
+const AcceptanceProfileSchema = z.enum([
+  'targeted',
+  'auth-browser',
+  'cost-runtime',
+  'google-oauth',
+]);
 
 const CapabilityResultsSchema = z
   .object({
@@ -276,9 +284,13 @@ const AcceptanceEvidenceSchema = z
     const validChecks = targeted
       ? Array.isArray(value.checks)
       : !Array.isArray(value.checks) &&
-        (costRuntime ? 'localCostMatrix' in value.checks : googleOAuth ? 'accountRole' in value.checks : 'authAal2' in value.checks);
+        (costRuntime
+          ? 'localCostMatrix' in value.checks
+          : googleOAuth
+            ? 'accountRole' in value.checks
+            : 'authAal2' in value.checks);
     const validFreshMfaAction =
-      targeted || costRuntime
+      targeted || costRuntime || googleOAuth
         ? value.freshMfaAction === undefined
         : value.freshMfaAction !== undefined;
     const validCostRuntimeProof = costRuntime
@@ -302,7 +314,13 @@ const AcceptanceEvidenceSchema = z
         ) &&
         JSON.stringify(value.checks) === JSON.stringify(googleOAuthEvidence.checks)
       : googleOAuthEvidence === undefined;
-    if (!validGoogleOAuthEvidence || !validMfa || !validChecks || !validFreshMfaAction || !validCostRuntimeProof) {
+    if (
+      !validGoogleOAuthEvidence ||
+      !validMfa ||
+      !validChecks ||
+      !validFreshMfaAction ||
+      !validCostRuntimeProof
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message:
@@ -666,7 +684,9 @@ export function selectHostedAcceptanceProfile(
   override: string = 'auto',
 ): HostedAcceptanceProfile {
   const normalizedFiles = files.map((raw) => raw.replaceAll('\\', '/'));
-  const googleOAuth = normalizedFiles.includes('docs/build/ticket-readbacks/AI-27.md') || normalizedFiles.includes('tests/e2e-live/google-oauth-acceptance.spec.ts');
+  const googleOAuth =
+    normalizedFiles.includes('docs/build/ticket-readbacks/AI-27.md') ||
+    normalizedFiles.includes('tests/e2e-live/google-oauth-acceptance.spec.ts');
   const costRuntime = normalizedFiles.includes('docs/build/ticket-readbacks/AI-20.md');
   const authBrowser = normalizedFiles.some((file) => {
     if (googleOAuth && file === 'apps/web/middleware.ts') return false;
@@ -687,15 +707,26 @@ export function selectHostedAcceptanceProfile(
       file === 'tests/e2e/platform-authenticated.spec.ts'
     );
   });
-  if (googleOAuth && authBrowser) throw new Error('Candidate requires both ticket-specific and generic auth-browser proof');
-  if (override === 'google-oauth' && !googleOAuth) throw new Error('google-oauth override requires the AI-27 readback or dedicated acceptance spec marker');
-  if (googleOAuth && costRuntime) throw new Error('Google OAuth and cost-runtime proof require separate candidates.');
+  if (googleOAuth && authBrowser)
+    throw new Error('Candidate requires both ticket-specific and generic auth-browser proof');
+  if (override === 'google-oauth' && !googleOAuth)
+    throw new Error(
+      'google-oauth override requires the AI-27 readback or dedicated acceptance spec marker',
+    );
+  if (googleOAuth && costRuntime)
+    throw new Error('Google OAuth and cost-runtime proof require separate candidates.');
   if (costRuntime && authBrowser) {
     throw new Error(
       'AI-20 cost-runtime and auth-browser proof cannot share one acceptance profile.',
     );
   }
-  const inferred = googleOAuth ? 'google-oauth' : costRuntime ? 'cost-runtime' : authBrowser ? 'auth-browser' : 'targeted';
+  const inferred = googleOAuth
+    ? 'google-oauth'
+    : costRuntime
+      ? 'cost-runtime'
+      : authBrowser
+        ? 'auth-browser'
+        : 'targeted';
   if (override !== 'auto' && override !== inferred) {
     throw new Error(
       `Requested staging profile '${override}' does not match inferred '${inferred}'.`,
@@ -878,7 +909,9 @@ export function createStagingAcceptanceStatus(input: unknown): StagingAcceptance
     ...(parsed.hostedSuite.acceptanceProfile === 'cost-runtime'
       ? { costRuntimeProof: parsed.hostedSuite.costRuntimeProof }
       : {}),
-    ...(parsed.hostedSuite.acceptanceProfile === 'google-oauth' ? { googleOAuthEvidence: parsed.hostedSuite } : {}),
+    ...(parsed.hostedSuite.acceptanceProfile === 'google-oauth'
+      ? { googleOAuthEvidence: parsed.hostedSuite }
+      : {}),
     correlationIds: parsed.hostedSuite.correlationIds,
     ...(parsed.hostedSuite.workflowRuns ? { workflowRuns: parsed.hostedSuite.workflowRuns } : {}),
     ...(parsed.hostedSuite.promptGovernanceProof

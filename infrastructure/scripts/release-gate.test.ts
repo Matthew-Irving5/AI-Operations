@@ -1224,7 +1224,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /candidate_sha:/);
   assert.match(
     deployWorkflow,
-    /acceptance_profile:[\s\S]*options: \[auto, targeted, auth-browser, cost-runtime\]/,
+    /acceptance_profile:[\s\S]*options: \[auto, targeted, auth-browser, cost-runtime, google-oauth\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1861,4 +1861,3 @@ test('AI-27 Google OAuth profile routes the exact candidate through its strict e
   });
   assert.equal(flatProducer.status, 1);
 });
-
