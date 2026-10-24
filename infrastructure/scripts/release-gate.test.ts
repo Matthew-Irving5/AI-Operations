@@ -363,6 +363,67 @@ test('local or hosted CI failure cannot produce staging-ready evidence', () => {
   assert.throws(() => ready({ ci: 'failed' }), /ci_not_passed/);
 });
 
+test('AI41 worker protocol requires attended full journey before canonical acceptance', () => {
+  const checks = {
+    realWindowsArtifact: 'passed',
+    freshMfaPairing: 'passed',
+    identityVersionCapabilities: 'passed',
+    harmlessScanReceipt: 'passed',
+    replayImpersonationDenied: 'passed',
+    revocationRecovery: 'passed',
+    repairOldCredentialsDenied: 'passed',
+    outboundOnly: 'passed',
+    incompatibleWorkerBlocked: 'passed',
+  };
+  assert.equal(selectHostedAcceptanceProfile(['docs/build/ticket-readbacks/AI-41.md']), 'worker-protocol');
+  assert.throws(
+    () => selectHostedAcceptanceProfile(['docs/build/ticket-readbacks/AI-41.md'], 'targeted'),
+  );
+  const suite = {
+    schemaVersion: 1,
+    state: 'WORKER_PROTOCOL_STAGING_ACCEPTED',
+    acceptanceProfile: 'worker-protocol',
+    candidateSha,
+    candidateTreeSha,
+    pullRequestNumber: 152,
+    deploymentRunId: '36474707377',
+    stagingOrigin: origin,
+    humanMfa: 'user-completed',
+    checks,
+    correlationIds: ['worker-scan-trace'],
+    acceptedAt: '2026-10-24T00:00:00Z',
+  };
+  const producer = createHostedStagingSuiteEvidence(suite);
+  const result = createStagingAcceptanceStatus({
+    candidateSha,
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    state: 'success',
+    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'worker-protocol' }),
+    hostedSuite: producer,
+  });
+  assert.equal(result.status.state, 'success');
+  assert.equal(result.acceptance?.acceptanceProfile, 'worker-protocol');
+  for (const key of Object.keys(checks)) {
+    const incomplete = { ...checks };
+    delete incomplete[key as keyof typeof checks];
+    assert.throws(() => createHostedStagingSuiteEvidence({ ...suite, checks: incomplete }), key);
+  }
+  assert.throws(() => createHostedStagingSuiteEvidence({ ...suite, humanMfa: 'not-required' }));
+  assert.throws(() =>
+    createStagingAcceptanceStatus({
+      candidateSha,
+      currentPullRequestHeadSha: nextSha,
+      currentPullRequestTreeSha: candidateTreeSha,
+      currentPullRequestNumber: 152,
+      state: 'success',
+      deployment: candidateDeploymentEvidence({ acceptanceProfile: 'worker-protocol' }),
+      hostedSuite: producer,
+    }),
+  );
+});
+
 const candidateWorkflowNames = ['CI', 'Security', 'CodeQL Advanced', 'Dependency review'] as const;
 function candidateInput(overrides: Record<string, unknown> = {}) {
   return {

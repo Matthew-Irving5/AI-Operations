@@ -204,7 +204,22 @@ const AcceptanceProfileSchema = z.enum([
   'auth-browser',
   'cost-runtime',
   'planner-specialist',
+  'worker-protocol',
 ]);
+
+export const WorkerProtocolChecksSchema = z
+  .object({
+    realWindowsArtifact: z.literal('passed'),
+    freshMfaPairing: z.literal('passed'),
+    identityVersionCapabilities: z.literal('passed'),
+    harmlessScanReceipt: z.literal('passed'),
+    replayImpersonationDenied: z.literal('passed'),
+    revocationRecovery: z.literal('passed'),
+    repairOldCredentialsDenied: z.literal('passed'),
+    outboundOnly: z.literal('passed'),
+    incompatibleWorkerBlocked: z.literal('passed'),
+  })
+  .strict();
 
 const CapabilityResultsSchema = z
   .object({
@@ -326,6 +341,7 @@ const AcceptanceEvidenceSchema = z
       TargetedCapabilityResultsSchema,
       CostRuntimeChecksSchema,
       Ai17PlannerSpecialistChecksSchema,
+      WorkerProtocolChecksSchema,
     ]),
     freshMfaAction: FreshMfaActionEvidenceSchema.optional(),
     promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
@@ -341,6 +357,7 @@ const AcceptanceEvidenceSchema = z
     const targeted = value.acceptanceProfile === 'targeted';
     const costRuntime = value.acceptanceProfile === 'cost-runtime';
     const plannerSpecialist = value.acceptanceProfile === 'planner-specialist';
+    const workerProtocol = value.acceptanceProfile === 'worker-protocol';
     const validMfa = targeted || costRuntime || value.humanMfa === 'user-completed';
     const validChecks = targeted
       ? Array.isArray(value.checks)
@@ -349,9 +366,11 @@ const AcceptanceEvidenceSchema = z
           ? 'localCostMatrix' in value.checks
           : plannerSpecialist
             ? 'plannerToTravelJourney' in value.checks
+            : workerProtocol
+              ? 'realWindowsArtifact' in value.checks
             : 'authAal2' in value.checks);
     const validFreshMfaAction =
-      targeted || costRuntime || plannerSpecialist
+      targeted || costRuntime || plannerSpecialist || workerProtocol
         ? value.freshMfaAction === undefined
         : value.freshMfaAction !== undefined;
     const validCostRuntimeProof = costRuntime
@@ -437,6 +456,18 @@ const StagingReadyInputSchema = z
   .strict();
 
 const StagingAcceptanceInputSchema = z.discriminatedUnion('acceptanceProfile', [
+  z
+    .object({
+      candidateSha: ShaSchema,
+      deploymentRunId: RunIdSchema,
+      stagingOrigin: StageOrigin,
+      acceptanceProfile: z.literal('worker-protocol'),
+      humanMfa: z.literal('user-completed'),
+      checks: WorkerProtocolChecksSchema,
+      correlationIds: z.array(SafeIdSchema).min(1).max(20),
+      acceptedAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
   z
     .object({
       candidateSha: ShaSchema,
@@ -573,7 +604,25 @@ const CostRuntimeStagingSuiteEvidenceSchema = z
     }
   });
 
+const WorkerProtocolStagingSuiteEvidenceSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    state: z.literal('WORKER_PROTOCOL_STAGING_ACCEPTED'),
+    candidateTreeSha: ShaSchema,
+    pullRequestNumber: z.number().int().positive(),
+    candidateSha: ShaSchema,
+    deploymentRunId: RunIdSchema,
+    stagingOrigin: StageOrigin,
+    acceptanceProfile: z.literal('worker-protocol'),
+    humanMfa: z.literal('user-completed'),
+    checks: WorkerProtocolChecksSchema,
+    correlationIds: z.array(SafeIdSchema).min(1).max(20),
+    acceptedAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
 const HostedStagingSuiteEvidenceSchema = z.discriminatedUnion('acceptanceProfile', [
+  WorkerProtocolStagingSuiteEvidenceSchema,
   AuthBrowserStagingSuiteEvidenceSchema,
   TargetedStagingSuiteEvidenceSchema,
   CostRuntimeStagingSuiteEvidenceSchema,
@@ -748,6 +797,7 @@ export function selectHostedAcceptanceProfile(
   const plannerSpecialist =
     normalizedFiles.includes('docs/build/ticket-readbacks/AI-17.md') ||
     normalizedFiles.includes('tests/e2e-live/ai17-planner-specialist.spec.ts');
+  const workerProtocol = normalizedFiles.includes('docs/build/ticket-readbacks/AI-41.md');
   const costRuntime = normalizedFiles.includes('docs/build/ticket-readbacks/AI-20.md');
   const authBrowser = normalizedFiles.some((file) => {
     if (
@@ -781,6 +831,10 @@ export function selectHostedAcceptanceProfile(
     ? 'cost-runtime'
     : plannerSpecialist
       ? 'planner-specialist'
+      : workerProtocol
+        ? 'worker-protocol'
+        : costRuntime
+          ? 'cost-runtime'
       : authBrowser
         ? 'auth-browser'
         : 'targeted';
@@ -970,8 +1024,10 @@ export function createStagingAcceptanceStatus(input: unknown): StagingAcceptance
       ? { plannerSpecialistEvidence: parsed.hostedSuite }
       : {}),
     correlationIds: parsed.hostedSuite.correlationIds,
-    ...(parsed.hostedSuite.workflowRuns ? { workflowRuns: parsed.hostedSuite.workflowRuns } : {}),
-    ...(parsed.hostedSuite.promptGovernanceProof
+    ...('workflowRuns' in parsed.hostedSuite && parsed.hostedSuite.workflowRuns
+      ? { workflowRuns: parsed.hostedSuite.workflowRuns }
+      : {}),
+    ...('promptGovernanceProof' in parsed.hostedSuite && parsed.hostedSuite.promptGovernanceProof
       ? { promptGovernanceProof: parsed.hostedSuite.promptGovernanceProof }
       : {}),
     acceptedAt: parsed.hostedSuite.acceptedAt,
