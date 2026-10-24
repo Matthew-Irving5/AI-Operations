@@ -1,3 +1,4 @@
+import { readGoogleStagingFreshness } from './google-staging-reader.js';
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -48,6 +49,7 @@ async function main(): Promise<void> {
     throw new Error('Google OAuth acceptance candidate tree SHA does not match the local commit.');
   }
 
+  await readGoogleStagingFreshness('00000000-0000-4000-8000-000000000001');
   const outputPath = resolve(
     'test-results',
     `live-google-oauth-acceptance-${candidateSha}-${Date.now()}.json`,
