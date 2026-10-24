@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   canTransitionCanonicalAction,
   canonicalActionAdapterOutcomeSchema,
+  canonicalActionReceiptDraftSchema,
+  canonicalActionReceiptSchema,
   evaluateCanonicalActionPolicy,
   type CanonicalActionPolicyInput,
 } from './action-policy';
@@ -23,6 +25,51 @@ const baseInput = (
 });
 
 describe('canonical action policy', () => {
+  it('constructs draft and stored receipts with the same policy and lifecycle invariants', () => {
+    const uuid = '00000000-0000-4000-8000-000000000001';
+    const draft = {
+      contractVersion: 1,
+      userId: uuid,
+      executionRequestId: uuid,
+      actionId: null,
+      actionType: 'google_calendar_event_create',
+      authority: 'verified_user',
+      channel: 'web_chat',
+      policyDecision: 'allow',
+      policyReason: 'verified_user_authority',
+      kind: 'succeeded',
+      summary: 'Created synthetic event.',
+      resultReference: null,
+      changedReferences: ['synthetic-event'],
+      errorCode: null,
+      redactedError: null,
+      reversalToken: null,
+      reversesReceiptId: null,
+      idempotencyKey: 'synthetic-receipt-key',
+      requestFingerprint: `sha256:${'a'.repeat(64)}`,
+      correlationId: uuid,
+      attempt: 1,
+    };
+    const storedFields = { id: uuid, createdAt: '2026-10-24T12:00:00Z' };
+    expect(canonicalActionReceiptDraftSchema.safeParse(draft).success).toBe(true);
+    expect(canonicalActionReceiptSchema.safeParse({ ...draft, ...storedFields }).success).toBe(
+      true,
+    );
+    for (const override of [
+      { kind: 'failed', errorCode: null },
+      { kind: 'failed', errorCode: 'provider_failure', changedReferences: ['synthetic-event'] },
+      { policyDecision: 'deny' },
+      { kind: 'reversed', reversesReceiptId: null },
+    ]) {
+      expect(canonicalActionReceiptDraftSchema.safeParse({ ...draft, ...override }).success).toBe(
+        false,
+      );
+      expect(
+        canonicalActionReceiptSchema.safeParse({ ...draft, ...storedFields, ...override }).success,
+      ).toBe(false);
+    }
+  });
+
   it('requires approval for agent proposals and cannot lower manifest risk', () => {
     const decision = evaluateCanonicalActionPolicy(baseInput());
 

@@ -71,7 +71,7 @@ const actionTimestampSchema = z.string().datetime({ offset: true });
 const actionIdempotencyKeySchema = z.string().trim().min(8).max(255);
 const actionFingerprintSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 
-export const canonicalActionReceiptSchema = z
+const canonicalActionReceiptBaseSchema = z
   .object({
     contractVersion: z.literal(1),
     id: actionUuidSchema,
@@ -119,44 +119,51 @@ export const canonicalActionReceiptSchema = z
     attempt: z.number().int().positive(),
     createdAt: actionTimestampSchema,
   })
-  .strict()
-  .superRefine((receipt, context) => {
-    if (receipt.kind === 'failed' && receipt.errorCode === null) {
-      context.addIssue({
-        code: 'custom',
-        message: 'failed_canonical_action_receipt_requires_error_code',
-        path: ['errorCode'],
-      });
-    }
-    if (receipt.policyDecision !== 'allow') {
-      context.addIssue({
-        code: 'custom',
-        message: 'executed_receipt_requires_allowed_policy',
-        path: ['policyDecision'],
-      });
-    }
-    if (receipt.kind === 'failed' && receipt.changedReferences.length > 0) {
-      context.addIssue({
-        code: 'custom',
-        message: 'failed_action_receipt_cannot_claim_changes',
-        path: ['changedReferences'],
-      });
-    }
-    if (receipt.kind === 'reversed' && receipt.reversesReceiptId === null) {
-      context.addIssue({
-        code: 'custom',
-        message: 'reversed_receipt_must_link_an_original_receipt',
-        path: ['reversesReceiptId'],
-      });
-    }
-  });
+  .strict();
+
+function validateCanonicalActionReceipt(
+  receipt: Omit<z.infer<typeof canonicalActionReceiptBaseSchema>, 'id' | 'createdAt'>,
+  context: z.RefinementCtx,
+) {
+  if (receipt.kind === 'failed' && receipt.errorCode === null) {
+    context.addIssue({
+      code: 'custom',
+      message: 'failed_canonical_action_receipt_requires_error_code',
+      path: ['errorCode'],
+    });
+  }
+  if (receipt.policyDecision !== 'allow') {
+    context.addIssue({
+      code: 'custom',
+      message: 'executed_receipt_requires_allowed_policy',
+      path: ['policyDecision'],
+    });
+  }
+  if (receipt.kind === 'failed' && receipt.changedReferences.length > 0) {
+    context.addIssue({
+      code: 'custom',
+      message: 'failed_action_receipt_cannot_claim_changes',
+      path: ['changedReferences'],
+    });
+  }
+  if (receipt.kind === 'reversed' && receipt.reversesReceiptId === null) {
+    context.addIssue({
+      code: 'custom',
+      message: 'reversed_receipt_must_link_an_original_receipt',
+      path: ['reversesReceiptId'],
+    });
+  }
+}
+
+export const canonicalActionReceiptSchema = canonicalActionReceiptBaseSchema.superRefine(
+  validateCanonicalActionReceipt,
+);
 
 export type CanonicalActionReceipt = z.infer<typeof canonicalActionReceiptSchema>;
 
-export const canonicalActionReceiptDraftSchema = canonicalActionReceiptSchema.omit({
-  id: true,
-  createdAt: true,
-});
+export const canonicalActionReceiptDraftSchema = canonicalActionReceiptBaseSchema
+  .omit({ id: true, createdAt: true })
+  .superRefine(validateCanonicalActionReceipt);
 export type CanonicalActionReceiptDraft = z.infer<typeof canonicalActionReceiptDraftSchema>;
 
 export const canonicalActionExecutionIdentitySchema = z
