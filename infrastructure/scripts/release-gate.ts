@@ -199,7 +199,24 @@ const ReadyEvidenceSchema = z
   })
   .strict();
 
-const AcceptanceProfileSchema = z.enum(['targeted', 'auth-browser', 'cost-runtime']);
+const AcceptanceProfileSchema = z.enum([
+  'targeted',
+  'auth-browser',
+  'cost-runtime',
+  'archive-restore',
+]);
+
+export const ArchiveRestoreChecksSchema = z
+  .object({
+    stagingDatabaseAndR2Backup: z.literal('passed'),
+    encryptedPrivateBundle: z.literal('passed'),
+    isolatedLocalRestore: z.literal('passed'),
+    linkedTraceEvidenceRead: z.literal('passed'),
+    exactFileBytes: z.literal('passed'),
+    corruptionDetected: z.literal('passed'),
+    sourceUnchanged: z.literal('passed'),
+  })
+  .strict();
 
 const CapabilityResultsSchema = z
   .object({
@@ -255,6 +272,7 @@ const AcceptanceEvidenceSchema = z
       CapabilityResultsSchema,
       TargetedCapabilityResultsSchema,
       CostRuntimeChecksSchema,
+      ArchiveRestoreChecksSchema,
     ]),
     freshMfaAction: FreshMfaActionEvidenceSchema.optional(),
     promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
@@ -268,13 +286,18 @@ const AcceptanceEvidenceSchema = z
   .superRefine((value, context) => {
     const targeted = value.acceptanceProfile === 'targeted';
     const costRuntime = value.acceptanceProfile === 'cost-runtime';
+    const archiveRestore = value.acceptanceProfile === 'archive-restore';
     const validMfa = targeted || costRuntime || value.humanMfa === 'user-completed';
     const validChecks = targeted
       ? Array.isArray(value.checks)
       : !Array.isArray(value.checks) &&
-        (costRuntime ? 'localCostMatrix' in value.checks : 'authAal2' in value.checks);
+        (costRuntime
+          ? 'localCostMatrix' in value.checks
+          : archiveRestore
+            ? 'isolatedLocalRestore' in value.checks
+            : 'authAal2' in value.checks);
     const validFreshMfaAction =
-      targeted || costRuntime
+      targeted || costRuntime || archiveRestore
         ? value.freshMfaAction === undefined
         : value.freshMfaAction !== undefined;
     const validCostRuntimeProof = costRuntime
@@ -338,6 +361,18 @@ const StagingReadyInputSchema = z
   .strict();
 
 const StagingAcceptanceInputSchema = z.discriminatedUnion('acceptanceProfile', [
+  z
+    .object({
+      candidateSha: ShaSchema,
+      deploymentRunId: RunIdSchema,
+      stagingOrigin: StageOrigin,
+      acceptanceProfile: z.literal('archive-restore'),
+      humanMfa: z.literal('user-completed'),
+      checks: ArchiveRestoreChecksSchema,
+      correlationIds: z.array(SafeIdSchema).min(1).max(20),
+      acceptedAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
   z
     .object({
       candidateSha: ShaSchema,
@@ -461,7 +496,25 @@ const CostRuntimeStagingSuiteEvidenceSchema = z
     }
   });
 
+const ArchiveRestoreStagingSuiteEvidenceSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    state: z.literal('ARCHIVE_RESTORE_STAGING_ACCEPTED'),
+    candidateSha: ShaSchema,
+    candidateTreeSha: ShaSchema,
+    pullRequestNumber: z.number().int().positive(),
+    deploymentRunId: RunIdSchema,
+    stagingOrigin: StageOrigin,
+    acceptanceProfile: z.literal('archive-restore'),
+    humanMfa: z.literal('user-completed'),
+    checks: ArchiveRestoreChecksSchema,
+    correlationIds: z.array(SafeIdSchema).min(1).max(20),
+    acceptedAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
 const HostedStagingSuiteEvidenceSchema = z.discriminatedUnion('acceptanceProfile', [
+  ArchiveRestoreStagingSuiteEvidenceSchema,
   AuthBrowserStagingSuiteEvidenceSchema,
   TargetedStagingSuiteEvidenceSchema,
   CostRuntimeStagingSuiteEvidenceSchema,
@@ -632,6 +685,7 @@ export function selectHostedAcceptanceProfile(
   override: string = 'auto',
 ): HostedAcceptanceProfile {
   const normalizedFiles = files.map((raw) => raw.replaceAll('\\', '/'));
+  const archiveRestore = normalizedFiles.includes('docs/build/ticket-readbacks/AI-45.md');
   const costRuntime = normalizedFiles.includes('docs/build/ticket-readbacks/AI-20.md');
   const authBrowser = normalizedFiles.some((file) => {
     return (
@@ -656,7 +710,15 @@ export function selectHostedAcceptanceProfile(
       'AI-20 cost-runtime and auth-browser proof cannot share one acceptance profile.',
     );
   }
-  const inferred = costRuntime ? 'cost-runtime' : authBrowser ? 'auth-browser' : 'targeted';
+  if (archiveRestore && (costRuntime || authBrowser))
+    throw new Error('Archive restore requires its own staging candidate.');
+  const inferred = archiveRestore
+    ? 'archive-restore'
+    : costRuntime
+      ? 'cost-runtime'
+      : authBrowser
+        ? 'auth-browser'
+        : 'targeted';
   if (override !== 'auto' && override !== inferred) {
     throw new Error(
       `Requested staging profile '${override}' does not match inferred '${inferred}'.`,

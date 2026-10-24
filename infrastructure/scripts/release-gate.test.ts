@@ -12,6 +12,7 @@ import {
 import { execFileSync } from 'node:child_process';
 import {
   Ai16PromptGovernanceProofSchema,
+  ArchiveRestoreChecksSchema,
   acceptStagingCandidate,
   acquireStagingSlot,
   authorizeProductionPromotion,
@@ -1224,7 +1225,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /candidate_sha:/);
   assert.match(
     deployWorkflow,
-    /acceptance_profile:[\s\S]*options: \[auto, targeted, auth-browser, cost-runtime\]/,
+    /acceptance_profile:[\s\S]*options: \[auto, targeted, auth-browser, cost-runtime, archive-restore\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1429,7 +1430,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(
     deployWorkflow,
-    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \]\]/,
+    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "archive-restore" \]\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1700,5 +1701,68 @@ test('targeted hosted acceptance is valid without MFA and cannot satisfy an auth
         hostedSuite: targetedSuite,
       }),
     /acceptance_profile_mismatch/,
+  );
+});
+
+test('AI45 archive restore requires every real outcome and cannot autoaccept targeted smoke', () => {
+  const checks = {
+    stagingDatabaseAndR2Backup: 'passed',
+    encryptedPrivateBundle: 'passed',
+    isolatedLocalRestore: 'passed',
+    linkedTraceEvidenceRead: 'passed',
+    exactFileBytes: 'passed',
+    corruptionDetected: 'passed',
+    sourceUnchanged: 'passed',
+  } as const;
+  assert.equal(
+    selectHostedAcceptanceProfile(['docs/build/ticket-readbacks/AI-45.md']),
+    'archive-restore',
+  );
+  assert.throws(() =>
+    selectHostedAcceptanceProfile(['docs/build/ticket-readbacks/AI-45.md'], 'targeted'),
+  );
+  for (const key of Object.keys(checks)) {
+    const incomplete: Record<string, string> = { ...checks };
+    delete incomplete[key];
+    assert.throws(() => ArchiveRestoreChecksSchema.parse(incomplete));
+  }
+  const hostedSuite = {
+    schemaVersion: 1,
+    state: 'ARCHIVE_RESTORE_STAGING_ACCEPTED',
+    acceptanceProfile: 'archive-restore',
+    candidateSha,
+    candidateTreeSha,
+    pullRequestNumber: 152,
+    deploymentRunId: '36474707377',
+    stagingOrigin: origin,
+    humanMfa: 'user-completed',
+    checks,
+    correlationIds: ['restore-synthetic-1'],
+    acceptedAt: '2026-10-24T20:00:00.000Z',
+  };
+  const input = {
+    candidateSha,
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    state: 'success',
+    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'archive-restore' }),
+    hostedSuite,
+  };
+  assert.equal(
+    createStagingAcceptanceStatus(input).acceptance?.acceptanceProfile,
+    'archive-restore',
+  );
+  assert.throws(() =>
+    createStagingAcceptanceStatus({
+      ...input,
+      hostedSuite: { ...hostedSuite, deploymentRunId: 'wrong-run' },
+    }),
+  );
+  assert.throws(() =>
+    createStagingAcceptanceStatus({
+      ...input,
+      hostedSuite: { ...hostedSuite, humanMfa: 'not-required' },
+    }),
   );
 });
