@@ -10,6 +10,7 @@ import { liveE2eBrowserEnvironment } from './live-e2e-browser-environment.js';
 const origin = 'https://ai-operations-staging.ai-operations.workers.dev';
 const control = 'https://jqtssfrfocnibffdkqch.supabase.co/functions/v1';
 const safetyRoot = 'C:\\ProgramData\\AI-Operations\\staging\\ai41';
+const acceptancePython = process.env.AI41_ACCEPTANCE_PYTHON ?? 'python';
 const Inputs = z
   .object({
     candidateSha: z.string().regex(/^[a-f0-9]{40}$/),
@@ -33,6 +34,9 @@ const Snapshot = z.array(
     result_verified: z.boolean(),
     inventory_count: z.number(),
     workflow_status: z.string(),
+    completed_at: z.string().nullable(),
+    result_verified_at: z.string().nullable(),
+    result_audit_count: z.number().int().nonnegative(),
   }),
 );
 export async function readWorkerStagingSnapshot(
@@ -48,7 +52,7 @@ export async function readWorkerStagingSnapshot(
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({
-        query: `select r.id as run_id,r.correlation_id,s.id as scan_id,s.status,s.result_verified_at is not null as result_verified,(select count(*)::integer from public.digital_inventory_items i where i.scan_id=s.id) as inventory_count,r.status::text as workflow_status from public.digital_scans s join public.workflow_runs r on r.id=s.run_id where r.id='${runId}'::uuid limit 1`,
+        query: `select r.id as run_id,r.correlation_id,s.id as scan_id,s.status,s.result_verified_at is not null as result_verified,(select count(*)::integer from public.digital_inventory_items i where i.scan_id=s.id) as inventory_count,r.status::text as workflow_status,s.completed_at::text,s.result_verified_at::text,(select count(*)::integer from public.audit_events a where a.target_id=s.id::text and a.action_type='worker_scan_result_verified') as result_audit_count from public.digital_scans s join public.workflow_runs r on r.id=s.run_id where r.id='${runId}'::uuid limit 1`,
       }),
     },
   );
@@ -75,12 +79,46 @@ function probe(secretPath: string, endpoint: string, payload: unknown) {
     throw new Error('worker_probe_endpoint_invalid');
   return Probe.parse(
     JSON.parse(
-      execFileSync('python', ['-c', probeSource, secretPath, endpoint, JSON.stringify(payload)], {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }),
+      execFileSync(
+        acceptancePython,
+        ['-c', probeSource, secretPath, endpoint, JSON.stringify(payload)],
+        {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      ),
     ),
   );
+}
+
+function replayCompletedScan(folder: string, deviceId: string, scanId: string, fixture: string) {
+  const source = `import json,sys,urllib.request,urllib.error
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from ai_operations_worker.identity import create_or_load_private_key,load_secret
+from ai_operations_worker.inventory import collect
+from ai_operations_worker.results import sign_scan_result
+folder,device_id,scan_id,fixture=sys.argv[2:]
+inventory=[{'pathToken':i.path_token,'filename':i.filename,'sizeBytes':i.size_bytes,'sha256':i.sha256} for i in collect((Path(fixture),))]
+payload=sign_scan_result(create_or_load_private_key(Path(folder)/'worker.key.dpapi'),device_id,scan_id,inventory)
+request=urllib.request.Request('${control}/worker-submit-result',data=json.dumps(payload).encode(),headers={'content-type':'application/json','x-worker-secret':load_secret(Path(folder)/'worker.secret.dpapi')},method='POST')
+try:
+ response=urllib.request.urlopen(request,timeout=30)
+except urllib.error.HTTPError as error:
+ response=error
+body=json.loads(response.read())
+print(json.dumps({'status':response.status,'replayed':body.get('replayed'),'accepted':body.get('accepted')}))`;
+  return z
+    .object({ status: z.literal(200), replayed: z.literal(true), accepted: z.literal(0) })
+    .parse(
+      JSON.parse(
+        execFileSync(
+          acceptancePython,
+          ['-c', source, resolve('apps/windows-worker/src'), folder, deviceId, scanId, fixture],
+          { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+        ),
+      ),
+    );
 }
 async function responseAfterManual(
   page: Page,
@@ -108,6 +146,7 @@ function stop(worker: ChildProcess | undefined) {
 }
 export async function runWorkerAcceptance(raw: unknown) {
   const input = Inputs.parse(raw);
+  execFileSync(acceptancePython, ['-c', 'import win32crypt, cryptography'], { stdio: 'pipe' });
   if (process.platform !== 'win32') throw new Error('real_windows_required');
   const artifact = resolve(input.artifactPath);
   if (
@@ -267,6 +306,8 @@ export async function runWorkerAcceptance(raw: unknown) {
     expect(completed.status).toBe('complete');
     expect(completed.result_verified).toBe(true);
     expect(completed.inventory_count).toBe(1);
+    replayCompletedScan(first.folder, first.id, scan.scan.id, fixture);
+    expect((await readWorkerStagingSnapshot(scan.runId))[0]).toEqual(completed);
     ids.push(completed.correlation_id);
     const oldVersion = probe(secret, 'worker-poll', {
       deviceId: first.id,

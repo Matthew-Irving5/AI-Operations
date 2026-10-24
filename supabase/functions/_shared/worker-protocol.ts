@@ -1,4 +1,4 @@
-import { z } from "npm:zod@4.1.5";
+import { z } from "npm:zod@4.6.6";
 
 export const MINIMUM_WORKER_VERSION = "0.2.0";
 export const WORKER_CAPABILITIES = {

@@ -26,6 +26,9 @@ test('AI41 fixed staging snapshot uses read-only SQL and rejects invalid identit
         result_verified: true,
         inventory_count: 1,
         workflow_status: 'succeeded',
+        completed_at: '2026-10-24T20:00:00Z',
+        result_verified_at: '2026-10-24T20:00:00Z',
+        result_audit_count: 1,
       },
     ]);
   };
