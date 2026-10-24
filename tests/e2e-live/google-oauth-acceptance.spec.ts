@@ -1,3 +1,4 @@
+import { readGoogleStagingFreshness } from '../../infrastructure/scripts/google-staging-reader';
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Page } from '@playwright/test';
 import {
@@ -52,12 +53,7 @@ function requireProof(condition: boolean, invariant: string): asserts condition 
 }
 
 async function serviceRows<T>(
-  table:
-    | 'connections'
-    | 'google_drive_files'
-    | 'google_sync_requests'
-    | 'connection_credentials'
-    | 'data_freshness',
+  table: 'connections' | 'google_drive_files' | 'google_sync_requests' | 'connection_credentials',
   query: URLSearchParams,
 ): Promise<T[]> {
   const response = await fetch(
@@ -96,12 +92,7 @@ async function driveRows(connectionId: string, fileId: string): Promise<DriveRow
 }
 
 async function freshnessRows(userId: string): Promise<FreshnessRow[]> {
-  const query = new URLSearchParams({
-    select: 'source,state,last_success_at',
-    user_id: `eq.${userId}`,
-    source: 'eq.google_drive',
-  });
-  return serviceRows<FreshnessRow>('data_freshness', query);
+  return readGoogleStagingFreshness(userId);
 }
 
 async function syncRequestRows(
