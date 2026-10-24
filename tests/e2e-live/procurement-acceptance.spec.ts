@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test';
 import { parseLiveE2eEnvironment, stagingTarget } from '../../apps/web/lib/live-e2e-safety';
 import { resolveGitTreeSha } from '../../infrastructure/scripts/live-acceptance-evidence.js';
 import { writeProcurementStagingAcceptanceEvidence } from '../../infrastructure/scripts/procurement-live-acceptance.js';
+import { readProcurementStagingRows } from '../../infrastructure/scripts/procurement-staging-reader.js';
 
 type ResearchRun = {
   id: string;
@@ -83,6 +84,7 @@ function requiredUuid(value: string | undefined, label: string): string {
 }
 
 async function serviceRows<T>(table: string, query: URLSearchParams): Promise<T[]> {
+  if (table === 'on_demand_research_runs') return readProcurementStagingRows<T>(query);
   const response = await fetch(
     `${env.LIVE_E2E_SUPABASE_URL}/rest/v1/${table}?${query.toString()}`,
     {

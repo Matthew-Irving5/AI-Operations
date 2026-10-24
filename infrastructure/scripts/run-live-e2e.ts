@@ -6,6 +6,10 @@ import { assertAi20CostRuntimeReadiness } from './ai20-cost-runtime-staging.js';
 import { createHostedStagingSuiteEvidence } from './release-gate.js';
 import { resolveGitTreeSha } from './live-acceptance-evidence.js';
 import { ProcurementStagingAcceptanceEvidenceSchema } from './procurement-live-acceptance.js';
+import {
+  procurementEvidenceColumns,
+  readProcurementStagingRows,
+} from './procurement-staging-reader.js';
 
 async function containsFailureArtifacts(directory: string): Promise<boolean> {
   let entries;
@@ -165,6 +169,17 @@ async function main(): Promise<void> {
     if (profiles.length !== 1 || !profiles[0]?.is_allowed)
       throw new Error('The allowlisted staging profile is missing or ambiguous.');
     process.env.LIVE_E2E_USER_ID = profiles[0].id;
+    if (mode === 'procurement-acceptance') {
+      await readProcurementStagingRows(
+        new URLSearchParams({
+          select: procurementEvidenceColumns,
+          user_id: `eq.${profiles[0].id}`,
+          manager_code: 'eq.procurement',
+          id: 'eq.00000000-0000-4000-8000-000000000000',
+          limit: '2',
+        }),
+      );
+    }
     process.stdout.write(
       'Staging auth prerequisite passed: one allowlisted user selected; owned schedules will be read through the authenticated UI.\n',
     );
