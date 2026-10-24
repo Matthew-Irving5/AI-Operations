@@ -199,7 +199,12 @@ const ReadyEvidenceSchema = z
   })
   .strict();
 
-const AcceptanceProfileSchema = z.enum(['targeted', 'auth-browser', 'cost-runtime', 'planner-specialist']);
+const AcceptanceProfileSchema = z.enum([
+  'targeted',
+  'auth-browser',
+  'cost-runtime',
+  'planner-specialist',
+]);
 
 const CapabilityResultsSchema = z
   .object({
@@ -340,7 +345,11 @@ const AcceptanceEvidenceSchema = z
     const validChecks = targeted
       ? Array.isArray(value.checks)
       : !Array.isArray(value.checks) &&
-        (costRuntime ? 'localCostMatrix' in value.checks : plannerSpecialist ? 'plannerToTravelJourney' in value.checks : 'authAal2' in value.checks);
+        (costRuntime
+          ? 'localCostMatrix' in value.checks
+          : plannerSpecialist
+            ? 'plannerToTravelJourney' in value.checks
+            : 'authAal2' in value.checks);
     const validFreshMfaAction =
       targeted || costRuntime || plannerSpecialist
         ? value.freshMfaAction === undefined
@@ -366,7 +375,13 @@ const AcceptanceEvidenceSchema = z
         ) &&
         JSON.stringify(value.checks) === JSON.stringify(plannerSpecialistEvidence.checks)
       : plannerSpecialistEvidence === undefined;
-    if (!validMfa || !validChecks || !validFreshMfaAction || !validCostRuntimeProof || !validPlannerSpecialistEvidence) {
+    if (
+      !validMfa ||
+      !validChecks ||
+      !validFreshMfaAction ||
+      !validCostRuntimeProof ||
+      !validPlannerSpecialistEvidence
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message:
@@ -730,10 +745,16 @@ export function selectHostedAcceptanceProfile(
   override: string = 'auto',
 ): HostedAcceptanceProfile {
   const normalizedFiles = files.map((raw) => raw.replaceAll('\\', '/'));
-  const plannerSpecialist = normalizedFiles.includes('docs/build/ticket-readbacks/AI-17.md') || normalizedFiles.includes('tests/e2e-live/ai17-planner-specialist.spec.ts');
+  const plannerSpecialist =
+    normalizedFiles.includes('docs/build/ticket-readbacks/AI-17.md') ||
+    normalizedFiles.includes('tests/e2e-live/ai17-planner-specialist.spec.ts');
   const costRuntime = normalizedFiles.includes('docs/build/ticket-readbacks/AI-20.md');
   const authBrowser = normalizedFiles.some((file) => {
-    if (plannerSpecialist && (file === "apps/web/app/api/workflows/launch/route.ts" || file === "supabase/config.toml")) return false;
+    if (
+      plannerSpecialist &&
+      (file === 'apps/web/app/api/workflows/launch/route.ts' || file === 'supabase/config.toml')
+    )
+      return false;
     return (
       file.startsWith('apps/web/app/api/auth/') ||
       file === 'apps/web/app/api/workflows/launch/route.ts' ||
@@ -756,7 +777,13 @@ export function selectHostedAcceptanceProfile(
       'AI-20 cost-runtime and auth-browser proof cannot share one acceptance profile.',
     );
   }
-  const inferred = costRuntime ? 'cost-runtime' : plannerSpecialist ? 'planner-specialist' : authBrowser ? 'auth-browser' : 'targeted';
+  const inferred = costRuntime
+    ? 'cost-runtime'
+    : plannerSpecialist
+      ? 'planner-specialist'
+      : authBrowser
+        ? 'auth-browser'
+        : 'targeted';
   if (override !== 'auto' && override !== inferred) {
     throw new Error(
       `Requested staging profile '${override}' does not match inferred '${inferred}'.`,
@@ -939,7 +966,9 @@ export function createStagingAcceptanceStatus(input: unknown): StagingAcceptance
     ...(parsed.hostedSuite.acceptanceProfile === 'cost-runtime'
       ? { costRuntimeProof: parsed.hostedSuite.costRuntimeProof }
       : {}),
-    ...(parsed.hostedSuite.acceptanceProfile === 'planner-specialist' ? { plannerSpecialistEvidence: parsed.hostedSuite } : {}),
+    ...(parsed.hostedSuite.acceptanceProfile === 'planner-specialist'
+      ? { plannerSpecialistEvidence: parsed.hostedSuite }
+      : {}),
     correlationIds: parsed.hostedSuite.correlationIds,
     ...(parsed.hostedSuite.workflowRuns ? { workflowRuns: parsed.hostedSuite.workflowRuns } : {}),
     ...(parsed.hostedSuite.promptGovernanceProof

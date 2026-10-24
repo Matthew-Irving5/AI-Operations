@@ -70,7 +70,10 @@ async function main(): Promise<void> {
   }
 
   if (
-    (mode === 'suite' || mode === 'auth-acceptance' || mode === 'cost-acceptance' || mode === 'planner-specialist') &&
+    (mode === 'suite' ||
+      mode === 'auth-acceptance' ||
+      mode === 'cost-acceptance' ||
+      mode === 'planner-specialist') &&
     process.env.LIVE_E2E_MANUAL_MFA !== 'true'
   ) {
     throw new Error(
@@ -85,7 +88,12 @@ async function main(): Promise<void> {
   let acceptanceDeploymentRunId: string | undefined;
   let acceptanceCandidateTreeSha: string | undefined;
   let acceptancePullRequestNumber: number | undefined;
-  if (mode === 'suite' || mode === 'auth-acceptance' || mode === 'cost-acceptance' || mode === 'planner-specialist') {
+  if (
+    mode === 'suite' ||
+    mode === 'auth-acceptance' ||
+    mode === 'cost-acceptance' ||
+    mode === 'planner-specialist'
+  ) {
     acceptanceCandidateSha = process.env.LIVE_E2E_CANDIDATE_SHA;
     acceptanceDeploymentRunId = process.env.LIVE_E2E_DEPLOYMENT_RUN_ID;
     acceptanceCandidateTreeSha = process.env.LIVE_E2E_CANDIDATE_TREE_SHA;
@@ -317,11 +325,11 @@ async function main(): Promise<void> {
         ? ['tests/e2e-live/auth-acceptance.spec.ts']
         : mode === 'cost-acceptance'
           ? ['tests/e2e-live/staging.spec.ts', '--grep=@ai20-cost-runtime-acceptance']
-        : mode === 'planner-specialist'
-          ? ['tests/e2e-live/ai17-planner-specialist.spec.ts']
-          : mode === 'suite'
-            ? ['tests/e2e-live/staging.spec.ts', '--grep=@ai16-ai19-acceptance']
-            : [];
+          : mode === 'planner-specialist'
+            ? ['tests/e2e-live/ai17-planner-specialist.spec.ts']
+            : mode === 'suite'
+              ? ['tests/e2e-live/staging.spec.ts', '--grep=@ai16-ai19-acceptance']
+              : [];
     const liveArgs = [
       'pnpm',
       'exec',
