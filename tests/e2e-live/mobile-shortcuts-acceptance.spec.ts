@@ -759,9 +759,19 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
   expect(retryCanonical[0]?.user_id).toBe(userId);
   expect(retryCanonical[0]?.id).toBe(retryProvenance[0]?.derived_row_id);
 
+  // The source inventory was rendered before asynchronous device creation.
+  await page.goto('/data-sources');
   const card = page
     .getByRole('article')
     .filter({ has: page.getByRole('heading', { name: deviceLabel }) });
+  await expect(card).toBeVisible();
+  const revokeResponsePromise = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/connections/revoke' &&
+      response.request().method() === 'POST' &&
+      response.request().postDataJSON()?.connectionId === deviceId,
+    { timeout: 6 * 60_000 },
+  );
   const beforeRevokeMfa = mfaRoutes.length;
   await card.getByRole('button', { name: 'Revoke Apple bridge' }).click();
   await card.getByRole('button', { name: 'Confirm Apple revoke' }).click();
@@ -771,6 +781,8 @@ test('AI-28 mobile Shortcut staging acceptance', async ({ page }) => {
     '\nRevocation MFA checkpoint: complete the fresh challenge in this visible staging browser.\n',
   );
   await expect(page).toHaveURL(/\/data-sources\?resume=source_revoke/, { timeout: 5 * 60_000 });
+  const revokeResponse = await revokeResponsePromise;
+  expect(revokeResponse.status()).toBe(204);
   await expect(
     page.getByText(
       'Source revoked. Existing retained data is unchanged, and future syncs are blocked.',

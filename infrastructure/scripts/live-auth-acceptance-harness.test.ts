@@ -78,6 +78,26 @@ function assertOrdered(source: string, markers: string[]) {
 }
 
 describe('live auth acceptance harness', () => {
+  it('refreshes the paired device inventory and observes its actual revoke response', async () => {
+    const journey = await readFile(
+      resolve('tests/e2e-live/mobile-shortcuts-acceptance.spec.ts'),
+      'utf8',
+    );
+    const revoke = journey.slice(journey.indexOf('const revokeResponsePromise'));
+    assertOrdered(journey.slice(journey.lastIndexOf("await page.goto('/data-sources')")), [
+      "await page.goto('/data-sources')",
+      'await expect(card).toBeVisible()',
+      'const revokeResponsePromise',
+    ]);
+    assertOrdered(revoke, [
+      "'/api/connections/revoke'",
+      'connectionId === deviceId',
+      'await revokeResponsePromise',
+      'expect(revokeResponse.status()).toBe(204)',
+      'Source revoked. Existing retained data is unchanged, and future syncs are blocked.',
+    ]);
+  });
+
   it('runs AI-16, AI-19, and auth-browser acceptance in one headed browser journey', async () => {
     const [runner, journey] = await Promise.all([
       readFile(runnerPath, 'utf8'),
