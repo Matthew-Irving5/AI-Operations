@@ -1,3 +1,4 @@
+import { readAi17StagingReports } from './ai17-staging-reader.js';
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, readdir, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -83,6 +84,8 @@ async function main(): Promise<void> {
   const env = parseLiveE2eEnvironment(process.env, mode);
   if (env.LIVE_E2E_BASE_URL !== stagingTarget.origin) throw new Error('Unexpected E2E origin.');
   if (mode === 'cost-acceptance') await assertAi20CostRuntimeReadiness();
+  if (mode === 'planner-specialist')
+    await readAi17StagingReports('00000000-0000-4000-8000-000000000000');
   let acceptanceOutputPath: string | undefined;
   let acceptanceCandidateSha: string | undefined;
   let acceptanceDeploymentRunId: string | undefined;
