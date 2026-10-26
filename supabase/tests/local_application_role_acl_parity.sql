@@ -67,6 +67,10 @@ WITH grants AS (
       to_regprocedure('public.load_canonical_action_execution_request(uuid)'),
       to_regprocedure('public.load_prompt_promotion_target(uuid,integer)'),
       to_regprocedure('public.request_canonical_action_reversal(uuid,text)'),
+      to_regprocedure('public.sync_procurement_research_run_status()'),
+      to_regprocedure('public.create_procurement_revision_request(uuid,uuid,text,numeric,text,integer,text,jsonb,uuid)'),
+      to_regprocedure('public.commit_procurement_decision(uuid,uuid,integer,jsonb,jsonb)'),
+      to_regprocedure('public.commit_instrumented_ai_procurement_report_with_queue(uuid,text,uuid,uuid,integer,jsonb,jsonb,text,text,text,text,text,jsonb,jsonb,jsonb,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)'),
       -- AI-17 delegation and handoff ACLs are checked exactly by rpc_security.sql.
       to_regprocedure('public.create_inter_agent_request_run(jsonb,integer,text[],uuid)'),
       to_regprocedure('public.resume_inter_agent_source_run(uuid)'),
