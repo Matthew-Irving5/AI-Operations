@@ -42,7 +42,7 @@ This file records **confirmed** errors (not generic best practices). One row per
 | AI44-09 | Next 16.4 security update built successfully but Worker login returned 500 because OpenNext 1.20.2 omitted preview-props.json | RUNTIME-01; compatible adapter/Wrangler pins and dependency-to-Worker impact routing | Actual Worker expired-session test; verify-changed dependency regression |
 | OPS-03 | WSL build retained a removed middleware test from another branch and failed TypeScript | RUNTIME-04; delete stale sources only after disposable-target guards | Worker test passed after clean sync; workspace guard regression |
 
-| AI41-01  | Worker poll lacked version and capability gates                                                                  | WORKER-01; reject incompatible workers before queue claims; unit regression               | Deno `worker-protocol_test.ts`: old-version and missing-inventory rejection cases
+| AI41-01 | Worker poll lacked version and capability gates | WORKER-01; reject incompatible workers before queue claims; unit regression | Deno `worker-protocol_test.ts`: old-version and missing-inventory rejection cases
 
 ## Update rule
 

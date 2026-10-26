@@ -375,9 +375,12 @@ test('AI41 worker protocol requires attended full journey before canonical accep
     outboundOnly: 'passed',
     incompatibleWorkerBlocked: 'passed',
   };
-  assert.equal(selectHostedAcceptanceProfile(['docs/build/ticket-readbacks/AI-41.md']), 'worker-protocol');
-  assert.throws(
-    () => selectHostedAcceptanceProfile(['docs/build/ticket-readbacks/AI-41.md'], 'targeted'),
+  assert.equal(
+    selectHostedAcceptanceProfile(['docs/build/ticket-readbacks/AI-41.md']),
+    'worker-protocol',
+  );
+  assert.throws(() =>
+    selectHostedAcceptanceProfile(['docs/build/ticket-readbacks/AI-41.md'], 'targeted'),
   );
   const suite = {
     schemaVersion: 1,
@@ -1286,7 +1289,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /candidate_sha:/);
   assert.match(
     deployWorkflow,
-    /acceptance_profile:[\s\S]*options: \[auto, targeted, auth-browser, cost-runtime, planner-specialist\]/,
+    /acceptance_profile:[\s\S]*options: \[auto, targeted, auth-browser, cost-runtime, planner-specialist, worker-protocol\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1491,7 +1494,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(
     deployWorkflow,
-    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "planner-specialist" \]\]/,
+    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "planner-specialist" \|\| "\$ACCEPTANCE_PROFILE" == "worker-protocol" \]\]/,
   );
   assert.match(
     deployWorkflow,

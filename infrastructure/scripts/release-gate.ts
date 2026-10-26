@@ -424,9 +424,17 @@ const AcceptanceEvidenceSchema = z
       : careerEvidence === undefined;
     const validAuthBrowserEvidence = combinedCareer
       ? value.authBrowserEvidence !== undefined &&
-        ['candidateSha', 'candidateTreeSha', 'pullRequestNumber', 'deploymentRunId', 'stagingOrigin'].every(
+        [
+          'candidateSha',
+          'candidateTreeSha',
+          'pullRequestNumber',
+          'deploymentRunId',
+          'stagingOrigin',
+        ].every(
           (key) => Reflect.get(value.authBrowserEvidence!, key) === Reflect.get(value, key),
-        ) && JSON.stringify(value.freshMfaAction) === JSON.stringify(value.authBrowserEvidence.freshMfaAction)
+        ) &&
+        JSON.stringify(value.freshMfaAction) ===
+          JSON.stringify(value.authBrowserEvidence.freshMfaAction)
       : value.authBrowserEvidence === undefined;
     if (
       !validAuthBrowserEvidence ||
@@ -640,17 +648,31 @@ export const CareerAuthBrowserStagingEvidenceSchema = z
   .strict()
   .superRefine((value, context) => {
     for (const proof of [value.careerEvidence, value.authBrowserEvidence]) {
-      for (const key of ['candidateSha', 'candidateTreeSha', 'pullRequestNumber', 'deploymentRunId', 'stagingOrigin'] as const) {
+      for (const key of [
+        'candidateSha',
+        'candidateTreeSha',
+        'pullRequestNumber',
+        'deploymentRunId',
+        'stagingOrigin',
+      ] as const) {
         if (proof[key] !== value[key])
-          context.addIssue({ code: z.ZodIssueCode.custom, message: 'Both Career and auth-browser proof must match the exact candidate deployment.' });
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message:
+              'Both Career and auth-browser proof must match the exact candidate deployment.',
+          });
       }
     }
     if (
       JSON.stringify(value.checks) !== JSON.stringify(value.careerEvidence.checks) ||
-      JSON.stringify(value.correlationIds) !== JSON.stringify(value.careerEvidence.correlationIds) ||
+      JSON.stringify(value.correlationIds) !==
+        JSON.stringify(value.careerEvidence.correlationIds) ||
       value.acceptedAt !== value.careerEvidence.acceptedAt
     )
-      context.addIssue({ code: z.ZodIssueCode.custom, message: 'Combined Career metadata must preserve the actual Career result.' });
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Combined Career metadata must preserve the actual Career result.',
+      });
   });
 
 const TargetedStagingSuiteEvidenceSchema = z
@@ -940,7 +962,10 @@ export function selectHostedAcceptanceProfile(
       file === 'tests/e2e/platform-authenticated.spec.ts'
     );
   });
-  if ((costRuntime && (plannerSpecialist || career)) || ((costRuntime || plannerSpecialist) && authBrowser)) {
+  if (
+    (costRuntime && (plannerSpecialist || career)) ||
+    ((costRuntime || plannerSpecialist) && authBrowser)
+  ) {
     throw new Error(
       'AI-20 cost-runtime and auth-browser proof cannot share one acceptance profile.',
     );
