@@ -3415,10 +3415,7 @@ export type Database = {
           correlation_id: string;
           created_at: string;
           deadline_at: string | null;
-          delegation_depth: number | null;
           destination_manager_code: string;
-          destination_run_id: string | null;
-          destination_workflow_definition_id: string | null;
           id: string;
           idempotency_key: string;
           objective: string;
@@ -3426,8 +3423,6 @@ export type Database = {
           required_output_contract: NonNullable<Json>;
           result: Json | null;
           result_reference: string | null;
-          resumed_at: string | null;
-          routing_path: string[] | null;
           source_manager_code: string;
           source_message_id: string | null;
           source_run_id: string | null;
@@ -3443,10 +3438,7 @@ export type Database = {
           correlation_id?: string;
           created_at?: string;
           deadline_at?: string | null;
-          delegation_depth?: number | null;
           destination_manager_code: string;
-          destination_run_id?: string | null;
-          destination_workflow_definition_id?: string | null;
           id?: string;
           idempotency_key: string;
           objective: string;
@@ -3454,8 +3446,6 @@ export type Database = {
           required_output_contract: NonNullable<Json>;
           result?: Json | null;
           result_reference?: string | null;
-          resumed_at?: string | null;
-          routing_path?: string[] | null;
           source_manager_code: string;
           source_message_id?: string | null;
           source_run_id?: string | null;
@@ -3471,10 +3461,7 @@ export type Database = {
           correlation_id?: string;
           created_at?: string;
           deadline_at?: string | null;
-          delegation_depth?: number | null;
           destination_manager_code?: string;
-          destination_run_id?: string | null;
-          destination_workflow_definition_id?: string | null;
           id?: string;
           idempotency_key?: string;
           objective?: string;
@@ -3482,8 +3469,6 @@ export type Database = {
           required_output_contract?: NonNullable<Json>;
           result?: Json | null;
           result_reference?: string | null;
-          resumed_at?: string | null;
-          routing_path?: string[] | null;
           source_manager_code?: string;
           source_message_id?: string | null;
           source_run_id?: string | null;
@@ -3505,20 +3490,6 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'managers';
             referencedColumns: ['code'];
-          },
-          {
-            foreignKeyName: 'inter_agent_requests_destination_run_user_fk';
-            columns: ['destination_run_id', 'user_id'];
-            isOneToOne: false;
-            referencedRelation: 'workflow_runs';
-            referencedColumns: ['id', 'user_id'];
-          },
-          {
-            foreignKeyName: 'inter_agent_requests_destination_workflow_definition_id_fkey';
-            columns: ['destination_workflow_definition_id'];
-            isOneToOne: false;
-            referencedRelation: 'workflow_definitions';
-            referencedColumns: ['id'];
           },
           {
             foreignKeyName: 'inter_agent_requests_source_manager_code_fkey';
@@ -7013,26 +6984,6 @@ export type Database = {
         Returns: Json;
       };
       complete_deterministic_workflow_run: { Args: { p_run_id: string }; Returns: string };
-      complete_inter_agent_plan_with_queue: {
-        Args: {
-          p_actual_cost: number;
-          p_cached_input_tokens: number;
-          p_call_id: string;
-          p_input_tokens: number;
-          p_job_id: string;
-          p_output_tokens: number;
-          p_provider_usage: Json;
-          p_reasoning_tokens: number;
-          p_redacted_trace: Json;
-          p_request_id: string;
-          p_response_id: string;
-        };
-        Returns: boolean;
-      };
-      complete_inter_agent_request: {
-        Args: { p_completed_at: string; p_reply: Json; p_request_id: string; p_status: string };
-        Returns: Json;
-      };
       complete_job_queue:
         | {
             Args: {
@@ -7178,16 +7129,6 @@ export type Database = {
           label: string;
         }[];
       };
-      create_conversation_handoff: { Args: { p_handoff: Json }; Returns: Json };
-      create_inter_agent_request_run: {
-        Args: {
-          p_cost_root_run_id: string;
-          p_delegation_depth: number;
-          p_request: Json;
-          p_routing_path: string[];
-        };
-        Returns: Json;
-      };
       create_mfa_action_gate: { Args: { p_action_key: string }; Returns: string };
       create_on_demand_run: {
         Args: {
@@ -7280,7 +7221,6 @@ export type Database = {
       execute_health_finance_workflow: { Args: { p_run_id: string }; Returns: string };
       execute_personal_workflow: { Args: { p_run_id: string }; Returns: string };
       execute_systems_workflow: { Args: { p_run_id: string }; Returns: string };
-      expire_inter_agent_requests: { Args: { p_limit?: number }; Returns: number };
       fail_instrumented_ai_provider_response: {
         Args: {
           p_actual_cost: number;
@@ -7480,18 +7420,6 @@ export type Database = {
         Args: { p_amount: number; p_run_id: string; p_user_id: string };
         Returns: string;
       };
-      resolve_conversation_handoff: {
-        Args: {
-          p_actor_manager_code: string;
-          p_correlation_id: string;
-          p_handoff_id: string;
-          p_status: string;
-          p_transitioned_at: string;
-          p_user_id: string;
-        };
-        Returns: Json;
-      };
-      resume_inter_agent_source_run: { Args: { p_source_run_id: string }; Returns: string };
       revoke_apple_bridge_device: {
         Args: { p_device_id: string; p_gate_id: string };
         Returns: Json;
