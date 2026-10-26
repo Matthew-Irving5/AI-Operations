@@ -74,6 +74,7 @@ test('AI41 runner requires exact immutable artifact and deployment inputs', () =
 test('AI41 runner accepts the visible scan form before the isolated device is paired', async () => {
   const source = await readFile(new URL('./ai41-worker-staging.ts', import.meta.url), 'utf8');
   assert.match(source, /Launch scan',[\s\S]*?toHaveCount\(1\)/);
+  assert.match(source, /devices\?ai41=\$\{randomUUID\(\)\}/);
 });
 
 test('worker result verifies identity and signature, then guards completed replay before writes', async () => {

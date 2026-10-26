@@ -261,7 +261,8 @@ export async function runWorkerAcceptance(raw: unknown) {
     await expect
       .poll(
         async () => {
-          await page.goto('/devices');
+          // Bypass any edge/browser document cache so the just-recorded heartbeat is observed.
+          await page.goto(`/devices?ai41=${randomUUID()}`, { waitUntil: 'networkidle' });
           return page
             .locator('article')
             .filter({ has: page.getByRole('heading', { name: first.label, exact: true }) })
