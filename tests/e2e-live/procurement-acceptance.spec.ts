@@ -303,6 +303,8 @@ test('AI-39 persisted Procurement acceptance: comparison, revision lineage, and 
 
   await page.goto('/procurement');
   await expect(page.getByRole('heading', { name: 'Consumer & Procurement' })).toBeVisible();
+  // The safety sentence is rendered inside a longer paragraph; assert its meaning without
+  // depending on incidental text-node boundaries.
   await expect(
     page.getByText('It does not submit an order or payment.', { exact: false }),
   ).toBeVisible();
