@@ -1,1 +1,622 @@
-begin;alter table public.on_demand_research_runs  add column workflow_run_id uuid references public.workflow_runs(id) on delete cascade,  add column revises_research_run_id uuid references public.on_demand_research_runs(id) on delete set null,  add column decision_record jsonb,  drop constraint if exists on_demand_research_runs_model_ceiling_check,  add constraint on_demand_research_runs_model_ceiling_check    check (model_ceiling in ('gpt-5.6-luna','gpt-5.6-terra','gpt-5.6-sol')),  add constraint on_demand_research_runs_decision_record_check    check (decision_record is null or jsonb_typeof(decision_record) = 'object');create unique index on_demand_research_runs_workflow_run_uidx  on public.on_demand_research_runs(workflow_run_id) where workflow_run_id is not null;alter table public.procurement_recommendations  alter column total_cost_minor type bigint,  add column candidate_id text,  add column decision_rank integer check (decision_rank is null or decision_rank > 0),  add column details jsonb not null default '{}'::jsonb,  drop constraint if exists procurement_recommendations_recommendation_kind_check,  add constraint procurement_recommendations_recommendation_kind_check    check (recommendation_kind in ('best_overall','best_value','premium','excluded','comparison'));create unique index procurement_recommendations_run_candidate_uidx  on public.procurement_recommendations(research_run_id, candidate_id)  where candidate_id is not null;-- Keep the durable procurement row coupled to the canonical orchestrator run.create or replace function public.create_on_demand_run_request(  p_user_id uuid, p_workflow_id uuid, p_manager_code text, p_hard_cap numeric,  p_model_ceiling text, p_search_ceiling integer, p_idempotency_key text, p_request jsonb) returns uuid language plpgsql security definer set search_path = public as $$declare created_run uuid; workflow_code text;begin  if p_hard_cap <= 0 or p_hard_cap > 1000 then raise exception 'invalid_on_demand_cap'; end if;  if p_search_ceiling < 0 or p_search_ceiling > 20 then raise exception 'invalid_search_ceiling'; end if;  if jsonb_typeof(p_request) <> 'object' or length(p_request::text) > 10000 then raise exception 'invalid_request_brief'; end if;  select d.code into workflow_code from public.workflow_definitions d join public.managers m on m.id=d.manager_id    where d.id=p_workflow_id and d.code like p_manager_code || '-%';  if workflow_code is null then raise exception 'manager_workflow_mismatch'; end if;  if p_manager_code = 'procurement' and (    workflow_code <> 'procurement-on-demand-research' or p_search_ceiling < 1 or    jsonb_typeof(p_request -> 'requirements') <> 'array' or    jsonb_array_length(p_request -> 'requirements') < 1 or    jsonb_typeof(p_request -> 'maxTotalCostMinor') <> 'number'  ) then raise exception 'invalid_procurement_request'; end if;  insert into public.workflow_runs(user_id, workflow_definition_id, status, trigger, priority, idempotency_key)    values (p_user_id, p_workflow_id, 'queued', 'on_demand', 1, p_idempotency_key)    on conflict (idempotency_key) do nothing returning id into created_run;  if created_run is null then    select id into created_run from public.workflow_runs where user_id=p_user_id and idempotency_key=p_idempotency_key;    return created_run;  end if;  insert into public.on_demand_budgets(user_id,run_id,manager_code,hard_cap,model_ceiling,search_ceiling,expires_at)    values (p_user_id,created_run,p_manager_code,p_hard_cap,p_model_ceiling,p_search_ceiling,now()+interval '24 hours');  if p_manager_code = 'procurement' then    insert into public.on_demand_research_runs(      user_id, manager_code, hard_cap_minor, search_limit, model_ceiling, request, workflow_run_id    ) values (      p_user_id, 'procurement', round(p_hard_cap * 100)::integer, p_search_ceiling,      p_model_ceiling, p_request, created_run    );  end if;  insert into public.job_queue(user_id,run_id,job_type,payload,priority,deduplication_key)    values (p_user_id,created_run,'workflow_execute',p_request,1,'run:' || created_run);  insert into public.trace_events(user_id,correlation_id,event_type,redacted_payload)    select user_id,correlation_id,'on_demand_run_queued',jsonb_build_object('run_id',created_run,'manager',p_manager_code,'hard_cap',p_hard_cap,'request_keys',coalesce((select jsonb_agg(key) from jsonb_object_keys(p_request) as key),'[]'::jsonb)) from public.workflow_runs where id=created_run;  return created_run;end; $$;-- A changed request creates a new run and links back to the completed immutable decision.create or replace function public.create_procurement_revision_request(  p_user_id uuid, p_workflow_id uuid, p_manager_code text, p_hard_cap numeric,  p_model_ceiling text, p_search_ceiling integer, p_idempotency_key text, p_request jsonb,  p_revises_research_run_id uuid) returns uuid language plpgsql security definer set search_path = public as $$declare created_run uuid; existing_run_id uuid; existing_user_id uuid; linked_research_id uuid;begin  if p_manager_code <> 'procurement' or p_revises_research_run_id is null then    raise exception 'invalid_procurement_revision';  end if;  perform 1 from public.on_demand_research_runs previous   where previous.id = p_revises_research_run_id     and previous.user_id = p_user_id and previous.manager_code = 'procurement'     and previous.status = 'complete' and previous.decision_record is not null   for update;  if not found then raise exception 'procurement_revision_source_unavailable'; end if;  select run.id, run.user_id into existing_run_id, existing_user_id    from public.workflow_runs run where run.idempotency_key = p_idempotency_key for update;  if found then    select research.revises_research_run_id into linked_research_id      from public.on_demand_research_runs research     where research.workflow_run_id = existing_run_id and research.user_id = p_user_id;    if existing_user_id <> p_user_id or not found or      linked_research_id is distinct from p_revises_research_run_id then      raise exception 'procurement_revision_idempotency_conflict';    end if;    return existing_run_id;  end if;  created_run := public.create_on_demand_run_request(    p_user_id, p_workflow_id, p_manager_code, p_hard_cap, p_model_ceiling,    p_search_ceiling, p_idempotency_key, p_request  );  select research.revises_research_run_id into linked_research_id    from public.on_demand_research_runs research   where research.workflow_run_id = created_run and research.user_id = p_user_id   for update;  if not found or (linked_research_id is not null and    linked_research_id is distinct from p_revises_research_run_id) then    raise exception 'procurement_revision_idempotency_conflict';  end if;  update public.on_demand_research_runs     set revises_research_run_id = p_revises_research_run_id   where workflow_run_id = created_run and user_id = p_user_id     and revises_research_run_id is null;  return created_run;end; $$;revoke all on function public.create_procurement_revision_request(uuid,uuid,text,numeric,text,integer,text,jsonb,uuid)  from public, anon, authenticated;grant execute on function public.create_procurement_revision_request(uuid,uuid,text,numeric,text,integer,text,jsonb,uuid)  to service_role;create or replace function public.sync_procurement_research_run_status()returns trigger language plpgsql security definer set search_path = public as $$begin  update public.on_demand_research_runs research set    status = case new.status      when 'running' then 'running'      when 'succeeded' then 'complete'      when 'failed' then 'failed'      when 'cancelled' then 'cancelled'      else 'queued'    end,    completed_at = case when new.status in ('succeeded','failed','cancelled') then coalesce(new.completed_at, now()) else null end  where research.workflow_run_id = new.id    and research.status <> 'complete';  return new;end; $$;create trigger sync_procurement_research_run_status  after update of status on public.workflow_runs  for each row when (old.status is distinct from new.status)  execute function public.sync_procurement_research_run_status();revoke all on function public.sync_procurement_research_run_status() from public, anon, authenticated, service_role;-- Procurement must complete through the instrumented provider decision path.-- Preserve the canonical manager dispatch and let queue completion own run state.create or replace function public.complete_deterministic_workflow_run(p_run_id uuid)returns uuid language plpgsql security definer set search_path = public as $$declare  workflow_code text;  policy text;  report_id uuid;  run_row record;begin  select r.user_id, r.correlation_id, r.status, d.code, d.notification_policy into run_row    from public.workflow_runs r    join public.workflow_definitions d on d.id = r.workflow_definition_id   where r.id = p_run_id;  if not found then raise exception 'workflow_run_not_found'; end if;  workflow_code := run_row.code;  policy := run_row.notification_policy;  if workflow_code = 'procurement-on-demand-research'    and run_row.status in ('queued', 'running') then    raise exception 'procurement_requires_provider_research';  end if;  if workflow_code like 'systems-%' then    report_id := public.execute_systems_workflow(p_run_id);  elsif workflow_code like 'personal-%' then    report_id := public.execute_personal_workflow(p_run_id);  elsif workflow_code like 'health-%' or workflow_code like 'finance-%' then    report_id := public.execute_health_finance_workflow(p_run_id);  elsif workflow_code like 'career-%' or workflow_code like 'travel-%' or workflow_code like 'procurement-%' then    report_id := public.execute_career_travel_procurement_workflow(p_run_id);  elsif workflow_code like 'digital-estate-%' then    report_id := public.execute_digital_estate_workflow(p_run_id);  else    raise exception 'workflow_code_not_supported';  end if;  update public.reports     set structured_metrics = structured_metrics || jsonb_build_object(       'execution_mode', 'deterministic', 'ai_called', false, 'validation', 'passed'     )   where id = report_id;  insert into public.trace_events(user_id, correlation_id, event_type, severity, redacted_payload)  select run_row.user_id, run_row.correlation_id, 'workflow_completed', 'info',    jsonb_build_object('run_id', p_run_id, 'report_id', report_id, 'workflow', workflow_code, 'execution_mode', 'deterministic', 'validation', 'passed', 'ai_called', false)  where not exists (select 1 from public.trace_events where correlation_id = run_row.correlation_id and event_type = 'workflow_completed');  insert into public.audit_events(user_id, actor_type, action_type, target_type, target_id, aal, result, redacted_after)  select run_row.user_id, 'system', 'complete_deterministic_workflow', 'workflow_run', p_run_id, 'system', 'success',    jsonb_build_object('report_id', report_id, 'workflow', workflow_code, 'ai_called', false)  where not exists (select 1 from public.audit_events where target_id = p_run_id::text and action_type = 'complete_deterministic_workflow');  if policy in ('report', 'exception') then    insert into public.notifications(user_id, type, recipient, subject, status, dedupe_key)    select run_row.user_id, policy, account.email,      case policy when 'exception' then 'Workflow exception report is ready' else 'Workflow report is ready' end,      'pending', 'workflow-report:' || p_run_id::text    from public.app_users account where account.id = run_row.user_id    on conflict (dedupe_key) do nothing;    if not exists (select 1 from public.app_users where id = run_row.user_id and email is not null) then      raise exception 'notification_user_email_unavailable';    end if;  end if;  perform public.record_workflow_stage(p_run_id, 'notification_decision', 9, 'succeeded', 'policy:' || policy, null, null);  insert into public.trace_events(user_id, correlation_id, event_type, severity, redacted_payload)  select run_row.user_id, run_row.correlation_id, 'workflow_notification_decision', 'info',    jsonb_build_object('run_id', p_run_id, 'policy', policy, 'notification_created', policy in ('report', 'exception'))  where not exists (select 1 from public.trace_events where correlation_id = run_row.correlation_id and event_type = 'workflow_notification_decision');  return report_id;end;$$;revoke all on function public.complete_deterministic_workflow_run(uuid) from public;grant execute on function public.complete_deterministic_workflow_run(uuid) to service_role;create or replace function public.commit_procurement_decision(  p_run_id uuid,  p_report_id uuid,  p_search_calls integer,  p_decision jsonb,  p_sources jsonb) returns uuid language plpgsql security definer set search_path = public as $$declare  research public.on_demand_research_runs;  source_count integer;  recommendation_count integer;begin  if p_search_calls < 1 or p_search_calls > 20 or    jsonb_typeof(p_decision) is distinct from 'object' or    jsonb_typeof(p_decision -> 'candidates') is distinct from 'array' or    jsonb_array_length(p_decision -> 'candidates') > 10 or    jsonb_typeof(p_decision -> 'recommendations') is distinct from 'array' or    jsonb_typeof(p_sources) is distinct from 'array' or    jsonb_array_length(p_sources) > 100 then    raise exception 'invalid_procurement_decision';  end if;  select * into research from public.on_demand_research_runs    where workflow_run_id = p_run_id for update;  if not found or research.manager_code <> 'procurement' then    raise exception 'procurement_research_run_not_found';  end if;  if not exists (    select 1 from public.reports report    join public.workflow_runs run on run.id = report.run_id    where report.id = p_report_id and report.run_id = p_run_id      and report.user_id = research.user_id and run.user_id = research.user_id      and report.status = 'validated'  ) then raise exception 'procurement_report_mismatch'; end if;  if research.decision_record is not null then    if research.report_id <> p_report_id or research.decision_record is distinct from p_decision      or research.searches_used <> p_search_calls then      raise exception 'procurement_decision_idempotency_conflict';    end if;    return research.id;  end if;  if research.search_limit < p_search_calls then raise exception 'procurement_search_ceiling_exceeded'; end if;  insert into public.research_sources(    user_id, domain_area, title, source_url, retrieved_at, source_quality, citation_text  )  select research.user_id, 'procurement', source.title, source.source_url, now(),    source.source_quality, source.citation_text  from jsonb_to_recordset(p_sources) as source(    title text, source_url text, source_quality text, citation_text text  )  where source.title is not null and length(source.title) between 1 and 300    and source.source_url like 'https://%'    and source.source_quality in ('primary','secondary','unreviewed')    and source.citation_text is not null and length(source.citation_text) between 1 and 1000;  get diagnostics source_count = row_count;  if source_count <> jsonb_array_length(p_sources) then raise exception 'procurement_sources_invalid'; end if;  insert into public.procurement_recommendations(    user_id, research_run_id, recommendation_kind, candidate_id, decision_rank,    title, total_cost_minor, currency, compliance_passed, warranty_summary,    returns_summary, uncertainty, citations, details  )  select research.user_id, research.id, item.recommendation_kind, item.candidate_id,    item.decision_rank, item.title, item.total_cost_minor, item.currency,    item.compliance_passed, item.warranty_summary, item.returns_summary,    item.uncertainty, item.citations, item.details  from jsonb_to_recordset(p_decision -> 'recommendations') as item(    recommendation_kind text, candidate_id text, decision_rank integer, title text,    total_cost_minor bigint, currency text, compliance_passed boolean,    warranty_summary text, returns_summary text, uncertainty text,    citations jsonb, details jsonb  )  where item.recommendation_kind in ('best_overall','best_value','premium','excluded','comparison')    and item.candidate_id ~ '^[a-z0-9][a-z0-9_-]{0,63}$'    and length(item.title) between 1 and 300    and item.currency ~ '^[A-Z]{3}$'    and jsonb_typeof(item.citations) = 'array'    and jsonb_typeof(item.details) = 'object';  get diagnostics recommendation_count = row_count;  if recommendation_count <> jsonb_array_length(p_decision -> 'recommendations') then    raise exception 'procurement_recommendations_invalid';  end if;  update public.on_demand_research_runs set    report_id = p_report_id, searches_used = p_search_calls,    decision_record = p_decision, status = 'complete', completed_at = now()  where id = research.id;  return research.id;end; $$;revoke all on function public.commit_procurement_decision(uuid,uuid,integer,jsonb,jsonb) from public, anon, authenticated;grant execute on function public.commit_procurement_decision(uuid,uuid,integer,jsonb,jsonb) to service_role;-- The provider's observed web-search count drives reconciliation and the durable AI call record.create or replace function public.commit_instrumented_ai_report(  p_call_id uuid,  p_report_type text,  p_notification_policy text,  p_title text,  p_summary text,  p_markdown text,  p_structured_metrics jsonb,  p_sections jsonb,  p_actions jsonb,  p_actual_cost numeric,  p_input_tokens bigint,  p_output_tokens bigint,  p_cached_input_tokens bigint,  p_reasoning_tokens bigint,  p_provider_usage jsonb,  p_redacted_trace jsonb) returns uuid language plpgsql security definer set search_path = public as $$declare  call_row public.ai_calls;  report_id uuid;  run_row record;  inserted_sections integer;  inserted_actions integer;begin  select * into call_row from public.ai_calls where id = p_call_id for update;  if not found or call_row.run_id is null then    raise exception 'ai_report_call_not_found';  end if;  if jsonb_typeof(p_sections) <> 'array'    or jsonb_array_length(p_sections) not between 0 and 20    or jsonb_typeof(p_actions) <> 'array'    or jsonb_array_length(p_actions) > 20 then    raise exception 'invalid_ai_report_commit';  end if;  if p_report_type !~ '^[a-z0-9][a-z0-9-]{1,119}$'    or p_notification_policy not in ('silent', 'report', 'exception')    or length(p_title) not between 1 and 200    or length(p_summary) not between 1 and 8000    or length(p_markdown) not between 1 and 60000    or jsonb_typeof(p_structured_metrics) <> 'object' then    raise exception 'invalid_ai_report_commit';  end if;  select id into report_id from public.reports where run_id = call_row.run_id;  if report_id is not null then    if call_row.status <> 'succeeded' then      raise exception 'report_exists_call_not_settled';    end if;    return report_id;  end if;  if call_row.status not in ('reserved', 'submitted', 'completed_pending_reconciliation') then    raise exception 'ai_report_call_not_settleable';  end if;  select user_id, correlation_id into run_row    from public.workflow_runs where id = call_row.run_id;  if not found or run_row.user_id <> call_row.user_id then    raise exception 'ai_report_run_owner_mismatch';  end if;  perform public.settle_instrumented_ai_call(    p_call_id,    p_actual_cost,    p_input_tokens,    p_output_tokens,    p_cached_input_tokens,    p_reasoning_tokens,    coalesce((p_provider_usage ->> 'web_search_calls')::integer, 0),    p_provider_usage,    p_redacted_trace,    true  );  insert into public.reports(    user_id, run_id, report_type, title, summary, markdown,    structured_metrics, status  ) values (    call_row.user_id,    call_row.run_id,    p_report_type,    p_title,    p_summary,    p_markdown,    p_structured_metrics,    'validated'  ) returning id into report_id;  insert into public.report_sections(    report_id, code, title, display_order, content, structured_data, evidence_references  )  select report_id, section.code, section.title, section.display_order,    section.content, section.structured_data, section.evidence_references  from jsonb_to_recordset(p_sections) as section(    code text,    title text,    display_order integer,    content text,    structured_data jsonb,    evidence_references jsonb  )  where section.code ~ '^[a-z0-9-]{1,100}$'    and length(section.title) between 1 and 200    and section.display_order between 0 and 19    and length(section.content) between 1 and 8000    and jsonb_typeof(section.structured_data) = 'object'    and jsonb_typeof(section.evidence_references) = 'array';  get diagnostics inserted_sections = row_count;  if inserted_sections <> jsonb_array_length(p_sections) then    raise exception 'ai_report_sections_invalid';  end if;  insert into public.actions(    user_id, run_id, action_type, title, description, risk_class, status, proposed_payload  )  select call_row.user_id, call_row.run_id, action.action_type, action.title,    'AI-proposed action; explicit approval is required before execution.',    action.risk_class::public.risk_class,    'proposed',    jsonb_build_object('source', 'validated_ai_output', 'response_id', call_row.response_id)  from jsonb_to_recordset(p_actions) as action(action_type text, title text, risk_class text)  where action.action_type ~ '^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,99}$'    and length(action.title) between 1 and 500    and action.risk_class in ('low', 'medium', 'high', 'critical')    and action.action_type in (      select jsonb_array_elements_text(coalesce(call_row.redacted_trace -> 'allowed_action_types', '[]'::jsonb))    );  get diagnostics inserted_actions = row_count;  if inserted_actions <> jsonb_array_length(p_actions) then    raise exception 'ai_report_actions_invalid';  end if;  insert into public.trace_events(    user_id, correlation_id, event_type, severity, redacted_payload  ) values (    run_row.user_id,    run_row.correlation_id,    'ai_report_validated',    'info',    jsonb_build_object(      'call_id', p_call_id,      'report_id', report_id,      'response_id', call_row.response_id,      'validation', 'passed',      'notification_policy', p_notification_policy    )  );  insert into public.audit_events(    user_id, actor_type, action_type, target_type, target_id, aal,    result, correlation_id, redacted_after  ) values (    run_row.user_id,    'system',    'persist_validated_ai_report',    'workflow_run',    call_row.run_id::text,    'system',    'success',    run_row.correlation_id,    jsonb_build_object('report_id', report_id, 'call_id', p_call_id)  );  if p_notification_policy in ('report', 'exception') then    if not exists (select 1 from public.app_users where id = call_row.user_id and email is not null) then      raise exception 'notification_user_email_unavailable';    end if;    insert into public.notifications(user_id, type, recipient, subject, status, dedupe_key)    select call_row.user_id,      p_notification_policy,      account.email,      case p_notification_policy        when 'exception' then 'Workflow exception report is ready'        else 'Workflow report is ready'      end,      'pending',      'workflow-report:' || call_row.run_id::text    from public.app_users account    where account.id = call_row.user_id    on conflict (dedupe_key) do nothing;  end if;  return report_id;end;$$;revoke all on function public.commit_instrumented_ai_report(  uuid, text, text, text, text, text, jsonb, jsonb, jsonb, numeric,  bigint, bigint, bigint, bigint, jsonb, jsonb) from public;grant execute on function public.commit_instrumented_ai_report(  uuid, text, text, text, text, text, jsonb, jsonb, jsonb, numeric,  bigint, bigint, bigint, bigint, jsonb, jsonb) to service_role;-- A fixed reviewed procurement prompt receives only the bounded web-search capability.insert into public.prompt_templates(manager_id, code, active_version)select id, 'procurement-research-comparison', 1from public.managers where code = 'procurement'on conflict (code) do nothing;insert into public.prompt_versions(  template_id, version, system_text, developer_text, json_schema, evaluation_status,  model_route, schema_version, tool_policy_version, tool_policy)select id, 1,  'You are the AI Operations Procurement manager. Research current products and offers with the approved web_search tool. Never purchase, order, submit payment, contact a seller, or change spending caps. Apply every hard requirement before ranking preferences; treat unknown compatibility as unresolved and ineligible. Use only facts supported by cited web sources. Compare complete mandatory cost: item price, delivery, required accessories, and fees. Distinguish current offers, list prices, indicative prices, and historical prices. Assess review source independence and conflicting evidence without treating star averages as proof. Return no more than ten candidates and state material uncertainty. If no candidate is supported, return an empty candidate list and explain why.',  'Use the request requirements exactly; do not weaken or silently rewrite them. Search the specified market. For each candidate provide compatibility assessments against every requirement, direct cited product and offer URLs, complete cost components with null for anything unknown, warranty and returns evidence, review source and date facts, and a concise rationale. For current offers set observedAt to the supplied constraints.asOf timestamp; the server will replace it with the verified retrieval time. Never claim unknown compatibility is compatible. Keep all actions empty.',  '{"type":"object","properties":{"summary":{"type":"string","minLength":1,"maxLength":8000},"rationale":{"type":"string","minLength":1,"maxLength":4000},"candidates":{"maxItems":10,"type":"array","items":{"type":"object","properties":{"id":{"type":"string","pattern":"^[a-z0-9][a-z0-9_-]{0,63}$"},"title":{"type":"string","minLength":1,"maxLength":300},"productUrl":{"type":"string","format":"uri"},"merchant":{"type":"string","minLength":1,"maxLength":200},"offer":{"type":"object","properties":{"currency":{"type":"string","pattern":"^[A-Z]{3}$"},"itemPriceMinor":{"anyOf":[{"type":"integer","minimum":-9007199254740991,"maximum":9007199254740991},{"type":"null"}]},"deliveryMinor":{"anyOf":[{"type":"integer","minimum":-9007199254740991,"maximum":9007199254740991},{"type":"null"}]},"requiredAccessoriesMinor":{"anyOf":[{"type":"integer","minimum":-9007199254740991,"maximum":9007199254740991},{"type":"null"}]},"mandatoryFeesMinor":{"anyOf":[{"type":"integer","minimum":-9007199254740991,"maximum":9007199254740991},{"type":"null"}]},"priceType":{"type":"string","enum":["current_offer","list_price","indicative","historical"]},"observedAt":{"anyOf":[{"type":"string","format":"date-time","pattern":"^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"},{"type":"null"}]},"sourceUrls":{"maxItems":20,"type":"array","items":{"type":"string","format":"uri"}}},"required":["currency","itemPriceMinor","deliveryMinor","requiredAccessoriesMinor","mandatoryFeesMinor","priceType","observedAt","sourceUrls"],"additionalProperties":false},"assessments":{"maxItems":25,"type":"array","items":{"type":"object","properties":{"requirementId":{"type":"string","pattern":"^[a-z0-9][a-z0-9_-]{0,63}$"},"result":{"type":"string","enum":["compatible","incompatible","unknown"]},"evidenceUrls":{"maxItems":10,"type":"array","items":{"type":"string","format":"uri"}}},"required":["requirementId","result","evidenceUrls"],"additionalProperties":false}},"reviews":{"maxItems":20,"type":"array","items":{"type":"object","properties":{"sourceUrl":{"type":"string","format":"uri"},"sourceKind":{"type":"string","enum":["independent","marketplace","retailer","manufacturer"]},"retrievedAt":{"type":"string","format":"date-time","pattern":"^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"},"rating":{"anyOf":[{"type":"number","minimum":0,"maximum":5},{"type":"null"}]},"reviewCount":{"anyOf":[{"type":"integer","minimum":-9007199254740991,"maximum":9007199254740991},{"type":"null"}]},"summary":{"type":"string","minLength":1,"maxLength":1000}},"required":["sourceUrl","sourceKind","retrievedAt","rating","reviewCount","summary"],"additionalProperties":false}},"warrantySummary":{"anyOf":[{"type":"string","maxLength":1000},{"type":"null"}]},"returnsSummary":{"anyOf":[{"type":"string","maxLength":1000},{"type":"null"}]},"warrantyAndReturnsSourceUrls":{"maxItems":20,"type":"array","items":{"type":"string","format":"uri"}},"rationale":{"type":"string","minLength":1,"maxLength":2000}},"required":["id","title","productUrl","merchant","offer","assessments","reviews","warrantySummary","returnsSummary","warrantyAndReturnsSourceUrls","rationale"],"additionalProperties":false}}},"required":["summary","rationale","candidates"],"additionalProperties":false}'::jsonb,  'approved', 'gpt-5.6-terra', 1, 1,  '{"version":1,"tools":[{"type":"web_search","name":"web_search"}]}'::jsonbfrom public.prompt_templates where code = 'procurement-research-comparison'on conflict (template_id, version) do nothing;-- Failure settlement preserves provider-observed web-search cost and call counts.create or replace function public.fail_instrumented_ai_provider_response(  p_job_id uuid,  p_response_id text,  p_call_id uuid,  p_error_code text,  p_actual_cost numeric,  p_input_tokens bigint,  p_output_tokens bigint,  p_cached_input_tokens bigint,  p_reasoning_tokens bigint,  p_provider_usage jsonb,  p_redacted_trace jsonb) returns boolean language plpgsql security definer set search_path = public as $$declare  job_row public.job_queue;  submission_row public.job_provider_submissions;  call_row public.ai_calls;  completed_job public.job_queue;begin  select * into job_row from public.job_queue where id = p_job_id for update;  if not found then raise exception 'provider_job_not_found'; end if;  select * into submission_row from public.job_provider_submissions    where response_id = p_response_id and job_id = p_job_id for update;  if not found then raise exception 'provider_submission_not_found'; end if;  select * into call_row from public.ai_calls where id = p_call_id for update;  if not found or call_row.run_id <> job_row.run_id or call_row.response_id <> p_response_id then    raise exception 'provider_submission_call_mismatch';  end if;  if submission_row.attempt_count <> job_row.attempt_count then    raise exception 'provider_submission_attempt_mismatch';  end if;  if submission_row.status = 'terminal_failure' and job_row.status = 'dead_letter'    and call_row.status = 'failed' then    return true;  end if;  if submission_row.status = 'expired' or submission_row.expires_at <= now()    or job_row.status = 'dead_letter' then    return false;  end if;  if submission_row.status not in ('awaiting_provider', 'terminal_failure') then    raise exception 'provider_submission_not_completable';  end if;  if call_row.status in ('submitted', 'completed_pending_reconciliation', 'reconciliation_failed') then    perform public.settle_instrumented_ai_call(      p_call_id, p_actual_cost, p_input_tokens, p_output_tokens,      p_cached_input_tokens, p_reasoning_tokens, coalesce((p_provider_usage ->> 'web_search_calls')::integer, 0), p_provider_usage,      p_redacted_trace || jsonb_build_object('validation_passed', false), false    );  elsif call_row.status <> 'failed' then    raise exception 'ai_call_not_failure_settleable';  end if;  perform public.record_workflow_stage(job_row.run_id, 'awaiting_provider', 5, 'failed', 'responses:' || p_response_id, null, p_error_code);  perform public.record_workflow_stage(job_row.run_id, 'validate_output', 6, 'failed', 'responses:' || p_response_id, null, p_error_code);  completed_job := public.complete_provider_queue_job(    p_job_id, p_response_id, 'terminal_failure', p_error_code  );  return completed_job.status = 'dead_letter';end;$$;create or replace function public.commit_instrumented_ai_procurement_report_with_queue(  p_job_id uuid, p_response_id text, p_call_id uuid, p_run_id uuid,  p_search_calls integer, p_decision jsonb, p_sources jsonb,  p_report_type text, p_notification_policy text, p_title text, p_summary text,  p_markdown text, p_structured_metrics jsonb, p_sections jsonb, p_actions jsonb,  p_actual_cost numeric, p_input_tokens bigint, p_output_tokens bigint,  p_cached_input_tokens bigint, p_reasoning_tokens bigint, p_provider_usage jsonb,  p_redacted_trace jsonb) returns uuid language plpgsql security definer set search_path = public as $$declare report_id uuid;begin  if p_search_calls < 1 or p_search_calls > 20 then    raise exception 'invalid_procurement_search_count';  end if;  report_id := public.commit_instrumented_ai_report(    p_call_id, p_report_type, p_notification_policy, p_title, p_summary,    p_markdown, p_structured_metrics, p_sections, p_actions, p_actual_cost,    p_input_tokens, p_output_tokens, p_cached_input_tokens,    p_reasoning_tokens, p_provider_usage, p_redacted_trace  );  perform public.commit_procurement_decision(    p_run_id, report_id, p_search_calls, p_decision, p_sources  );  return public.commit_instrumented_ai_report_with_queue(    p_job_id, p_response_id, p_call_id, p_report_type, p_notification_policy,    p_title, p_summary, p_markdown, p_structured_metrics, p_sections, p_actions,    p_actual_cost, p_input_tokens, p_output_tokens, p_cached_input_tokens,    p_reasoning_tokens, p_provider_usage, p_redacted_trace  );end;$$;revoke all on function public.commit_instrumented_ai_procurement_report_with_queue(  uuid,text,uuid,uuid,integer,jsonb,jsonb,text,text,text,text,text,jsonb,jsonb,jsonb,  numeric,bigint,bigint,bigint,bigint,jsonb,jsonb) from public, anon, authenticated;grant execute on function public.commit_instrumented_ai_procurement_report_with_queue(  uuid,text,uuid,uuid,integer,jsonb,jsonb,text,text,text,text,text,jsonb,jsonb,jsonb,  numeric,bigint,bigint,bigint,bigint,jsonb,jsonb) to service_role;commit;
+begin;
+
+alter table public.on_demand_research_runs
+  add column workflow_run_id uuid references public.workflow_runs(id) on delete cascade,
+  add column revises_research_run_id uuid references public.on_demand_research_runs(id) on delete set null,
+  add column decision_record jsonb,
+  drop constraint if exists on_demand_research_runs_model_ceiling_check,
+  add constraint on_demand_research_runs_model_ceiling_check
+    check (model_ceiling in ('gpt-5.6-luna','gpt-5.6-terra','gpt-5.6-sol')),
+  add constraint on_demand_research_runs_decision_record_check
+    check (decision_record is null or jsonb_typeof(decision_record) = 'object');
+create unique index on_demand_research_runs_workflow_run_uidx
+  on public.on_demand_research_runs(workflow_run_id) where workflow_run_id is not null;
+
+alter table public.procurement_recommendations
+  alter column total_cost_minor type bigint,
+  add column candidate_id text,
+  add column decision_rank integer check (decision_rank is null or decision_rank > 0),
+  add column details jsonb not null default '{}'::jsonb,
+  drop constraint if exists procurement_recommendations_recommendation_kind_check,
+  add constraint procurement_recommendations_recommendation_kind_check
+    check (recommendation_kind in ('best_overall','best_value','premium','excluded','comparison'));
+create unique index procurement_recommendations_run_candidate_uidx
+  on public.procurement_recommendations(research_run_id, candidate_id)
+  where candidate_id is not null;
+
+-- Keep the durable procurement row coupled to the canonical orchestrator run.
+create or replace function public.create_on_demand_run_request(
+  p_user_id uuid, p_workflow_id uuid, p_manager_code text, p_hard_cap numeric,
+  p_model_ceiling text, p_search_ceiling integer, p_idempotency_key text, p_request jsonb
+) returns uuid language plpgsql security definer set search_path = public as $$
+declare created_run uuid; workflow_code text;
+begin
+  if p_hard_cap <= 0 or p_hard_cap > 1000 then raise exception 'invalid_on_demand_cap'; end if;
+  if p_search_ceiling < 0 or p_search_ceiling > 20 then raise exception 'invalid_search_ceiling'; end if;
+  if jsonb_typeof(p_request) <> 'object' or length(p_request::text) > 10000 then raise exception 'invalid_request_brief'; end if;
+  select d.code into workflow_code from public.workflow_definitions d join public.managers m on m.id=d.manager_id
+    where d.id=p_workflow_id and d.code like p_manager_code || '-%';
+  if workflow_code is null then raise exception 'manager_workflow_mismatch'; end if;
+  if p_manager_code = 'procurement' and (
+    workflow_code <> 'procurement-on-demand-research' or p_search_ceiling < 1 or
+    jsonb_typeof(p_request -> 'requirements') <> 'array' or
+    jsonb_array_length(p_request -> 'requirements') < 1 or
+    jsonb_typeof(p_request -> 'maxTotalCostMinor') <> 'number'
+  ) then raise exception 'invalid_procurement_request'; end if;
+  insert into public.workflow_runs(user_id, workflow_definition_id, status, trigger, priority, idempotency_key)
+    values (p_user_id, p_workflow_id, 'queued', 'on_demand', 1, p_idempotency_key)
+    on conflict (idempotency_key) do nothing returning id into created_run;
+  if created_run is null then
+    select id into created_run from public.workflow_runs where user_id=p_user_id and idempotency_key=p_idempotency_key;
+    return created_run;
+  end if;
+  insert into public.on_demand_budgets(user_id,run_id,manager_code,hard_cap,model_ceiling,search_ceiling,expires_at)
+    values (p_user_id,created_run,p_manager_code,p_hard_cap,p_model_ceiling,p_search_ceiling,now()+interval '24 hours');
+  if p_manager_code = 'procurement' then
+    insert into public.on_demand_research_runs(
+      user_id, manager_code, hard_cap_minor, search_limit, model_ceiling, request, workflow_run_id
+    ) values (
+      p_user_id, 'procurement', round(p_hard_cap * 100)::integer, p_search_ceiling,
+      p_model_ceiling, p_request, created_run
+    );
+  end if;
+  insert into public.job_queue(user_id,run_id,job_type,payload,priority,deduplication_key)
+    values (p_user_id,created_run,'workflow_execute',p_request,1,'run:' || created_run);
+  insert into public.trace_events(user_id,correlation_id,event_type,redacted_payload)
+    select user_id,correlation_id,'on_demand_run_queued',jsonb_build_object('run_id',created_run,'manager',p_manager_code,'hard_cap',p_hard_cap,'request_keys',coalesce((select jsonb_agg(key) from jsonb_object_keys(p_request) as key),'[]'::jsonb)) from public.workflow_runs where id=created_run;
+  return created_run;
+end; $$;
+
+-- A changed request creates a new run and links back to the completed immutable decision.
+create or replace function public.create_procurement_revision_request(
+  p_user_id uuid, p_workflow_id uuid, p_manager_code text, p_hard_cap numeric,
+  p_model_ceiling text, p_search_ceiling integer, p_idempotency_key text, p_request jsonb,
+  p_revises_research_run_id uuid
+) returns uuid language plpgsql security definer set search_path = public as $$
+declare created_run uuid; existing_run_id uuid; existing_user_id uuid; linked_research_id uuid;
+begin
+  if p_manager_code <> 'procurement' or p_revises_research_run_id is null then
+    raise exception 'invalid_procurement_revision';
+  end if;
+  perform 1 from public.on_demand_research_runs previous
+   where previous.id = p_revises_research_run_id
+     and previous.user_id = p_user_id and previous.manager_code = 'procurement'
+     and previous.status = 'complete' and previous.decision_record is not null
+   for update;
+  if not found then raise exception 'procurement_revision_source_unavailable'; end if;
+
+  select run.id, run.user_id into existing_run_id, existing_user_id
+    from public.workflow_runs run where run.idempotency_key = p_idempotency_key for update;
+  if found then
+    select research.revises_research_run_id into linked_research_id
+      from public.on_demand_research_runs research
+     where research.workflow_run_id = existing_run_id and research.user_id = p_user_id;
+    if existing_user_id <> p_user_id or not found or
+      linked_research_id is distinct from p_revises_research_run_id then
+      raise exception 'procurement_revision_idempotency_conflict';
+    end if;
+    return existing_run_id;
+  end if;
+
+  created_run := public.create_on_demand_run_request(
+    p_user_id, p_workflow_id, p_manager_code, p_hard_cap, p_model_ceiling,
+    p_search_ceiling, p_idempotency_key, p_request
+  );
+  select research.revises_research_run_id into linked_research_id
+    from public.on_demand_research_runs research
+   where research.workflow_run_id = created_run and research.user_id = p_user_id
+   for update;
+  if not found or (linked_research_id is not null and
+    linked_research_id is distinct from p_revises_research_run_id) then
+    raise exception 'procurement_revision_idempotency_conflict';
+  end if;
+  update public.on_demand_research_runs
+     set revises_research_run_id = p_revises_research_run_id
+   where workflow_run_id = created_run and user_id = p_user_id
+     and revises_research_run_id is null;
+  return created_run;
+end; $$;
+revoke all on function public.create_procurement_revision_request(uuid,uuid,text,numeric,text,integer,text,jsonb,uuid)
+  from public, anon, authenticated;
+grant execute on function public.create_procurement_revision_request(uuid,uuid,text,numeric,text,integer,text,jsonb,uuid)
+  to service_role;
+
+create or replace function public.sync_procurement_research_run_status()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  update public.on_demand_research_runs research set
+    status = case new.status
+      when 'running' then 'running'
+      when 'succeeded' then 'complete'
+      when 'failed' then 'failed'
+      when 'cancelled' then 'cancelled'
+      else 'queued'
+    end,
+    completed_at = case when new.status in ('succeeded','failed','cancelled') then coalesce(new.completed_at, now()) else null end
+  where research.workflow_run_id = new.id
+    and research.status <> 'complete';
+  return new;
+end; $$;
+create trigger sync_procurement_research_run_status
+  after update of status on public.workflow_runs
+  for each row when (old.status is distinct from new.status)
+  execute function public.sync_procurement_research_run_status();
+revoke all on function public.sync_procurement_research_run_status() from public, anon, authenticated, service_role;
+
+-- Procurement must complete through the instrumented provider decision path.
+-- Preserve the canonical manager dispatch and let queue completion own run state.
+create or replace function public.complete_deterministic_workflow_run(p_run_id uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  workflow_code text;
+  policy text;
+  report_id uuid;
+  run_row record;
+begin
+  select r.user_id, r.correlation_id, r.status, d.code, d.notification_policy into run_row
+    from public.workflow_runs r
+    join public.workflow_definitions d on d.id = r.workflow_definition_id
+   where r.id = p_run_id;
+  if not found then raise exception 'workflow_run_not_found'; end if;
+  workflow_code := run_row.code;
+  policy := run_row.notification_policy;
+  if workflow_code = 'procurement-on-demand-research'
+    and run_row.status in ('queued', 'running') then
+    raise exception 'procurement_requires_provider_research';
+  end if;
+  if workflow_code like 'systems-%' then
+    report_id := public.execute_systems_workflow(p_run_id);
+  elsif workflow_code like 'personal-%' then
+    report_id := public.execute_personal_workflow(p_run_id);
+  elsif workflow_code like 'health-%' or workflow_code like 'finance-%' then
+    report_id := public.execute_health_finance_workflow(p_run_id);
+  elsif workflow_code like 'career-%' or workflow_code like 'travel-%' or workflow_code like 'procurement-%' then
+    report_id := public.execute_career_travel_procurement_workflow(p_run_id);
+  elsif workflow_code like 'digital-estate-%' then
+    report_id := public.execute_digital_estate_workflow(p_run_id);
+  else
+    raise exception 'workflow_code_not_supported';
+  end if;
+
+  update public.reports
+     set structured_metrics = structured_metrics || jsonb_build_object(
+       'execution_mode', 'deterministic', 'ai_called', false, 'validation', 'passed'
+     )
+   where id = report_id;
+  insert into public.trace_events(user_id, correlation_id, event_type, severity, redacted_payload)
+  select run_row.user_id, run_row.correlation_id, 'workflow_completed', 'info',
+    jsonb_build_object('run_id', p_run_id, 'report_id', report_id, 'workflow', workflow_code, 'execution_mode', 'deterministic', 'validation', 'passed', 'ai_called', false)
+  where not exists (select 1 from public.trace_events where correlation_id = run_row.correlation_id and event_type = 'workflow_completed');
+  insert into public.audit_events(user_id, actor_type, action_type, target_type, target_id, aal, result, redacted_after)
+  select run_row.user_id, 'system', 'complete_deterministic_workflow', 'workflow_run', p_run_id, 'system', 'success',
+    jsonb_build_object('report_id', report_id, 'workflow', workflow_code, 'ai_called', false)
+  where not exists (select 1 from public.audit_events where target_id = p_run_id::text and action_type = 'complete_deterministic_workflow');
+
+  if policy in ('report', 'exception') then
+    insert into public.notifications(user_id, type, recipient, subject, status, dedupe_key)
+    select run_row.user_id, policy, account.email,
+      case policy when 'exception' then 'Workflow exception report is ready' else 'Workflow report is ready' end,
+      'pending', 'workflow-report:' || p_run_id::text
+    from public.app_users account where account.id = run_row.user_id
+    on conflict (dedupe_key) do nothing;
+    if not exists (select 1 from public.app_users where id = run_row.user_id and email is not null) then
+      raise exception 'notification_user_email_unavailable';
+    end if;
+  end if;
+  perform public.record_workflow_stage(p_run_id, 'notification_decision', 9, 'succeeded', 'policy:' || policy, null, null);
+  insert into public.trace_events(user_id, correlation_id, event_type, severity, redacted_payload)
+  select run_row.user_id, run_row.correlation_id, 'workflow_notification_decision', 'info',
+    jsonb_build_object('run_id', p_run_id, 'policy', policy, 'notification_created', policy in ('report', 'exception'))
+  where not exists (select 1 from public.trace_events where correlation_id = run_row.correlation_id and event_type = 'workflow_notification_decision');
+  return report_id;
+end;
+$$;
+revoke all on function public.complete_deterministic_workflow_run(uuid) from public;
+grant execute on function public.complete_deterministic_workflow_run(uuid) to service_role;
+
+create or replace function public.commit_procurement_decision(
+  p_run_id uuid,
+  p_report_id uuid,
+  p_search_calls integer,
+  p_decision jsonb,
+  p_sources jsonb
+) returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  research public.on_demand_research_runs;
+  source_count integer;
+  recommendation_count integer;
+begin
+  if p_search_calls < 1 or p_search_calls > 20 or
+    jsonb_typeof(p_decision) is distinct from 'object' or
+    jsonb_typeof(p_decision -> 'candidates') is distinct from 'array' or
+    jsonb_array_length(p_decision -> 'candidates') > 10 or
+    jsonb_typeof(p_decision -> 'recommendations') is distinct from 'array' or
+    jsonb_typeof(p_sources) is distinct from 'array' or
+    jsonb_array_length(p_sources) > 100 then
+    raise exception 'invalid_procurement_decision';
+  end if;
+  select * into research from public.on_demand_research_runs
+    where workflow_run_id = p_run_id for update;
+  if not found or research.manager_code <> 'procurement' then
+    raise exception 'procurement_research_run_not_found';
+  end if;
+  if not exists (
+    select 1 from public.reports report
+    join public.workflow_runs run on run.id = report.run_id
+    where report.id = p_report_id and report.run_id = p_run_id
+      and report.user_id = research.user_id and run.user_id = research.user_id
+      and report.status = 'validated'
+  ) then raise exception 'procurement_report_mismatch'; end if;
+  if research.decision_record is not null then
+    if research.report_id <> p_report_id or research.decision_record is distinct from p_decision
+      or research.searches_used <> p_search_calls then
+      raise exception 'procurement_decision_idempotency_conflict';
+    end if;
+    return research.id;
+  end if;
+  if research.search_limit < p_search_calls then raise exception 'procurement_search_ceiling_exceeded'; end if;
+
+  insert into public.research_sources(
+    user_id, domain_area, title, source_url, retrieved_at, source_quality, citation_text
+  )
+  select research.user_id, 'procurement', source.title, source.source_url, now(),
+    source.source_quality, source.citation_text
+  from jsonb_to_recordset(p_sources) as source(
+    title text, source_url text, source_quality text, citation_text text
+  )
+  where source.title is not null and length(source.title) between 1 and 300
+    and source.source_url like 'https://%'
+    and source.source_quality in ('primary','secondary','unreviewed')
+    and source.citation_text is not null and length(source.citation_text) between 1 and 1000;
+  get diagnostics source_count = row_count;
+  if source_count <> jsonb_array_length(p_sources) then raise exception 'procurement_sources_invalid'; end if;
+
+  insert into public.procurement_recommendations(
+    user_id, research_run_id, recommendation_kind, candidate_id, decision_rank,
+    title, total_cost_minor, currency, compliance_passed, warranty_summary,
+    returns_summary, uncertainty, citations, details
+  )
+  select research.user_id, research.id, item.recommendation_kind, item.candidate_id,
+    item.decision_rank, item.title, item.total_cost_minor, item.currency,
+    item.compliance_passed, item.warranty_summary, item.returns_summary,
+    item.uncertainty, item.citations, item.details
+  from jsonb_to_recordset(p_decision -> 'recommendations') as item(
+    recommendation_kind text, candidate_id text, decision_rank integer, title text,
+    total_cost_minor bigint, currency text, compliance_passed boolean,
+    warranty_summary text, returns_summary text, uncertainty text,
+    citations jsonb, details jsonb
+  )
+  where item.recommendation_kind in ('best_overall','best_value','premium','excluded','comparison')
+    and item.candidate_id ~ '^[a-z0-9][a-z0-9_-]{0,63}$'
+    and length(item.title) between 1 and 300
+    and item.currency ~ '^[A-Z]{3}$'
+    and jsonb_typeof(item.citations) = 'array'
+    and jsonb_typeof(item.details) = 'object';
+  get diagnostics recommendation_count = row_count;
+  if recommendation_count <> jsonb_array_length(p_decision -> 'recommendations') then
+    raise exception 'procurement_recommendations_invalid';
+  end if;
+
+  update public.on_demand_research_runs set
+    report_id = p_report_id, searches_used = p_search_calls,
+    decision_record = p_decision, status = 'complete', completed_at = now()
+  where id = research.id;
+  return research.id;
+end; $$;
+revoke all on function public.commit_procurement_decision(uuid,uuid,integer,jsonb,jsonb) from public, anon, authenticated;
+grant execute on function public.commit_procurement_decision(uuid,uuid,integer,jsonb,jsonb) to service_role;
+
+
+-- The provider's observed web-search count drives reconciliation and the durable AI call record.
+create or replace function public.commit_instrumented_ai_report(
+  p_call_id uuid,
+  p_report_type text,
+  p_notification_policy text,
+  p_title text,
+  p_summary text,
+  p_markdown text,
+  p_structured_metrics jsonb,
+  p_sections jsonb,
+  p_actions jsonb,
+  p_actual_cost numeric,
+  p_input_tokens bigint,
+  p_output_tokens bigint,
+  p_cached_input_tokens bigint,
+  p_reasoning_tokens bigint,
+  p_provider_usage jsonb,
+  p_redacted_trace jsonb
+) returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  call_row public.ai_calls;
+  report_id uuid;
+  run_row record;
+  inserted_sections integer;
+  inserted_actions integer;
+begin
+  select * into call_row from public.ai_calls where id = p_call_id for update;
+  if not found or call_row.run_id is null then
+    raise exception 'ai_report_call_not_found';
+  end if;
+  if jsonb_typeof(p_sections) <> 'array'
+    or jsonb_array_length(p_sections) not between 0 and 20
+    or jsonb_typeof(p_actions) <> 'array'
+    or jsonb_array_length(p_actions) > 20 then
+    raise exception 'invalid_ai_report_commit';
+  end if;
+  if p_report_type !~ '^[a-z0-9][a-z0-9-]{1,119}$'
+    or p_notification_policy not in ('silent', 'report', 'exception')
+    or length(p_title) not between 1 and 200
+    or length(p_summary) not between 1 and 8000
+    or length(p_markdown) not between 1 and 60000
+    or jsonb_typeof(p_structured_metrics) <> 'object' then
+    raise exception 'invalid_ai_report_commit';
+  end if;
+
+  select id into report_id from public.reports where run_id = call_row.run_id;
+  if report_id is not null then
+    if call_row.status <> 'succeeded' then
+      raise exception 'report_exists_call_not_settled';
+    end if;
+    return report_id;
+  end if;
+
+  if call_row.status not in ('reserved', 'submitted', 'completed_pending_reconciliation') then
+    raise exception 'ai_report_call_not_settleable';
+  end if;
+  select user_id, correlation_id into run_row
+    from public.workflow_runs where id = call_row.run_id;
+  if not found or run_row.user_id <> call_row.user_id then
+    raise exception 'ai_report_run_owner_mismatch';
+  end if;
+
+  perform public.settle_instrumented_ai_call(
+    p_call_id,
+    p_actual_cost,
+    p_input_tokens,
+    p_output_tokens,
+    p_cached_input_tokens,
+    p_reasoning_tokens,
+    coalesce((p_provider_usage ->> 'web_search_calls')::integer, 0),
+    p_provider_usage,
+    p_redacted_trace,
+    true
+  );
+
+  insert into public.reports(
+    user_id, run_id, report_type, title, summary, markdown,
+    structured_metrics, status
+  ) values (
+    call_row.user_id,
+    call_row.run_id,
+    p_report_type,
+    p_title,
+    p_summary,
+    p_markdown,
+    p_structured_metrics,
+    'validated'
+  ) returning id into report_id;
+
+  insert into public.report_sections(
+    report_id, code, title, display_order, content, structured_data, evidence_references
+  )
+  select report_id, section.code, section.title, section.display_order,
+    section.content, section.structured_data, section.evidence_references
+  from jsonb_to_recordset(p_sections) as section(
+    code text,
+    title text,
+    display_order integer,
+    content text,
+    structured_data jsonb,
+    evidence_references jsonb
+  )
+  where section.code ~ '^[a-z0-9-]{1,100}$'
+    and length(section.title) between 1 and 200
+    and section.display_order between 0 and 19
+    and length(section.content) between 1 and 8000
+    and jsonb_typeof(section.structured_data) = 'object'
+    and jsonb_typeof(section.evidence_references) = 'array';
+  get diagnostics inserted_sections = row_count;
+
+  if inserted_sections <> jsonb_array_length(p_sections) then
+    raise exception 'ai_report_sections_invalid';
+  end if;
+
+  insert into public.actions(
+    user_id, run_id, action_type, title, description, risk_class, status, proposed_payload
+  )
+  select call_row.user_id, call_row.run_id, action.action_type, action.title,
+    'AI-proposed action; explicit approval is required before execution.',
+    action.risk_class::public.risk_class,
+    'proposed',
+    jsonb_build_object('source', 'validated_ai_output', 'response_id', call_row.response_id)
+  from jsonb_to_recordset(p_actions) as action(action_type text, title text, risk_class text)
+  where action.action_type ~ '^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,99}$'
+    and length(action.title) between 1 and 500
+    and action.risk_class in ('low', 'medium', 'high', 'critical')
+    and action.action_type in (
+      select jsonb_array_elements_text(coalesce(call_row.redacted_trace -> 'allowed_action_types', '[]'::jsonb))
+    );
+  get diagnostics inserted_actions = row_count;
+  if inserted_actions <> jsonb_array_length(p_actions) then
+    raise exception 'ai_report_actions_invalid';
+  end if;
+
+  insert into public.trace_events(
+    user_id, correlation_id, event_type, severity, redacted_payload
+  ) values (
+    run_row.user_id,
+    run_row.correlation_id,
+    'ai_report_validated',
+    'info',
+    jsonb_build_object(
+      'call_id', p_call_id,
+      'report_id', report_id,
+      'response_id', call_row.response_id,
+      'validation', 'passed',
+      'notification_policy', p_notification_policy
+    )
+  );
+  insert into public.audit_events(
+    user_id, actor_type, action_type, target_type, target_id, aal,
+    result, correlation_id, redacted_after
+  ) values (
+    run_row.user_id,
+    'system',
+    'persist_validated_ai_report',
+    'workflow_run',
+    call_row.run_id::text,
+    'system',
+    'success',
+    run_row.correlation_id,
+    jsonb_build_object('report_id', report_id, 'call_id', p_call_id)
+  );
+  if p_notification_policy in ('report', 'exception') then
+    if not exists (select 1 from public.app_users where id = call_row.user_id and email is not null) then
+      raise exception 'notification_user_email_unavailable';
+    end if;
+    insert into public.notifications(user_id, type, recipient, subject, status, dedupe_key)
+    select call_row.user_id,
+      p_notification_policy,
+      account.email,
+      case p_notification_policy
+        when 'exception' then 'Workflow exception report is ready'
+        else 'Workflow report is ready'
+      end,
+      'pending',
+      'workflow-report:' || call_row.run_id::text
+    from public.app_users account
+    where account.id = call_row.user_id
+    on conflict (dedupe_key) do nothing;
+  end if;
+  return report_id;
+end;
+$$;
+
+revoke all on function public.commit_instrumented_ai_report(
+  uuid, text, text, text, text, text, jsonb, jsonb, jsonb, numeric,
+  bigint, bigint, bigint, bigint, jsonb, jsonb
+) from public;
+grant execute on function public.commit_instrumented_ai_report(
+  uuid, text, text, text, text, text, jsonb, jsonb, jsonb, numeric,
+  bigint, bigint, bigint, bigint, jsonb, jsonb
+) to service_role;
+-- A fixed reviewed procurement prompt receives only the bounded web-search capability.
+insert into public.prompt_templates(manager_id, code, active_version)
+select id, 'procurement-research-comparison', 1
+from public.managers where code = 'procurement'
+on conflict (code) do nothing;
+
+insert into public.prompt_versions(
+  template_id, version, system_text, developer_text, json_schema, evaluation_status,
+  model_route, schema_version, tool_policy_version, tool_policy
+)
+select id, 1,
+  'You are the AI Operations Procurement manager. Research current products and offers with the approved web_search tool. Never purchase, order, submit payment, contact a seller, or change spending caps. Apply every hard requirement before ranking preferences; treat unknown compatibility as unresolved and ineligible. Use only facts supported by cited web sources. Compare complete mandatory cost: item price, delivery, required accessories, and fees. Distinguish current offers, list prices, indicative prices, and historical prices. Assess review source independence and conflicting evidence without treating star averages as proof. Return no more than ten candidates and state material uncertainty. If no candidate is supported, return an empty candidate list and explain why.',
+  'Use the request requirements exactly; do not weaken or silently rewrite them. Search the specified market. For each candidate provide compatibility assessments against every requirement, direct cited product and offer URLs, complete cost components with null for anything unknown, warranty and returns evidence, review source and date facts, and a concise rationale. For current offers set observedAt to the supplied constraints.asOf timestamp; the server will replace it with the verified retrieval time. Never claim unknown compatibility is compatible. Keep all actions empty.',
+  '{"type":"object","properties":{"summary":{"type":"string","minLength":1,"maxLength":8000},"rationale":{"type":"string","minLength":1,"maxLength":4000},"candidates":{"maxItems":10,"type":"array","items":{"type":"object","properties":{"id":{"type":"string","pattern":"^[a-z0-9][a-z0-9_-]{0,63}$"},"title":{"type":"string","minLength":1,"maxLength":300},"productUrl":{"type":"string","format":"uri"},"merchant":{"type":"string","minLength":1,"maxLength":200},"offer":{"type":"object","properties":{"currency":{"type":"string","pattern":"^[A-Z]{3}$"},"itemPriceMinor":{"anyOf":[{"type":"integer","minimum":-9007199254740991,"maximum":9007199254740991},{"type":"null"}]},"deliveryMinor":{"anyOf":[{"type":"integer","minimum":-9007199254740991,"maximum":9007199254740991},{"type":"null"}]},"requiredAccessoriesMinor":{"anyOf":[{"type":"integer","minimum":-9007199254740991,"maximum":9007199254740991},{"type":"null"}]},"mandatoryFeesMinor":{"anyOf":[{"type":"integer","minimum":-9007199254740991,"maximum":9007199254740991},{"type":"null"}]},"priceType":{"type":"string","enum":["current_offer","list_price","indicative","historical"]},"observedAt":{"anyOf":[{"type":"string","format":"date-time","pattern":"^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"},{"type":"null"}]},"sourceUrls":{"maxItems":20,"type":"array","items":{"type":"string","format":"uri"}}},"required":["currency","itemPriceMinor","deliveryMinor","requiredAccessoriesMinor","mandatoryFeesMinor","priceType","observedAt","sourceUrls"],"additionalProperties":false},"assessments":{"maxItems":25,"type":"array","items":{"type":"object","properties":{"requirementId":{"type":"string","pattern":"^[a-z0-9][a-z0-9_-]{0,63}$"},"result":{"type":"string","enum":["compatible","incompatible","unknown"]},"evidenceUrls":{"maxItems":10,"type":"array","items":{"type":"string","format":"uri"}}},"required":["requirementId","result","evidenceUrls"],"additionalProperties":false}},"reviews":{"maxItems":20,"type":"array","items":{"type":"object","properties":{"sourceUrl":{"type":"string","format":"uri"},"sourceKind":{"type":"string","enum":["independent","marketplace","retailer","manufacturer"]},"retrievedAt":{"type":"string","format":"date-time","pattern":"^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"},"rating":{"anyOf":[{"type":"number","minimum":0,"maximum":5},{"type":"null"}]},"reviewCount":{"anyOf":[{"type":"integer","minimum":-9007199254740991,"maximum":9007199254740991},{"type":"null"}]},"summary":{"type":"string","minLength":1,"maxLength":1000}},"required":["sourceUrl","sourceKind","retrievedAt","rating","reviewCount","summary"],"additionalProperties":false}},"warrantySummary":{"anyOf":[{"type":"string","maxLength":1000},{"type":"null"}]},"returnsSummary":{"anyOf":[{"type":"string","maxLength":1000},{"type":"null"}]},"warrantyAndReturnsSourceUrls":{"maxItems":20,"type":"array","items":{"type":"string","format":"uri"}},"rationale":{"type":"string","minLength":1,"maxLength":2000}},"required":["id","title","productUrl","merchant","offer","assessments","reviews","warrantySummary","returnsSummary","warrantyAndReturnsSourceUrls","rationale"],"additionalProperties":false}}},"required":["summary","rationale","candidates"],"additionalProperties":false}'::jsonb,
+  'approved', 'gpt-5.6-terra', 1, 1,
+  '{"version":1,"tools":[{"type":"web_search","name":"web_search"}]}'::jsonb
+from public.prompt_templates where code = 'procurement-research-comparison'
+on conflict (template_id, version) do nothing;
+-- Failure settlement preserves provider-observed web-search cost and call counts.
+create or replace function public.fail_instrumented_ai_provider_response(
+  p_job_id uuid,
+  p_response_id text,
+  p_call_id uuid,
+  p_error_code text,
+  p_actual_cost numeric,
+  p_input_tokens bigint,
+  p_output_tokens bigint,
+  p_cached_input_tokens bigint,
+  p_reasoning_tokens bigint,
+  p_provider_usage jsonb,
+  p_redacted_trace jsonb
+) returns boolean language plpgsql security definer set search_path = public as $$
+declare
+  job_row public.job_queue;
+  submission_row public.job_provider_submissions;
+  call_row public.ai_calls;
+  completed_job public.job_queue;
+begin
+  select * into job_row from public.job_queue where id = p_job_id for update;
+  if not found then raise exception 'provider_job_not_found'; end if;
+  select * into submission_row from public.job_provider_submissions
+    where response_id = p_response_id and job_id = p_job_id for update;
+  if not found then raise exception 'provider_submission_not_found'; end if;
+  select * into call_row from public.ai_calls where id = p_call_id for update;
+  if not found or call_row.run_id <> job_row.run_id or call_row.response_id <> p_response_id then
+    raise exception 'provider_submission_call_mismatch';
+  end if;
+  if submission_row.attempt_count <> job_row.attempt_count then
+    raise exception 'provider_submission_attempt_mismatch';
+  end if;
+  if submission_row.status = 'terminal_failure' and job_row.status = 'dead_letter'
+    and call_row.status = 'failed' then
+    return true;
+  end if;
+  if submission_row.status = 'expired' or submission_row.expires_at <= now()
+    or job_row.status = 'dead_letter' then
+    return false;
+  end if;
+  if submission_row.status not in ('awaiting_provider', 'terminal_failure') then
+    raise exception 'provider_submission_not_completable';
+  end if;
+
+  if call_row.status in ('submitted', 'completed_pending_reconciliation', 'reconciliation_failed') then
+    perform public.settle_instrumented_ai_call(
+      p_call_id, p_actual_cost, p_input_tokens, p_output_tokens,
+      p_cached_input_tokens, p_reasoning_tokens, coalesce((p_provider_usage ->> 'web_search_calls')::integer, 0), p_provider_usage,
+      p_redacted_trace || jsonb_build_object('validation_passed', false), false
+    );
+  elsif call_row.status <> 'failed' then
+    raise exception 'ai_call_not_failure_settleable';
+  end if;
+  perform public.record_workflow_stage(job_row.run_id, 'awaiting_provider', 5, 'failed', 'responses:' || p_response_id, null, p_error_code);
+  perform public.record_workflow_stage(job_row.run_id, 'validate_output', 6, 'failed', 'responses:' || p_response_id, null, p_error_code);
+  completed_job := public.complete_provider_queue_job(
+    p_job_id, p_response_id, 'terminal_failure', p_error_code
+  );
+  return completed_job.status = 'dead_letter';
+end;
+$$;
+
+create or replace function public.commit_instrumented_ai_procurement_report_with_queue(
+  p_job_id uuid, p_response_id text, p_call_id uuid, p_run_id uuid,
+  p_search_calls integer, p_decision jsonb, p_sources jsonb,
+  p_report_type text, p_notification_policy text, p_title text, p_summary text,
+  p_markdown text, p_structured_metrics jsonb, p_sections jsonb, p_actions jsonb,
+  p_actual_cost numeric, p_input_tokens bigint, p_output_tokens bigint,
+  p_cached_input_tokens bigint, p_reasoning_tokens bigint, p_provider_usage jsonb,
+  p_redacted_trace jsonb
+) returns uuid language plpgsql security definer set search_path = public as $$
+declare report_id uuid;
+begin
+  if p_search_calls < 1 or p_search_calls > 20 then
+    raise exception 'invalid_procurement_search_count';
+  end if;
+  report_id := public.commit_instrumented_ai_report(
+    p_call_id, p_report_type, p_notification_policy, p_title, p_summary,
+    p_markdown, p_structured_metrics, p_sections, p_actions, p_actual_cost,
+    p_input_tokens, p_output_tokens, p_cached_input_tokens,
+    p_reasoning_tokens, p_provider_usage, p_redacted_trace
+  );
+  perform public.commit_procurement_decision(
+    p_run_id, report_id, p_search_calls, p_decision, p_sources
+  );
+  return public.commit_instrumented_ai_report_with_queue(
+    p_job_id, p_response_id, p_call_id, p_report_type, p_notification_policy,
+    p_title, p_summary, p_markdown, p_structured_metrics, p_sections, p_actions,
+    p_actual_cost, p_input_tokens, p_output_tokens, p_cached_input_tokens,
+    p_reasoning_tokens, p_provider_usage, p_redacted_trace
+  );
+end;
+$$;
+revoke all on function public.commit_instrumented_ai_procurement_report_with_queue(
+  uuid,text,uuid,uuid,integer,jsonb,jsonb,text,text,text,text,text,jsonb,jsonb,jsonb,
+  numeric,bigint,bigint,bigint,bigint,jsonb,jsonb
+) from public, anon, authenticated;
+grant execute on function public.commit_instrumented_ai_procurement_report_with_queue(
+  uuid,text,uuid,uuid,integer,jsonb,jsonb,text,text,text,text,text,jsonb,jsonb,jsonb,
+  numeric,bigint,bigint,bigint,bigint,jsonb,jsonb
+) to service_role;
+commit;
