@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import { MfaChallenge } from '../../mfa/mfa-challenge';
+import type { MfaFactorOption } from '../../../lib/mfa-factor-selection';
 
 type DiagnosticPayload = {
   code?: string;
@@ -25,7 +26,10 @@ function errorText(payload: DiagnosticPayload | null, status: number, fallback: 
   ].join(' — ');
 }
 
-export function GithubSyncControl({ factorId }: Readonly<{ factorId?: string }>) {
+export function GithubSyncControl({
+  availableFactors,
+  defaultFactorId,
+}: Readonly<{ availableFactors: MfaFactorOption[]; defaultFactorId?: string }>) {
   const [mfaRequired, setMfaRequired] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -76,7 +80,8 @@ export function GithubSyncControl({ factorId }: Readonly<{ factorId?: string }>)
           <MfaChallenge
             job="github_sync"
             onVerified={(mfaGateId) => void sync(mfaGateId)}
-            {...(factorId ? { factorId } : {})}
+            availableFactors={availableFactors}
+            {...(defaultFactorId ? { defaultFactorId } : {})}
           />
           <button type="button" onClick={() => setMfaRequired(false)} disabled={busy}>
             Cancel MFA and return to Career
