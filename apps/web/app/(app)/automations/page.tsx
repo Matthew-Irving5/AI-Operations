@@ -1,4 +1,5 @@
 import { schedulesData } from '../../../lib/platform-data';
+import { selectMfaFactors } from '../../../lib/mfa-factor-selection';
 import { createSupabaseServerClient } from '../../../lib/supabase-server';
 import { ScheduleToggle } from './schedule-toggle';
 
@@ -6,7 +7,7 @@ export default async function AutomationsPage() {
   const { data: schedules, error } = await schedulesData();
   const supabase = await createSupabaseServerClient();
   const { data: factors } = await supabase.auth.mfa.listFactors();
-  const factorId = factors?.totp?.find((factor) => factor.status === 'verified')?.id;
+  const factorSelection = selectMfaFactors(factors?.totp);
   return (
     <>
       <h1>Automations</h1>
@@ -39,7 +40,10 @@ export default async function AutomationsPage() {
               <ScheduleToggle
                 scheduleId={schedule.id}
                 enabled={schedule.enabled}
-                {...(factorId ? { factorId } : {})}
+                availableFactors={factorSelection.availableFactors}
+                {...(factorSelection.defaultFactorId
+                  ? { defaultFactorId: factorSelection.defaultFactorId }
+                  : {})}
               />
             </article>
           ))}

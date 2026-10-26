@@ -32,7 +32,7 @@ if (process.platform === 'win32') {
         '--',
         'bash',
         '-lc',
-        'mkdir -p "$LOCAL_QA_WSL_BUILD_ROOT" && rsync -a --exclude=.git --exclude=node_modules --exclude=.env --exclude="**/.env" --exclude="apps/web/.next" --exclude="apps/web/.next-*" --exclude="apps/web/.open-next" --exclude=test-results --exclude=playwright-report --exclude=coverage "$LOCAL_QA_SOURCE_ROOT/" "$LOCAL_QA_WSL_BUILD_ROOT/"',
+        'command -v flock >/dev/null 2>&1 && mkdir -p "$HOME/.cache" && flock -x "$HOME/.cache/ai-operations-worker-preview.lock" sh -c \'mkdir -p "$LOCAL_QA_WSL_BUILD_ROOT" && rsync -a --exclude=.git --exclude=node_modules --exclude=.env --exclude="**/.env" --exclude="apps/web/.next" --exclude="apps/web/.next-*" --exclude="apps/web/.open-next" --exclude=test-results --exclude=playwright-report --exclude=coverage "$LOCAL_QA_SOURCE_ROOT/" "$LOCAL_QA_WSL_BUILD_ROOT/"\'',
       ],
       {
         env: {

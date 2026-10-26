@@ -30,6 +30,16 @@ if [[ -e "$resolved_build_root/.git" || ! -f "$resolved_build_root/package.json"
   echo 'The OpenNext Worker build path is not the expected disposable repository copy.' >&2
   exit 1
 fi
+if ! command -v flock >/dev/null 2>&1; then
+  echo 'The OpenNext Worker preview requires flock to serialize its shared WSL build workspace.' >&2
+  exit 1
+fi
+
+# Worktrees share this disposable build root. Hold the lock through the preview
+# process so another runner cannot replace its sources during sync or build.
+mkdir -p "$HOME/.cache"
+exec 9>"$HOME/.cache/ai-operations-worker-preview.lock"
+flock -x 9
 
 mkdir -p "$build_root"
 rsync -a --delete \

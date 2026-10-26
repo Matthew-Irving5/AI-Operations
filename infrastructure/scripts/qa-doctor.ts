@@ -81,6 +81,24 @@ export function isSupportedNodeVersion(version: string): boolean {
   return major > 22 || (major === 22 && minor >= 18);
 }
 
+export function isInstalledNextVersionCurrent(
+  declaredVersion: string,
+  installedVersion: string | undefined,
+): boolean {
+  return installedVersion === declaredVersion;
+}
+
+function installedNextVersion(): string | undefined {
+  const packagePath = 'apps/web/node_modules/next/package.json';
+  if (!existsSync(packagePath)) return undefined;
+  try {
+    const installed = JSON.parse(readFileSync(packagePath, 'utf8')) as { version?: string };
+    return installed.version;
+  } catch {
+    return undefined;
+  }
+}
+
 async function check(label: string, fn: () => Promise<string> | string): Promise<Result> {
   const started = Date.now();
   try {
@@ -106,6 +124,32 @@ async function main(): Promise<void> {
     }),
   );
   results.push(await check('pnpm/Corepack', () => run('corepack', ['pnpm', '--version'])));
+  results.push(
+    await check('Web runtime install', () => {
+      const manifest = JSON.parse(readFileSync('apps/web/package.json', 'utf8')) as {
+        dependencies?: { next?: string };
+      };
+      const expected = manifest.dependencies?.next;
+      if (!expected) throw new Error('apps/web/package.json does not declare Next.js');
+
+      let installed = installedNextVersion();
+      if (!isInstalledNextVersionCurrent(expected, installed)) {
+        if (!fix || ci) {
+          throw new Error(
+            `Next.js version mismatch: expected ${expected}, found ${installed ?? 'missing'}; rerun pnpm qa:doctor --fix`,
+          );
+        }
+        run('corepack', ['pnpm', 'install', '--frozen-lockfile'], 300_000);
+        installed = installedNextVersion();
+      }
+      if (!isInstalledNextVersionCurrent(expected, installed)) {
+        throw new Error(
+          `Next.js version mismatch after frozen install: expected ${expected}, found ${installed ?? 'missing'}`,
+        );
+      }
+      return `Next.js ${installed} matches the declared version`;
+    }),
+  );
   results.push(
     await check('GitHub/repository', () => {
       const repo = JSON.parse(run('gh', ['repo', 'view', '--json', 'nameWithOwner'])) as {
