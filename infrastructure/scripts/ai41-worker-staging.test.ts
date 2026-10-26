@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import {
   readWorkerStagingSnapshot,
   validateWorkerAcceptanceInputs,
@@ -68,6 +69,11 @@ test('AI41 runner requires exact immutable artifact and deployment inputs', () =
     { unexpected: 'value' },
   ])
     assert.throws(() => validateWorkerAcceptanceInputs({ ...input, ...patch }));
+});
+
+test('AI41 runner accepts the visible scan form before the isolated device is paired', async () => {
+  const source = await readFile(new URL('./ai41-worker-staging.ts', import.meta.url), 'utf8');
+  assert.match(source, /Launch scan',[\s\S]*?toHaveCount\(1\)/);
 });
 
 test('worker result verifies identity and signature, then guards completed replay before writes', async () => {

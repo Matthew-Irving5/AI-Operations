@@ -248,7 +248,9 @@ export async function runWorkerAcceptance(raw: unknown) {
     process.stdout.write('MANUAL_LOGIN_READY AI41 Windows worker\n');
     await expect(page).toHaveURL(/\/overview(?:\?|$)/, { timeout: 10 * 60_000 });
     await page.goto('/digital-estate');
-    await expect(page.getByRole('heading', { name: 'Launch scan', exact: true })).toHaveCount(0);
+    // The page renders the bounded scan form before a staging device is paired;
+    // the actual device binding is asserted by queueScan after pair().
+    await expect(page.getByRole('heading', { name: 'Launch scan', exact: true })).toHaveCount(1);
     const first = await pair(join(runRoot, 'first'), `AI41 synthetic ${randomUUID()}`);
     const secret = join(first.folder, 'worker.secret.dpapi');
     worker = spawn(artifact, [], {
@@ -400,9 +402,8 @@ export async function runWorkerAcceptance(raw: unknown) {
   }
 }
 if (process.argv[1]?.replaceAll('\\', '/').endsWith('/ai41-worker-staging.ts'))
-  runWorkerAcceptance(JSON.parse(readFileSync(process.argv[2] ?? '', 'utf8'))).catch(() => {
-    process.stderr.write(
-      'AI41_WORKER_PROTOCOL_FAILED: inspect failed boundary before retry; no acceptance written.\n',
-    );
+  runWorkerAcceptance(JSON.parse(readFileSync(process.argv[2] ?? '', 'utf8'))).catch((error) => {
+    const message = error instanceof Error ? error.message : 'unknown_failure';
+    process.stderr.write(`AI41_WORKER_PROTOCOL_FAILED: ${message}; no acceptance written.\n`);
     process.exitCode = 1;
   });
