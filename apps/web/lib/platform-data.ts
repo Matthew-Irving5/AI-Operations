@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { buildCareerEvidenceSnapshot, type CareerEvidenceSnapshot } from './career-summary';
-import { createSupabaseServerClient } from './supabase-server';
+import {
+  createSupabaseAccessTokenClient,
+  createSupabaseServerClient,
+  getAuthenticatedServerAccessToken,
+} from './supabase-server';
 
 const reportSchema = z.object({
   id: z.string().uuid(),
@@ -718,7 +722,13 @@ export async function digitalEstateData(): Promise<
     devices: PageData<z.infer<typeof workerDeviceSchema>[]>;
   }>
 > {
-  const client = await createSupabaseServerClient();
+  // Revalidate/refresh the cookie-backed JWT before querying AAL2-protected
+  // worker health. Pairing and fresh-MFA routes may rotate the session token;
+  // using a stale cookie here makes the heartbeat row look unavailable.
+  const accessToken = await getAuthenticatedServerAccessToken();
+  const client = accessToken
+    ? createSupabaseAccessTokenClient(accessToken)
+    : await createSupabaseServerClient();
   const [scans, devices] = await Promise.all([
     client
       .from('digital_scans')
