@@ -906,7 +906,17 @@ export function selectHostedAcceptanceProfile(
   const careerSurfacePath = (file: string) =>
     file.startsWith('apps/web/app/(app)/career/') ||
     file.startsWith('supabase/functions/github-career-sync/');
+  const workerProtocolSurfacePath = (file: string) =>
+    file === 'supabase/config.toml' ||
+    file.startsWith('supabase/functions/inter-agent-delegation/') ||
+    file.startsWith('supabase/functions/inter-agent-handoff/') ||
+    file.startsWith('packages/manager-core/src/delegation') ||
+    file.startsWith('packages/manager-core/src/handoff') ||
+    file === 'packages/contracts/src/execution.ts' ||
+    file === 'packages/contracts/src/execution.test.ts' ||
+    file === 'infrastructure/scripts/qa-workspace-dependencies.ts';
   const authBrowser = normalizedFiles.some((file) => {
+    if (workerProtocol && workerProtocolSurfacePath(file)) return false;
     if (careerSurfacePath(file)) return false;
     if (
       plannerSpecialist &&
