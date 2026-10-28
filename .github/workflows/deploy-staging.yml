@@ -19,7 +19,20 @@ on:
         default: auto
         type: choice
         options:
-          [auto, targeted, auth-browser, cost-runtime, career, career-auth-browser, procurement, mobile-shortcuts, mobile-shortcuts-action, archive-restore, planner-specialist, worker-protocol]
+          [
+            auto,
+            targeted,
+            auth-browser,
+            cost-runtime,
+            career,
+            career-auth-browser,
+            procurement,
+            mobile-shortcuts,
+            mobile-shortcuts-action,
+            archive-restore,
+            planner-specialist,
+            worker-protocol,
+          ]
       deployment_run_id:
         description: Successful candidate deployment run ID; required for acceptance.
         required: false
@@ -420,7 +433,7 @@ jobs:
           set -euo pipefail
           [[ "$CANDIDATE_SHA" =~ ^[a-f0-9]{40}$ && "$CANDIDATE_SHA" == "$DISPATCH_SHA" && "$DISPATCH_REF" == refs/heads/* && "$DISPATCH_REF" != "refs/heads/main" ]] || { echo "Acceptance dispatch must use the current non-main PR branch head."; exit 1; }
           [[ "$DEPLOYMENT_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]] || { echo "Deployment run ID is invalid."; exit 1; }
-          [[ "$ACCEPTANCE_PROFILE" == "auth-browser" || "$ACCEPTANCE_PROFILE" == "cost-runtime" || "$ACCEPTANCE_PROFILE" == "career" || "$ACCEPTANCE_PROFILE" == "career-auth-browser" || "$ACCEPTANCE_PROFILE" == "procurement" ]] || { echo "Acceptance dispatch requires the exact hosted acceptance profile."; exit 1; }
+          [[ "$ACCEPTANCE_PROFILE" == "auth-browser" || "$ACCEPTANCE_PROFILE" == "cost-runtime" || "$ACCEPTANCE_PROFILE" == "career" || "$ACCEPTANCE_PROFILE" == "career-auth-browser" || "$ACCEPTANCE_PROFILE" == "mobile-shortcuts" || "$ACCEPTANCE_PROFILE" == "mobile-shortcuts-action" || "$ACCEPTANCE_PROFILE" == "archive-restore" || "$ACCEPTANCE_PROFILE" == "planner-specialist" || "$ACCEPTANCE_PROFILE" == "worker-protocol" || "$ACCEPTANCE_PROFILE" == "procurement" || "$ACCEPTANCE_PROFILE" == "google-oauth" ]] || { echo "Acceptance dispatch requires the exact hosted acceptance profile."; exit 1; }
           [[ "$OUTCOME" == "accepted" || "$OUTCOME" == "failed" ]] || { echo "Acceptance outcome is invalid."; exit 1; }
           gh api "repos/$GH_REPOSITORY/commits/$CANDIDATE_SHA/pulls" > candidate-pulls.json
           pr_count="$(jq --arg repo "$GH_REPOSITORY" --arg sha "$CANDIDATE_SHA" '[.[] | select(.state == "open" and .base.ref == "main" and .head.sha == $sha and .head.repo.full_name == $repo)] | length' candidate-pulls.json)"

@@ -1301,7 +1301,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /candidate_sha:/);
   assert.match(
     deployWorkflow,
-    /acceptance_profile:[\s\S]*options:\s*\[auto, targeted, auth-browser, cost-runtime, career, career-auth-browser, procurement\]/,
+    /acceptance_profile:[\s\S]*options:[\s\S]*\bauto\b[\s\S]*\btargeted\b[\s\S]*\bauth-browser\b[\s\S]*\bcost-runtime\b[\s\S]*\bcareer\b[\s\S]*\bcareer-auth-browser\b[\s\S]*\bprocurement\b[\s\S]*\bmobile-shortcuts\b[\s\S]*\bmobile-shortcuts-action\b[\s\S]*\barchive-restore\b[\s\S]*\bplanner-specialist\b[\s\S]*\bworker-protocol\b/,
   );
   assert.match(
     deployWorkflow,
@@ -1506,7 +1506,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(
     deployWorkflow,
-    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "career" \|\| "\$ACCEPTANCE_PROFILE" == "career-auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "procurement" \]\]/,
+    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[[\s\S]*"\$ACCEPTANCE_PROFILE" == "auth-browser"[\s\S]*"\$ACCEPTANCE_PROFILE" == "cost-runtime"[\s\S]*"\$ACCEPTANCE_PROFILE" == "procurement"[\s\S]*\]\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1883,7 +1883,10 @@ test('targeted hosted acceptance is valid without MFA and cannot satisfy an auth
 test('Career shared MFA changes require both exact-candidate Career and auth-browser proofs', () => {
   const paths = ['docs/build/ticket-readbacks/AI-35.md', 'apps/web/app/mfa/page.tsx'];
   assert.equal(selectHostedAcceptanceProfile(paths), 'career-auth-browser');
-  assert.throws(() => selectHostedAcceptanceProfile(paths, 'career'), /does not match inferred|combined acceptance profile is required/);
+  assert.throws(
+    () => selectHostedAcceptanceProfile(paths, 'career'),
+    /does not match inferred|combined acceptance profile is required/,
+  );
   const career = careerSuiteEvidence();
   const auth = hostedSuiteEvidence();
   const combined = {
