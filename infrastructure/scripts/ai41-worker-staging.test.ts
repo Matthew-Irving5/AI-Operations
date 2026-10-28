@@ -75,6 +75,7 @@ test('AI41 runner accepts the visible scan form before the isolated device is pa
   const source = await readFile(new URL('./ai41-worker-staging.ts', import.meta.url), 'utf8');
   assert.match(source, /Launch scan',[\s\S]*?toHaveCount\(1\)/);
   assert.match(source, /devices\?ai41=\$\{randomUUID\(\)\}/);
+  assert.match(source, /Refresh worker status/);
 });
 
 test('worker result verifies identity and signature, then guards completed replay before writes', async () => {

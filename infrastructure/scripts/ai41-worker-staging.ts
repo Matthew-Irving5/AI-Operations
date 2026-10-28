@@ -263,6 +263,7 @@ export async function runWorkerAcceptance(raw: unknown) {
         async () => {
           // Bypass any edge/browser document cache so the just-recorded heartbeat is observed.
           await page.goto(`/devices?ai41=${randomUUID()}`, { waitUntil: 'networkidle' });
+          await page.getByRole('button', { name: 'Refresh worker status' }).click();
           return page
             .locator('article')
             .filter({ has: page.getByRole('heading', { name: first.label, exact: true }) })
