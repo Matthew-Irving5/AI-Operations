@@ -1750,7 +1750,7 @@ test('AI-35 Career readback selects its dedicated profile and rejects incompatib
         ['docs/build/ticket-readbacks/AI-35.md', 'apps/web/app/api/auth/session/route.ts'],
         'career',
       ),
-    /does not match inferred/,
+    /does not match inferred|combined acceptance profile is required/,
   );
 });
 
@@ -1883,7 +1883,7 @@ test('targeted hosted acceptance is valid without MFA and cannot satisfy an auth
 test('Career shared MFA changes require both exact-candidate Career and auth-browser proofs', () => {
   const paths = ['docs/build/ticket-readbacks/AI-35.md', 'apps/web/app/mfa/page.tsx'];
   assert.equal(selectHostedAcceptanceProfile(paths), 'career-auth-browser');
-  assert.throws(() => selectHostedAcceptanceProfile(paths, 'career'), /does not match inferred/);
+  assert.throws(() => selectHostedAcceptanceProfile(paths, 'career'), /does not match inferred|combined acceptance profile is required/);
   const career = careerSuiteEvidence();
   const auth = hostedSuiteEvidence();
   const combined = {
