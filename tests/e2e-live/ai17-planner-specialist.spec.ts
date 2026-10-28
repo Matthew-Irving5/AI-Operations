@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { parseLiveE2eEnvironment, stagingTarget } from '../../apps/web/lib/live-e2e-safety';
 import { resolveGitTreeSha } from '../../infrastructure/scripts/live-acceptance-evidence.js';
 
-const env = parseLiveE2eEnvironment(process.env, 'suite');
+const env = parseLiveE2eEnvironment(process.env, 'planner-specialist');
 const candidateSha = process.env.LIVE_E2E_CANDIDATE_SHA?.toLowerCase();
 const candidateTreeSha = process.env.LIVE_E2E_CANDIDATE_TREE_SHA?.toLowerCase();
 const pullRequestNumber = Number(process.env.LIVE_E2E_PULL_REQUEST_NUMBER);
