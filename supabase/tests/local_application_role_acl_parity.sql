@@ -67,7 +67,9 @@ WITH grants AS (
       to_regprocedure('public.resume_waiting_inter_agent_source()'),
       to_regprocedure('public.expire_inter_agent_requests(integer)'),
       to_regprocedure('public.create_conversation_handoff(jsonb)'),
-      to_regprocedure('public.resolve_conversation_handoff(uuid,uuid,text,text,uuid,timestamptz)')
+      to_regprocedure('public.resolve_conversation_handoff(uuid,uuid,text,text,uuid,timestamptz)'),
+      -- AI-17 Planner provider settlement is checked against its exact service_role grant.
+      to_regprocedure('public.complete_inter_agent_plan_with_queue(uuid,text,uuid,uuid,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)')
     )
 )
 SELECT is(

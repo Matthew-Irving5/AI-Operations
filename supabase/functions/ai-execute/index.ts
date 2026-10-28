@@ -20,6 +20,11 @@ import {
   loadTrustedWorkflowExecution,
   type WorkflowExecutionSource,
 } from "./orchestration-contract.ts";
+import {
+  isPlannerDelegationResume,
+  plannerDelegationTool,
+} from "../_shared/planner-delegation.ts";
+import { providerRequestId } from "./provider-request-id.ts";
 
 const service = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
@@ -388,6 +393,8 @@ async function executeAiWorkflow(
     );
   }
   const definitionConfig = definitionResult.data;
+  const plannerWorkflow = run.managerCode === "personal" &&
+    definition.code === "personal-on-demand-plan";
   const pendingReservation = await service.from("ai_calls")
     .select("id,status,response_id,request_id,prompt_version_id,model_id")
     .eq("run_id", run.id)
@@ -427,7 +434,10 @@ async function executeAiWorkflow(
     .from("prompt_templates")
     .select("id,active_version")
     .eq("manager_id", definitionConfig.manager_id)
-    .eq("code", "controlled-agent-report")
+    .eq(
+      "code",
+      plannerWorkflow ? "planner-agent-report" : "controlled-agent-report",
+    )
     .maybeSingle();
   if (promptResult.error || !promptResult.data?.active_version) {
     return outcomeFor(
@@ -668,9 +678,11 @@ async function executeAiWorkflow(
     };
   }
   const attemptResult = await service.from("job_queue")
-    .select("attempt_count")
+    .select("id,attempt_count,created_at")
     .eq("run_id", run.id)
     .eq("job_type", "workflow_execute")
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
   if (
     attemptResult.error || typeof attemptResult.data?.attempt_count !== "number"
@@ -678,7 +690,11 @@ async function executeAiWorkflow(
     return outcomeFor(run.id, "retryable_failure", "queue_attempt_unavailable");
   }
   const requestId = pendingReservation.data?.request_id ??
-    `ai15:${run.id}:attempt:${Math.max(1, attemptResult.data.attempt_count)}`;
+    providerRequestId(
+      run.id,
+      attemptResult.data.id,
+      attemptResult.data.attempt_count,
+    );
   const priorCallResult = pendingReservation.data
     ? { data: pendingReservation.data, error: null }
     : await service.from("ai_calls").select("id,status,response_id,request_id")
@@ -757,7 +773,12 @@ async function executeAiWorkflow(
           max_output_tokens: maximumOutputTokens,
           service_tier: "default",
           store: false,
-          tools: promptGovernance.toolPolicy.tools,
+          tools: [
+            ...promptGovernance.toolPolicy.tools,
+            ...(plannerWorkflow && !isPlannerDelegationResume(input)
+              ? [plannerDelegationTool]
+              : []),
+          ],
           text: {
             format: {
               type: "json_schema",

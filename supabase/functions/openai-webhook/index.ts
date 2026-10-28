@@ -6,6 +6,7 @@ import {
   redactedProviderUsage,
   validateReportOutput,
 } from "../_shared/openai-contract.ts";
+import { parsePlannerDelegationCall } from "../_shared/planner-delegation.ts";
 
 const service = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
@@ -342,6 +343,106 @@ Deno.serve(async (request) => {
     }
     await markEvent(eventId, "processed");
     return json({ accepted: true, reconciliation: "failed" });
+  }
+  const plannerDelegation = parsePlannerDelegationCall(
+    responseResult,
+    new Set(evidenceIds),
+  );
+  if (plannerDelegation.kind === "delegate") {
+    const runResult = await service.from("workflow_runs")
+      .select("id,status,workflow_definitions!inner(code,managers!inner(code))")
+      .eq("id", callData.run_id)
+      .maybeSingle();
+    const definition = Array.isArray(runResult.data?.workflow_definitions)
+      ? runResult.data.workflow_definitions[0]
+      : runResult.data?.workflow_definitions;
+    const manager = isRecord(definition) && Array.isArray(definition.managers)
+      ? definition.managers[0]
+      : isRecord(definition)
+      ? definition.managers
+      : null;
+    if (
+      runResult.error || !runResult.data ||
+      !["running", "waiting_for_dependency"].includes(runResult.data.status) ||
+      !isRecord(definition) || definition.code !== "personal-on-demand-plan" ||
+      !isRecord(manager) || manager.code !== "personal"
+    ) {
+      await markEvent(eventId, "processed");
+      return json({ code: "planner_delegation_run_invalid" }, 409);
+    }
+    const workerSecret = Deno.env.get("WORKER_SECRET");
+    if (!workerSecret) {
+      await markEvent(eventId, "retrying");
+      return json({ code: "planner_delegation_unavailable" }, 503);
+    }
+    const delegated = await service.functions.invoke("inter-agent-delegation", {
+      body: {
+        sourceRunId: callData.run_id,
+        destinationManagerCode: "travel",
+        destinationWorkflowCode: "travel-on-demand-plan",
+        objective: plannerDelegation.value.objective,
+        requiredOutputContract: {
+          type: "object",
+          additionalProperties: false,
+          required: ["summary", "itinerary", "constraints", "uncertainties"],
+          properties: {
+            summary: { type: "string" },
+            itinerary: { type: "array", items: { type: "object" } },
+            constraints: { type: "array", items: { type: "string" } },
+            uncertainties: { type: "array", items: { type: "string" } },
+          },
+        },
+        contextEvidenceIds: plannerDelegation.value.contextEvidenceIds,
+        priority: 2,
+        deadlineAt: null,
+        sourceMessageId: null,
+      },
+      headers: { "x-worker-secret": workerSecret },
+    });
+    const delegationData = isRecord(delegated.data) ? delegated.data : null;
+    if (
+      delegated.error || !delegationData ||
+      typeof delegationData.requestId !== "string" ||
+      !/^[0-9a-f-]{36}$/i.test(delegationData.requestId)
+    ) {
+      await markEvent(eventId, "retrying");
+      return json({ code: "planner_delegation_retry_required" }, 503);
+    }
+    const completedPlan = await service.rpc(
+      "complete_inter_agent_plan_with_queue",
+      {
+        p_job_id: providerJob.id,
+        p_response_id: responseId,
+        p_call_id: callData.id,
+        p_request_id: delegationData.requestId,
+        p_actual_cost: actualCost.data,
+        p_input_tokens: usage.input_tokens,
+        p_output_tokens: usage.output_tokens,
+        p_cached_input_tokens: usage.cached_input_tokens,
+        p_reasoning_tokens: usage.reasoning_tokens,
+        p_provider_usage: usage,
+        p_redacted_trace: {
+          request_id: callData.request_id,
+          response_id: responseId,
+          planner_delegation: true,
+          validation_passed: true,
+          background: true,
+        },
+      },
+    );
+    if (completedPlan.error || completedPlan.data !== true) {
+      await markEvent(eventId, "retrying");
+      return json(
+        { code: "planner_delegation_settlement_retry_required" },
+        500,
+      );
+    }
+    await markEvent(eventId, "processed");
+    return json({
+      accepted: true,
+      delegated: true,
+      requestId: delegationData.requestId,
+    });
   }
   if (!validated || !actionsAllowed) {
     const validationErrorCode = validated
