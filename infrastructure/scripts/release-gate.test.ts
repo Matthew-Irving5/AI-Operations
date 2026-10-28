@@ -1302,7 +1302,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /candidate_sha:/);
   assert.match(
     deployWorkflow,
-    /acceptance_profile:[\s\S]*options: \[auto, targeted, auth-browser, cost-runtime, archive-restore\]/,
+    /acceptance_profile:[\s\S]*options: \[auto, targeted, auth-browser, cost-runtime, planner-specialist, worker-protocol, procurement, career, career-auth-browser, mobile-shortcuts, mobile-shortcuts-action, archive-restore\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1507,7 +1507,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(
     deployWorkflow,
-    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "archive-restore" \]\]/,
+    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "archive-restore" \|\| "\$ACCEPTANCE_PROFILE" == "planner-specialist" \|\| "\$ACCEPTANCE_PROFILE" == "worker-protocol" \|\| "\$ACCEPTANCE_PROFILE" == "procurement" \|\| "\$ACCEPTANCE_PROFILE" == "career" \|\| "\$ACCEPTANCE_PROFILE" == "career-auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "mobile-shortcuts" \|\| "\$ACCEPTANCE_PROFILE" == "mobile-shortcuts-action" \]\]/,
   );
   assert.match(
     deployWorkflow,
