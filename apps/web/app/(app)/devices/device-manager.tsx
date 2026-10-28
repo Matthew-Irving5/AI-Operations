@@ -147,12 +147,6 @@ export function DeviceManager({
   }, [pairing]);
 
   useEffect(() => {
-    if (!isRefreshing && connectionCheckMessage === 'Refreshing worker heartbeat status…') {
-      setConnectionCheckMessage('Worker status refreshed.');
-    }
-  }, [connectionCheckMessage, isRefreshing]);
-
-  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const resume = params.get('resume');
     if (resume !== 'worker_register' && resume !== 'worker_revoke') return;
@@ -255,7 +249,10 @@ export function DeviceManager({
 
   function checkConnection() {
     setConnectionCheckMessage('Refreshing worker heartbeat status…');
-    startRefresh(() => router.refresh());
+    startRefresh(() => {
+      router.refresh();
+      setConnectionCheckMessage('Worker status refresh requested.');
+    });
   }
 
   return (
