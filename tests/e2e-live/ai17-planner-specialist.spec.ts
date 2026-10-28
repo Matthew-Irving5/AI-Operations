@@ -67,15 +67,15 @@ async function waitForJourney(runId: string): Promise<{
         { id: `eq.${runId}` },
         'id,status,correlation_id,idempotency_key',
       ),
-      serviceRows<SpecialistRequest>('inter_agent_requests', {
-        source_run_id: `eq.${runId}`,
-        destination_manager_code: 'eq.travel',
-      }, 'id,status,destination_run_id,result_reference,correlation_id'),
-      serviceRows<PersistedReport>(
-        'reports',
-        { run_id: `eq.${runId}` },
-        'id,run_id',
+      serviceRows<SpecialistRequest>(
+        'inter_agent_requests',
+        {
+          source_run_id: `eq.${runId}`,
+          destination_manager_code: 'eq.travel',
+        },
+        'id,status,destination_run_id,result_reference,correlation_id',
       ),
+      serviceRows<PersistedReport>('reports', { run_id: `eq.${runId}` }, 'id,run_id'),
     ]);
     const sourceRun = sourceRuns[0];
     const specialistRequest = requests[0];
@@ -88,15 +88,27 @@ async function waitForJourney(runId: string): Promise<{
     }
     if (specialistRequest?.status === 'completed' && sourceRun.status === 'succeeded') {
       const [specialistRuns, replies, specialistReports] = await Promise.all([
-        serviceRows<WorkflowRun>('workflow_runs', {
-          id: `eq.${specialistRequest.destination_run_id}`,
-        }, 'id,status,correlation_id,idempotency_key'),
-        serviceRows<SpecialistReply>('inter_agent_replies', {
-          request_id: `eq.${specialistRequest.id}`,
-        }, 'id,request_id,kind,result_reference,correlation_id'),
-        serviceRows<PersistedReport>('reports', {
-          run_id: `eq.${specialistRequest.destination_run_id}`,
-        }, 'id,run_id'),
+        serviceRows<WorkflowRun>(
+          'workflow_runs',
+          {
+            id: `eq.${specialistRequest.destination_run_id}`,
+          },
+          'id,status,correlation_id,idempotency_key',
+        ),
+        serviceRows<SpecialistReply>(
+          'inter_agent_replies',
+          {
+            request_id: `eq.${specialistRequest.id}`,
+          },
+          'id,request_id,kind,result_reference,correlation_id',
+        ),
+        serviceRows<PersistedReport>(
+          'reports',
+          {
+            run_id: `eq.${specialistRequest.destination_run_id}`,
+          },
+          'id,run_id',
+        ),
       ]);
       const specialistRun = specialistRuns[0];
       const specialistReply = replies[0];
