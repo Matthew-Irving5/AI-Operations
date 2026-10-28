@@ -1,4 +1,5 @@
 import { digitalEstateData } from '../../../lib/platform-data';
+import { workerStartCommand } from '../../../lib/worker-start-command';
 import { DeviceManager } from './device-manager';
 
 export default async function DevicesPage() {
@@ -20,6 +21,7 @@ export default async function DevicesPage() {
         devices={devices.data}
         scans={scans.data}
         currentTimeMs={new Date().getTime()}
+        workerStartCommand={workerStartCommand(process.env.APP_ENV)}
       />
     </>
   );

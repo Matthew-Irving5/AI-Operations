@@ -8,7 +8,8 @@ export default async function DigitalEstatePage() {
       <h1>Digital Estate</h1>
       <p className="notice">
         The Windows worker is outbound-only. It reads only approved roots, excludes sensitive and
-        work paths, and executes only fresh-MFA-approved signed manifests.
+        work paths, and executes only fresh-MFA-approved signed manifests. Keep the worker process
+        running on your PC while a scan is queued.
       </p>
       {(scans.error ?? devices.error) ? (
         <p className="notice" role="alert">
@@ -66,7 +67,7 @@ export default async function DigitalEstatePage() {
       ) : (
         <p className="card">
           No scan has been requested. Deep scans require an individual hard cap, selected approved
-          roots, and an online paired worker.
+        roots, and a connected paired worker.
         </p>
       )}
       <p className="card">

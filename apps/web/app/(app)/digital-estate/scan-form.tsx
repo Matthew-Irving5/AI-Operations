@@ -115,7 +115,7 @@ export function DigitalScanForm({ deviceId }: Readonly<{ deviceId: string }>) {
         setStatus(
           result?.replay
             ? 'This scan request was already queued; no duplicate was created.'
-            : 'Scan queued. The worker will collect it when online.',
+            : 'Scan queued. The connected worker will collect it shortly.',
         );
         return;
       }

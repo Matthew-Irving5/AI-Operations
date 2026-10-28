@@ -96,11 +96,24 @@ function errorText(body: ApiResult | null, status: number, stage: string) {
     .join(' | ');
 }
 
+function workerConnected(device: Device, currentTimeMs: number): boolean {
+  return device.state !== 'revoked' &&
+    Boolean(device.last_heartbeat_at) &&
+    Date.parse(device.last_heartbeat_at ?? '') >= currentTimeMs - 30 * 60_000 &&
+    device.health?.status.compatibility?.compatible === true;
+}
+
 export function DeviceManager({
   devices,
   scans,
   currentTimeMs,
-}: Readonly<{ devices: Device[]; scans: Scan[]; currentTimeMs: number }>) {
+  workerStartCommand,
+}: Readonly<{
+  devices: Device[];
+  scans: Scan[];
+  currentTimeMs: number;
+  workerStartCommand: string;
+}>) {
   const router = useRouter();
   const [label, setLabel] = useState('Windows PC');
   const [publicKey, setPublicKey] = useState('');
@@ -233,6 +246,19 @@ export function DeviceManager({
   return (
     <section className="stack" aria-label="Windows worker management">
       <article className="card">
+        <h2>Start your Windows worker</h2>
+        <p>
+          The website can queue a scan only while the paired worker process is running on your PC.
+          Run this command in PowerShell, then refresh worker status.
+        </p>
+        <pre aria-label="Worker start command">
+          <code>{workerStartCommand}</code>
+        </pre>
+        <button type="button" onClick={() => router.refresh()}>
+          Check connection
+        </button>
+      </article>
+      <article className="card">
         <h2>Register Windows worker</h2>
         <p>
           Generate the key locally with the signed worker release. Paste only its public key here.
@@ -288,13 +314,11 @@ export function DeviceManager({
         <article className="card" key={device.id}>
           <h2>{device.label}</h2>
           <p>
-            {device.state !== 'revoked' &&
-            device.last_heartbeat_at &&
-            Date.parse(device.last_heartbeat_at) >= currentTimeMs - 30 * 60_000
-              ? 'online'
-              : device.state === 'revoked'
-                ? 'revoked'
-                : 'offline'}
+            {device.state === 'revoked'
+              ? 'revoked'
+              : workerConnected(device, currentTimeMs)
+                ? 'connected'
+                : 'not connected — start the worker'}
             ; last heartbeat{' '}
             {device.last_heartbeat_at
               ? new Date(device.last_heartbeat_at).toLocaleString('en-GB', {
@@ -303,9 +327,8 @@ export function DeviceManager({
               : 'not received'}
             .
           </p>
-          {device.last_heartbeat_at &&
-          Date.parse(device.last_heartbeat_at) >= currentTimeMs - 30 * 60_000 ? (
-            <p role="status">Heartbeat received within the last 30 minutes.</p>
+          {workerConnected(device, currentTimeMs) ? (
+            <p role="status">Connection verified by a heartbeat within the last 30 minutes.</p>
           ) : null}
           {device.health_error ? (
             <p role="alert">Worker version and capability status could not be loaded.</p>
