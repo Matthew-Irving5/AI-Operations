@@ -7001,7 +7001,34 @@ export type Database = {
         };
         Returns: string;
       };
+      complete_canonical_action_execution: {
+        Args: {
+          p_claim_token: string;
+          p_execution_request_id: string;
+          p_idempotency_key: string;
+          p_receipt: Json;
+          p_request_fingerprint: string;
+          p_user_id: string;
+        };
+        Returns: Json;
+      };
       complete_deterministic_workflow_run: { Args: { p_run_id: string }; Returns: string };
+      complete_inter_agent_plan_with_queue: {
+        Args: {
+          p_actual_cost: number;
+          p_cached_input_tokens: number;
+          p_call_id: string;
+          p_input_tokens: number;
+          p_job_id: string;
+          p_output_tokens: number;
+          p_provider_usage: Json;
+          p_reasoning_tokens: number;
+          p_redacted_trace: Json;
+          p_request_id: string;
+          p_response_id: string;
+        };
+        Returns: boolean;
+      };
       complete_inter_agent_request: {
         Args: { p_completed_at: string; p_reply: Json; p_request_id: string; p_status: string };
         Returns: Json;
@@ -7431,6 +7458,10 @@ export type Database = {
           p_step_code: string;
         };
         Returns: undefined;
+      };
+      request_canonical_action_reversal: {
+        Args: { p_idempotency_key: string; p_original_receipt_id: string };
+        Returns: Json;
       };
       reserve_instrumented_ai_call: {
         Args: {
