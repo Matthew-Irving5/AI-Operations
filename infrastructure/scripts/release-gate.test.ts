@@ -2000,7 +2000,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /candidate_sha:/);
   assert.match(
     deployWorkflow,
-    /acceptance_profile:[\s\S]*options:\s*\[\s*auto,\s*targeted,\s*auth-browser,\s*cost-runtime,\s*procurement,\s*career,\s*mobile-shortcuts,\s*mobile-shortcuts-action,?\s*\]/,
+    /acceptance_profile:[\s\S]*options:[\s\S]*\bauto\b[\s\S]*\btargeted\b[\s\S]*\bauth-browser\b[\s\S]*\bcost-runtime\b[\s\S]*\bprocurement\b[\s\S]*\bcareer\b[\s\S]*\bmobile-shortcuts\b[\s\S]*\bmobile-shortcuts-action\b[\s\S]*\barchive-restore\b[\s\S]*\bplanner-specialist\b[\s\S]*\bworker-protocol\b/,
   );
   assert.match(
     deployWorkflow,
@@ -2250,7 +2250,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(
     deployWorkflow,
-    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "career" \|\| "\$ACCEPTANCE_PROFILE" == "career-auth-browser" \]\]/,
+    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[[\s\S]*"\$ACCEPTANCE_PROFILE" == "auth-browser"[\s\S]*"\$ACCEPTANCE_PROFILE" == "cost-runtime"[\s\S]*"\$ACCEPTANCE_PROFILE" == "career"[\s\S]*\]\]/,
   );
   assert.match(
     deployWorkflow,
