@@ -9,6 +9,10 @@ import {
   CareerStagingAcceptanceEvidenceSchema,
 } from './career-staging-acceptance-evidence.js';
 import { Ai20CostRuntimeProofSchema } from './ai20-cost-runtime-proof.js';
+import {
+  CareerStagingAcceptanceChecksSchema,
+  CareerStagingAcceptanceEvidenceSchema,
+} from './career-staging-acceptance-evidence.js';
 
 const ShaSchema = z
   .string()
@@ -466,6 +470,8 @@ const AcceptanceEvidenceSchema = z
     mobileEvidence: MobileShortcutStagingEvidenceSchema.optional(),
     promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
     costRuntimeProof: Ai20CostRuntimeProofSchema.optional(),
+    careerEvidence: CareerStagingAcceptanceEvidenceSchema.optional(),
+    authBrowserEvidence: z.lazy(() => AuthBrowserStagingSuiteEvidenceSchema).optional(),
     correlationIds: z.array(SafeIdSchema).max(20),
     workflowRuns: Ai15WorkflowProofsSchema.optional(),
     acceptedAt: z.string().datetime({ offset: true }),
@@ -1115,7 +1121,6 @@ export function selectHostedAcceptanceProfile(
               ? 'auth-browser'
               : 'targeted';
 }
-
 export function createHostedStagingSuiteEvidence(input: unknown): HostedStagingSuiteEvidence {
   return parseEvidence(
     HostedStagingSuiteEvidenceSchema,

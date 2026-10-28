@@ -2250,7 +2250,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(
     deployWorkflow,
-    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \]\]/,
+    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "career" \|\| "\$ACCEPTANCE_PROFILE" == "career-auth-browser" \]\]/,
   );
   assert.match(
     deployWorkflow,
@@ -2525,6 +2525,75 @@ test('AI-39 procurement selection binds a dedicated profile to its ticket marker
         'auto',
       ),
     /Candidate requires both ticket-specific and generic auth-browser proof/,
+  );
+});
+
+test('AI-35 Career readback selects its dedicated profile and rejects incompatible auth proof', () => {
+  assert.equal(
+    selectHostedAcceptanceProfile([
+      'docs/build/ticket-readbacks/AI-35.md',
+      'apps/web/app/(app)/career/page.tsx',
+      'supabase/functions/github-career-sync/index.ts',
+    ]),
+    'career',
+  );
+  assert.equal(
+    selectHostedAcceptanceProfile(['tests/e2e-live/career-acceptance.spec.ts'], 'career'),
+    'career',
+  );
+  assert.throws(
+    () => selectHostedAcceptanceProfile(['docs/testing/local-autonomous-qa.md'], 'career'),
+    /AI-35 readback or dedicated acceptance spec marker/,
+  );
+  assert.throws(
+    () =>
+      selectHostedAcceptanceProfile(
+        ['docs/build/ticket-readbacks/AI-35.md', 'apps/web/app/api/auth/session/route.ts'],
+        'career',
+      ),
+    /does not match inferred/,
+  );
+});
+
+test('AI-35 Career runner evidence converts through staging status into the strict acceptance consumer', () => {
+  const hostedSuite = createHostedStagingSuiteEvidence(careerSuiteEvidence());
+  const status = createStagingAcceptanceStatus({
+    candidateSha,
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    state: 'success',
+    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'career' }),
+    hostedSuite,
+  });
+
+  assert.equal(status.status.state, 'success');
+  assert.equal(status.acceptance?.acceptanceProfile, 'career');
+  assert.deepEqual(status.acceptance?.careerEvidence, hostedSuite);
+  assert.ok(status.acceptance);
+  const accepted = acceptStagingCandidate({
+    ready: ready(),
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    acceptance: status.acceptance,
+  });
+  assert.equal(accepted.state, 'STAGING_ACCEPTED');
+  assert.equal(accepted.acceptanceProfile, 'career');
+  assert.deepEqual(accepted.careerEvidence, hostedSuite);
+
+  assert.throws(
+    () =>
+      acceptStagingCandidate({
+        ready: ready(),
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        acceptance: careerSuiteEvidence() as unknown as Parameters<
+          typeof acceptStagingCandidate
+        >[0]['acceptance'],
+      }),
+    /invalid_evidence/,
   );
 });
 

@@ -119,6 +119,32 @@ async function main(): Promise<void> {
   );
   results.push(await check('pnpm/Corepack', () => run('corepack', ['pnpm', '--version'])));
   results.push(
+    await check('Web runtime install', () => {
+      const manifest = JSON.parse(readFileSync('apps/web/package.json', 'utf8')) as {
+        dependencies?: { next?: string };
+      };
+      const expected = manifest.dependencies?.next;
+      if (!expected) throw new Error('apps/web/package.json does not declare Next.js');
+
+      let installed = installedNextVersion();
+      if (!isInstalledNextVersionCurrent(expected, installed)) {
+        if (!fix || ci) {
+          throw new Error(
+            `Next.js version mismatch: expected ${expected}, found ${installed ?? 'missing'}; rerun pnpm qa:doctor --fix`,
+          );
+        }
+        run('corepack', ['pnpm', 'install', '--frozen-lockfile'], 300_000);
+        installed = installedNextVersion();
+      }
+      if (!isInstalledNextVersionCurrent(expected, installed)) {
+        throw new Error(
+          `Next.js version mismatch after frozen install: expected ${expected}, found ${installed ?? 'missing'}`,
+        );
+      }
+      return `Next.js ${installed} matches the declared version`;
+    }),
+  );
+  results.push(
     await check('GitHub/repository', () => {
       const repo = JSON.parse(run('gh', ['repo', 'view', '--json', 'nameWithOwner'])) as {
         nameWithOwner?: string;
