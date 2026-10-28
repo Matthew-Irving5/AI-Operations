@@ -18,7 +18,22 @@ on:
         required: false
         default: auto
         type: choice
-        options: [auto, targeted, auth-browser, cost-runtime, google-oauth, procurement, career, career-auth-browser, mobile-shortcuts, mobile-shortcuts-action, archive-restore, planner-specialist, worker-protocol]
+        options:
+          [
+            auto,
+            targeted,
+            auth-browser,
+            cost-runtime,
+            google-oauth,
+            procurement,
+            career,
+            career-auth-browser,
+            mobile-shortcuts,
+            mobile-shortcuts-action,
+            archive-restore,
+            planner-specialist,
+            worker-protocol,
+          ]
       deployment_run_id:
         description: Successful candidate deployment run ID; required for acceptance.
         required: false
