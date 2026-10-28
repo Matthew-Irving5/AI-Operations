@@ -1,0 +1,3 @@
+-- Compatibility marker for the already-applied AI-17 planner specialist migration.
+-- The AI-17 implementation is owned by its candidate; this marker preserves
+-- migration history for DB-03 preflight without replaying unrelated feature DDL.

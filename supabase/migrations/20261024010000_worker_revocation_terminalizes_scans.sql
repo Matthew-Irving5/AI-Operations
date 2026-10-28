@@ -1,0 +1,3 @@
+-- Compatibility marker for the already-applied AI-41 worker revocation migration.
+-- The AI-41 implementation is owned by its candidate; this marker preserves
+-- migration history for DB-03 preflight without replaying unrelated feature DDL.

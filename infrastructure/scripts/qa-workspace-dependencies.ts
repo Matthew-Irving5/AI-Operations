@@ -15,6 +15,11 @@ export const localSupabaseWorkspaceFiles = [
   'packages/ai-runtime/src/manager-eval-fixtures.ts',
   'packages/observability/src/index.ts',
   'packages/test-fixtures/src/agent-runtime.ts',
+  'packages/manager-core/src/delegation.ts',
+  'packages/manager-core/src/delegation-runtime.ts',
+  'packages/manager-core/src/delegation-persistence.ts',
+  'packages/manager-core/src/handoff-runtime.ts',
+  'packages/manager-core/src/handoff-persistence.ts',
 ] as const;
 
 export function copyLocalSupabaseWorkspaceFiles(

@@ -3,13 +3,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { parsePublicEnvironment } from './lib/env';
 import { assertLocalTestAuthEnvironment } from './lib/local-test-auth';
 
-const contentSecurityPolicy = (nonce: string) =>
+export const contentSecurityPolicy = (nonce: string) =>
   [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://apis.google.com https://accounts.google.com`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data:",
-    "connect-src 'self' https://*.supabase.co",
+    "connect-src 'self' https://*.supabase.co https://www.googleapis.com https://accounts.google.com",
+    "frame-src 'self' https://docs.google.com https://accounts.google.com",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",

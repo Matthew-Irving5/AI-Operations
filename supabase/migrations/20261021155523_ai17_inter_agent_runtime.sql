@@ -1,0 +1,3 @@
+-- Compatibility marker for the already-applied AI-17 inter-agent runtime migration.
+-- The AI-17 implementation is owned by its candidate; this marker preserves
+-- migration history for DB-03 preflight without replaying unrelated feature DDL.

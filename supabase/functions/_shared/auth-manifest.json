@@ -186,6 +186,22 @@
       "rationale": "The queue worker calls this endpoint without a user JWT."
     },
     {
+      "slug": "inter-agent-delegation",
+      "authMode": "worker_secret",
+      "verifyJwt": false,
+      "principal": "internal orchestration worker",
+      "identitySource": "configured worker secret",
+      "rationale": "Inter-agent delegation is an internal worker boundary and never accepts a browser JWT."
+    },
+    {
+      "slug": "inter-agent-handoff",
+      "authMode": "worker_secret",
+      "verifyJwt": false,
+      "principal": "internal orchestration worker",
+      "identitySource": "configured worker secret",
+      "rationale": "Inter-agent handoff is an internal worker boundary and never accepts a browser JWT."
+    },
+    {
       "slug": "manager-list",
       "authMode": "user_jwt",
       "verifyJwt": true,
