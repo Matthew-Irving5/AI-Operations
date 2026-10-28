@@ -237,7 +237,7 @@ test('AI-17 completes one candidate-bound Planner-to-Travel journey @ai17-planne
     testInfo.outputPath('ai17-planner-specialist-acceptance.json');
   const evidence = {
     schemaVersion: 1,
-    state: 'AI17_PLANNER_SPECIALIST_ACCEPTED',
+    state: 'PLANNER_SPECIALIST_STAGING_ACCEPTED',
     ticket: 'AI-17',
     candidateSha,
     candidateTreeSha,
