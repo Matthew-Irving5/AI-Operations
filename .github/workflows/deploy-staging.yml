@@ -24,6 +24,8 @@ on:
             targeted,
             auth-browser,
             cost-runtime,
+            planner-specialist,
+            worker-protocol,
             procurement,
             career,
             career-auth-browser,
