@@ -269,7 +269,7 @@ export async function runWorkerAcceptance(raw: unknown) {
             .filter({ has: page.getByRole('heading', { name: first.label, exact: true }) })
             .textContent();
         },
-        { timeout: 90_000 },
+        { timeout: 90_000, intervals: [2_000, 3_000, 5_000] },
       )
       .toContain('Compatibility: supported');
     const card = page
@@ -291,13 +291,13 @@ export async function runWorkerAcceptance(raw: unknown) {
     await expect
       .poll(
         async () => {
-          await page.goto('/devices');
+          await page.getByRole('button', { name: 'Refresh worker status' }).click();
           return page
             .locator('article')
             .filter({ has: page.getByRole('heading', { name: first.label, exact: true }) })
             .textContent();
         },
-        { timeout: 90_000 },
+        { timeout: 90_000, intervals: [2_000, 3_000, 5_000] },
       )
       .toContain('Verified smoke scan complete');
     await expect
