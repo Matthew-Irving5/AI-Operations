@@ -17,6 +17,12 @@ Deno.test("workflow mode is allowlisted and manager-bound", () => {
     throw new Error("expected_deterministic_workflow");
   }
   if (
+    resolveWorkflowMode("procurement", "procurement-on-demand-research") !==
+      "ai"
+  ) {
+    throw new Error("procurement_must_use_governed_live_research");
+  }
+  if (
     resolveWorkflowMode("finance", "systems-weekly-quality-platform") !== null
   ) {
     throw new Error("manager_mismatch_must_fail_closed");

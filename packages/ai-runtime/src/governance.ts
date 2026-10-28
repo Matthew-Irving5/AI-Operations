@@ -1,5 +1,6 @@
 import { evaluateGoldenCase } from './eval.ts';
 import { managerEvalFixtures } from './manager-eval-fixtures.ts';
+import { procurementResearchOutputJsonSchema } from '@ai-operations/contracts';
 
 export type ToolPolicy = Readonly<{
   version: number;
@@ -122,7 +123,7 @@ export function canPromotePrompt(evaluation: unknown): evaluation is PromptEvalu
 
 const allowedModelRoutes = new Set(['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol']);
 
-const allowedToolTypes = new Set(['function']);
+const allowedToolTypes = new Set(['function', 'web_search']);
 const allowedToolNames = new Set<string>();
 
 export function validatePromptGovernance(value: unknown): value is PromptGovernance {
@@ -139,14 +140,12 @@ export function validatePromptGovernance(value: unknown): value is PromptGoverna
     !Array.isArray(value.toolPolicy.tools)
   )
     return false;
-  return value.toolPolicy.tools.every(
-    (tool: unknown) =>
-      isRecord(tool) &&
-      typeof tool.type === 'string' &&
-      allowedToolTypes.has(tool.type) &&
-      typeof tool.name === 'string' &&
-      allowedToolNames.has(tool.name),
-  );
+  return value.toolPolicy.tools.every((tool: unknown) => {
+    if (!isRecord(tool) || typeof tool.type !== 'string' || !allowedToolTypes.has(tool.type))
+      return false;
+    if (tool.type === 'web_search') return tool.name === 'web_search';
+    return typeof tool.name === 'string' && allowedToolNames.has(tool.name);
+  });
 }
 
 export function validateStrictOutputSchema(value: unknown): boolean {
@@ -264,6 +263,21 @@ export function validateReportOutputSchema(value: unknown): boolean {
     isStringSchema(sectionProperties.title) &&
     isStringSchema(sectionProperties.content)
   );
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (isRecord(value)) {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'undefined';
+}
+
+export function validateProcurementResearchOutputSchema(value: unknown): boolean {
+  return canonicalJson(value) === canonicalJson(procurementResearchOutputJsonSchema);
 }
 
 function visitSchema(value: unknown): boolean {

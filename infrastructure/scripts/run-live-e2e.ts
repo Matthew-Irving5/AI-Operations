@@ -5,6 +5,11 @@ import { parseLiveE2eEnvironment, stagingTarget } from '../../apps/web/lib/live-
 import { assertAi20CostRuntimeReadiness } from './ai20-cost-runtime-staging.js';
 import { createHostedStagingSuiteEvidence } from './release-gate.js';
 import { resolveGitTreeSha } from './live-acceptance-evidence.js';
+import { ProcurementStagingAcceptanceEvidenceSchema } from './procurement-live-acceptance.js';
+import {
+  procurementEvidenceColumns,
+  readProcurementStagingRows,
+} from './procurement-staging-reader.js';
 
 async function containsFailureArtifacts(directory: string): Promise<boolean> {
   let entries;
@@ -29,12 +34,13 @@ async function main(): Promise<void> {
     mode !== 'suite' &&
     mode !== 'auth-acceptance' &&
     mode !== 'cost-acceptance' &&
+    mode !== 'procurement-acceptance' &&
     mode !== 'fixtures' &&
     mode !== 'fixture-mismatch' &&
     mode !== 'mismatch'
   ) {
     throw new Error(
-      'Choose one live E2E mode: suite, auth-acceptance, cost-acceptance, fixtures, fixture-mismatch, or mismatch.',
+      'Choose one live E2E mode: suite, auth-acceptance, cost-acceptance, procurement-acceptance, fixtures, fixture-mismatch, or mismatch.',
     );
   }
 
@@ -69,7 +75,10 @@ async function main(): Promise<void> {
   }
 
   if (
-    (mode === 'suite' || mode === 'auth-acceptance' || mode === 'cost-acceptance') &&
+    (mode === 'suite' ||
+      mode === 'auth-acceptance' ||
+      mode === 'cost-acceptance' ||
+      mode === 'procurement-acceptance') &&
     process.env.LIVE_E2E_MANUAL_MFA !== 'true'
   ) {
     throw new Error(
@@ -84,7 +93,12 @@ async function main(): Promise<void> {
   let acceptanceDeploymentRunId: string | undefined;
   let acceptanceCandidateTreeSha: string | undefined;
   let acceptancePullRequestNumber: number | undefined;
-  if (mode === 'suite' || mode === 'auth-acceptance' || mode === 'cost-acceptance') {
+  if (
+    mode === 'suite' ||
+    mode === 'auth-acceptance' ||
+    mode === 'cost-acceptance' ||
+    mode === 'procurement-acceptance'
+  ) {
     acceptanceCandidateSha = process.env.LIVE_E2E_CANDIDATE_SHA;
     acceptanceDeploymentRunId = process.env.LIVE_E2E_DEPLOYMENT_RUN_ID;
     acceptanceCandidateTreeSha = process.env.LIVE_E2E_CANDIDATE_TREE_SHA;
@@ -137,7 +151,7 @@ async function main(): Promise<void> {
       process.env.LIVE_E2E_ACCEPTANCE_OUTPUT_PATH = acceptanceOutputPath;
     }
   }
-  if (mode === 'auth-acceptance') {
+  if (mode === 'auth-acceptance' || mode === 'procurement-acceptance') {
     const profileQuery = new URLSearchParams({ select: 'id,is_allowed', is_allowed: 'eq.true' });
     if (env.LIVE_E2E_EMAIL) profileQuery.set('email', `eq.${env.LIVE_E2E_EMAIL}`);
     const profileResponse = await fetch(
@@ -155,6 +169,17 @@ async function main(): Promise<void> {
     if (profiles.length !== 1 || !profiles[0]?.is_allowed)
       throw new Error('The allowlisted staging profile is missing or ambiguous.');
     process.env.LIVE_E2E_USER_ID = profiles[0].id;
+    if (mode === 'procurement-acceptance') {
+      await readProcurementStagingRows(
+        new URLSearchParams({
+          select: procurementEvidenceColumns,
+          user_id: `eq.${profiles[0].id}`,
+          manager_code: 'eq.procurement',
+          id: 'eq.00000000-0000-4000-8000-000000000000',
+          limit: '2',
+        }),
+      );
+    }
     process.stdout.write(
       'Staging auth prerequisite passed: one allowlisted user selected; owned schedules will be read through the authenticated UI.\n',
     );
@@ -308,13 +333,15 @@ async function main(): Promise<void> {
 
   try {
     const acceptanceSpecs =
-      mode === 'auth-acceptance'
-        ? ['tests/e2e-live/auth-acceptance.spec.ts']
-        : mode === 'cost-acceptance'
-          ? ['tests/e2e-live/staging.spec.ts', '--grep=@ai20-cost-runtime-acceptance']
-          : mode === 'suite'
-            ? ['tests/e2e-live/staging.spec.ts', '--grep=@ai16-ai19-acceptance']
-            : [];
+      mode === 'procurement-acceptance'
+        ? ['tests/e2e-live/procurement-acceptance.spec.ts']
+        : mode === 'auth-acceptance'
+          ? ['tests/e2e-live/auth-acceptance.spec.ts']
+          : mode === 'cost-acceptance'
+            ? ['tests/e2e-live/staging.spec.ts', '--grep=@ai20-cost-runtime-acceptance']
+            : mode === 'suite'
+              ? ['tests/e2e-live/staging.spec.ts', '--grep=@ai16-ai19-acceptance']
+              : [];
     const liveArgs = [
       'pnpm',
       'exec',
@@ -336,7 +363,10 @@ async function main(): Promise<void> {
       acceptancePullRequestNumber
     ) {
       const rawEvidence: unknown = JSON.parse(await readFile(acceptanceOutputPath, 'utf8'));
-      const evidence = createHostedStagingSuiteEvidence(rawEvidence);
+      const evidence =
+        mode === 'procurement-acceptance'
+          ? ProcurementStagingAcceptanceEvidenceSchema.parse(rawEvidence)
+          : createHostedStagingSuiteEvidence(rawEvidence);
       if (evidence.candidateSha !== acceptanceCandidateSha)
         throw new Error(
           'Hosted acceptance evidence candidate SHA did not match the requested candidate.',

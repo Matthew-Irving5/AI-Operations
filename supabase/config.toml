@@ -9,6 +9,7 @@ verify_jwt = false
 verify_jwt = false
 [functions.openai-webhook]
 verify_jwt = false
+import_map = "./functions/deno.json"
 
 [functions.ai-execute]
 verify_jwt = false
@@ -20,6 +21,7 @@ verify_jwt = false
 verify_jwt = true
 [functions.workflow-launch]
 verify_jwt = true
+import_map = "./functions/deno.json"
 [functions.feedback-submit]
 verify_jwt = true
 import_map = "./functions/deno.json"
@@ -170,3 +172,4 @@ max_enrolled_factors = 1
 [functions.prompt-governance]
 enabled = true
 verify_jwt = true
+import_map = "./functions/deno.json"

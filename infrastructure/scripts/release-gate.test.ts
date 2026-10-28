@@ -1301,7 +1301,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /candidate_sha:/);
   assert.match(
     deployWorkflow,
-    /acceptance_profile:[\s\S]*options: \[auto, targeted, auth-browser, cost-runtime, career, career-auth-browser\]/,
+    /acceptance_profile:[\s\S]*options:[\s\S]*\bauto\b[\s\S]*\btargeted\b[\s\S]*\bauth-browser\b[\s\S]*\bcost-runtime\b[\s\S]*\bcareer\b[\s\S]*\bcareer-auth-browser\b[\s\S]*\bprocurement\b[\s\S]*\bmobile-shortcuts\b[\s\S]*\bmobile-shortcuts-action\b[\s\S]*\barchive-restore\b[\s\S]*\bplanner-specialist\b[\s\S]*\bworker-protocol\b/,
   );
   assert.match(
     deployWorkflow,
@@ -1506,7 +1506,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(
     deployWorkflow,
-    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "career" \|\| "\$ACCEPTANCE_PROFILE" == "career-auth-browser" \]\]/,
+    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[[\s\S]*"\$ACCEPTANCE_PROFILE" == "auth-browser"[\s\S]*"\$ACCEPTANCE_PROFILE" == "cost-runtime"[\s\S]*"\$ACCEPTANCE_PROFILE" == "procurement"[\s\S]*\]\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1664,6 +1664,24 @@ test('AI-20 readback selects cost-runtime and cannot silently downgrade to auth-
   );
 });
 
+test('AI-39 readback selects the independent Procurement profile despite shared auth routes', () => {
+  const readback = 'docs/build/ticket-readbacks/AI-39.md';
+  assert.equal(selectHostedAcceptanceProfile([readback]), 'procurement');
+  assert.equal(
+    selectHostedAcceptanceProfile([readback, 'apps/web/app/api/workflows/launch/route.ts']),
+    'procurement',
+  );
+  assert.equal(selectHostedAcceptanceProfile([readback], 'procurement'), 'procurement');
+  assert.throws(
+    () => selectHostedAcceptanceProfile([readback], 'targeted'),
+    /does not match inferred 'procurement'/,
+  );
+  assert.throws(
+    () => selectHostedAcceptanceProfile([readback, 'docs/build/ticket-readbacks/AI-20.md']),
+    /cannot share one acceptance profile/,
+  );
+});
+
 test('AI-20 producer proof passes the hosted validator and becomes candidate-bound accepted status', () => {
   for (const humanMfa of ['not-required', 'user-completed'] as const) {
     const produced = createAi20CostRuntimeProof(ai20CostRuntimeEvidence({ humanMfa }));
@@ -1732,7 +1750,7 @@ test('AI-35 Career readback selects its dedicated profile and rejects incompatib
         ['docs/build/ticket-readbacks/AI-35.md', 'apps/web/app/api/auth/session/route.ts'],
         'career',
       ),
-    /does not match inferred/,
+    /does not match inferred|combined acceptance profile is required/,
   );
 });
 
@@ -1775,6 +1793,19 @@ test('AI-35 Career runner evidence converts through staging status into the stri
         >[0]['acceptance'],
       }),
     /invalid_evidence/,
+  );
+});
+
+test('AI-39 live acceptance command runs only its dedicated headed proof', async () => {
+  const runner = await readFile(new URL('./run-live-e2e.ts', import.meta.url), 'utf8');
+  const manifest = JSON.parse(
+    await readFile(new URL('../../package.json', import.meta.url), 'utf8'),
+  ) as { scripts?: Record<string, string> };
+  assert.match(runner, /mode === 'procurement-acceptance'/);
+  assert.match(runner, /tests\/e2e-live\/procurement-acceptance\.spec\.ts/);
+  assert.equal(
+    manifest.scripts?.['test:e2e:live:procurement-acceptance'],
+    'node --env-file-if-exists=.env --import tsx infrastructure/scripts/run-live-e2e.ts procurement-acceptance',
   );
 });
 
@@ -1852,7 +1883,10 @@ test('targeted hosted acceptance is valid without MFA and cannot satisfy an auth
 test('Career shared MFA changes require both exact-candidate Career and auth-browser proofs', () => {
   const paths = ['docs/build/ticket-readbacks/AI-35.md', 'apps/web/app/mfa/page.tsx'];
   assert.equal(selectHostedAcceptanceProfile(paths), 'career-auth-browser');
-  assert.throws(() => selectHostedAcceptanceProfile(paths, 'career'), /does not match inferred/);
+  assert.throws(
+    () => selectHostedAcceptanceProfile(paths, 'career'),
+    /does not match inferred|combined acceptance profile is required/,
+  );
   const career = careerSuiteEvidence();
   const auth = hostedSuiteEvidence();
   const combined = {

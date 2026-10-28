@@ -4899,6 +4899,7 @@ export type Database = {
         Row: {
           completed_at: string | null;
           created_at: string;
+          decision_record: Json | null;
           hard_cap_minor: number;
           id: string;
           manager_code: string;
@@ -4906,14 +4907,17 @@ export type Database = {
           report_id: string | null;
           request: NonNullable<Json>;
           reserved_minor: number;
+          revises_research_run_id: string | null;
           search_limit: number;
           searches_used: number;
           status: string;
           user_id: string;
+          workflow_run_id: string | null;
         };
         Insert: {
           completed_at?: string | null;
           created_at?: string;
+          decision_record?: Json | null;
           hard_cap_minor: number;
           id?: string;
           manager_code: string;
@@ -4921,14 +4925,17 @@ export type Database = {
           report_id?: string | null;
           request: NonNullable<Json>;
           reserved_minor?: number;
+          revises_research_run_id?: string | null;
           search_limit: number;
           searches_used?: number;
           status?: string;
           user_id: string;
+          workflow_run_id?: string | null;
         };
         Update: {
           completed_at?: string | null;
           created_at?: string;
+          decision_record?: Json | null;
           hard_cap_minor?: number;
           id?: string;
           manager_code?: string;
@@ -4936,10 +4943,12 @@ export type Database = {
           report_id?: string | null;
           request?: NonNullable<Json>;
           reserved_minor?: number;
+          revises_research_run_id?: string | null;
           search_limit?: number;
           searches_used?: number;
           status?: string;
           user_id?: string;
+          workflow_run_id?: string | null;
         };
         Relationships: [
           {
@@ -4950,10 +4959,24 @@ export type Database = {
             referencedColumns: ['id'];
           },
           {
+            foreignKeyName: 'on_demand_research_runs_revises_research_run_id_fkey';
+            columns: ['revises_research_run_id'];
+            isOneToOne: false;
+            referencedRelation: 'on_demand_research_runs';
+            referencedColumns: ['id'];
+          },
+          {
             foreignKeyName: 'on_demand_research_runs_user_id_fkey';
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'app_users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'on_demand_research_runs_workflow_run_id_fkey';
+            columns: ['workflow_run_id'];
+            isOneToOne: false;
+            referencedRelation: 'workflow_runs';
             referencedColumns: ['id'];
           },
         ];
@@ -5241,10 +5264,13 @@ export type Database = {
       };
       procurement_recommendations: {
         Row: {
+          candidate_id: string | null;
           citations: NonNullable<Json>;
           compliance_passed: boolean;
           created_at: string;
           currency: string | null;
+          decision_rank: number | null;
+          details: NonNullable<Json>;
           id: string;
           recommendation_kind: string;
           research_run_id: string;
@@ -5256,10 +5282,13 @@ export type Database = {
           warranty_summary: string | null;
         };
         Insert: {
+          candidate_id?: string | null;
           citations: NonNullable<Json>;
           compliance_passed: boolean;
           created_at?: string;
           currency?: string | null;
+          decision_rank?: number | null;
+          details?: NonNullable<Json>;
           id?: string;
           recommendation_kind: string;
           research_run_id: string;
@@ -5271,10 +5300,13 @@ export type Database = {
           warranty_summary?: string | null;
         };
         Update: {
+          candidate_id?: string | null;
           citations?: NonNullable<Json>;
           compliance_passed?: boolean;
           created_at?: string;
           currency?: string | null;
+          decision_rank?: number | null;
+          details?: NonNullable<Json>;
           id?: string;
           recommendation_kind?: string;
           research_run_id?: string;
@@ -6928,6 +6960,33 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      commit_instrumented_ai_procurement_report_with_queue: {
+        Args: {
+          p_actions: Json;
+          p_actual_cost: number;
+          p_cached_input_tokens: number;
+          p_call_id: string;
+          p_decision: Json;
+          p_input_tokens: number;
+          p_job_id: string;
+          p_markdown: string;
+          p_notification_policy: string;
+          p_output_tokens: number;
+          p_provider_usage: Json;
+          p_reasoning_tokens: number;
+          p_redacted_trace: Json;
+          p_report_type: string;
+          p_response_id: string;
+          p_run_id: string;
+          p_search_calls: number;
+          p_sections: Json;
+          p_sources: Json;
+          p_structured_metrics: Json;
+          p_summary: string;
+          p_title: string;
+        };
+        Returns: string;
+      };
       commit_instrumented_ai_report: {
         Args: {
           p_actions: Json;
@@ -6982,6 +7041,16 @@ export type Database = {
           p_user_id: string;
         };
         Returns: Json;
+      };
+      commit_procurement_decision: {
+        Args: {
+          p_decision: Json;
+          p_report_id: string;
+          p_run_id: string;
+          p_search_calls: number;
+          p_sources: Json;
+        };
+        Returns: string;
       };
       complete_deterministic_workflow_run: { Args: { p_run_id: string }; Returns: string };
       complete_job_queue:
@@ -7170,6 +7239,20 @@ export type Database = {
           id: string;
           version: number;
         }[];
+      };
+      create_procurement_revision_request: {
+        Args: {
+          p_hard_cap: number;
+          p_idempotency_key: string;
+          p_manager_code: string;
+          p_model_ceiling: string;
+          p_request: Json;
+          p_revises_research_run_id: string;
+          p_search_ceiling: number;
+          p_user_id: string;
+          p_workflow_id: string;
+        };
+        Returns: string;
       };
       create_worker_device_from_mfa_gate: {
         Args: {
