@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { WorkerDevice } from '../../../lib/platform-data';
 
@@ -117,9 +117,11 @@ export function DeviceManager({
   workerStartCommand: string;
 }>) {
   const router = useRouter();
+  const [isRefreshing, startRefresh] = useTransition();
   const [label, setLabel] = useState('Windows PC');
   const [publicKey, setPublicKey] = useState('');
   const [message, setMessage] = useState('');
+  const [connectionCheckMessage, setConnectionCheckMessage] = useState('');
   const [pairing, setPairing] = useState<{
     deviceId: string;
     code: string;
@@ -143,6 +145,12 @@ export function DeviceManager({
       window.clearInterval(interval);
     };
   }, [pairing]);
+
+  useEffect(() => {
+    if (!isRefreshing && connectionCheckMessage === 'Refreshing worker heartbeat status…') {
+      setConnectionCheckMessage('Worker status refreshed.');
+    }
+  }, [connectionCheckMessage, isRefreshing]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -245,6 +253,11 @@ export function DeviceManager({
     );
   }
 
+  function checkConnection() {
+    setConnectionCheckMessage('Refreshing worker heartbeat status…');
+    startRefresh(() => router.refresh());
+  }
+
   return (
     <section className="stack" aria-label="Windows worker management">
       <article className="card">
@@ -256,9 +269,15 @@ export function DeviceManager({
         <pre aria-label="Worker start command">
           <code>{workerStartCommand}</code>
         </pre>
-        <button type="button" onClick={() => router.refresh()}>
-          Check connection
+        <button
+          type="button"
+          onClick={checkConnection}
+          disabled={isRefreshing}
+          aria-busy={isRefreshing}
+        >
+          {isRefreshing ? 'Checking…' : 'Check connection'}
         </button>
+        <p aria-live="polite">{connectionCheckMessage}</p>
       </article>
       <article className="card">
         <h2>Register Windows worker</h2>
@@ -387,8 +406,13 @@ export function DeviceManager({
           )}
         </article>
       ))}
-      <button type="button" onClick={() => router.refresh()}>
-        Refresh worker status
+      <button
+        type="button"
+        onClick={checkConnection}
+        disabled={isRefreshing}
+        aria-busy={isRefreshing}
+      >
+        {isRefreshing ? 'Checking…' : 'Refresh worker status'}
       </button>
     </section>
   );
