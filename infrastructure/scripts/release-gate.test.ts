@@ -1224,7 +1224,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /candidate_sha:/);
   assert.match(
     deployWorkflow,
-    /acceptance_profile:[\s\S]*options: \[auto, targeted, auth-browser, cost-runtime, google-oauth(?:, [^\]]+)?\]/,
+    /acceptance_profile:[\s\S]*options:\s*\[\s*auto,\s*targeted,\s*auth-browser,\s*cost-runtime,\s*google-oauth[\s\S]*?\]/,
   );
   assert.match(
     deployWorkflow,
