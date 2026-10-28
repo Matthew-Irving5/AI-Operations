@@ -76,6 +76,7 @@ test('AI41 runner accepts the visible scan form before the isolated device is pa
   assert.match(source, /Launch scan',[\s\S]*?toHaveCount\(1\)/);
   assert.match(source, /devices\?ai41=\$\{randomUUID\(\)\}/);
   assert.match(source, /Refresh worker status/);
+  assert.match(source, /intervals: \[2_000, 3_000, 5_000\]/);
 });
 
 test('worker result verifies identity and signature, then guards completed replay before writes', async () => {
