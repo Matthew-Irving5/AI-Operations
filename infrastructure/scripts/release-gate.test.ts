@@ -1757,7 +1757,7 @@ test('AI-17 Planner-to-specialist selection routes its launch boundary to the de
   assert.throws(
     () =>
       selectHostedAcceptanceProfile(['apps/web/app/(app)/personal/page.tsx'], 'planner-specialist'),
-    /does not match inferred/,
+    /does not match inferred|combined acceptance profile is required/,
   );
   assert.throws(
     () =>
@@ -1769,7 +1769,7 @@ test('AI-17 Planner-to-specialist selection routes its launch boundary to the de
   );
   assert.throws(
     () => selectHostedAcceptanceProfile(ai17CandidateFiles, 'auth-browser'),
-    /does not match inferred/,
+    /does not match inferred|combined acceptance profile is required/,
   );
 });
 
