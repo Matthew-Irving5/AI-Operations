@@ -69,7 +69,15 @@ WITH grants AS (
       to_regprocedure('public.create_conversation_handoff(jsonb)'),
       to_regprocedure('public.resolve_conversation_handoff(uuid,uuid,text,text,uuid,timestamptz)'),
       -- AI-17 Planner provider settlement is checked against its exact service_role grant.
-      to_regprocedure('public.complete_inter_agent_plan_with_queue(uuid,text,uuid,uuid,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)')
+      to_regprocedure('public.complete_inter_agent_plan_with_queue(uuid,text,uuid,uuid,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)'),
+      -- Preserve existing AI-44 exclusions; these RPCs have exact assertions below.
+      to_regprocedure('public.lookup_canonical_action_execution(uuid,uuid,text,text)'),
+      to_regprocedure('public.record_canonical_action_policy_decision(uuid,uuid,text,text,jsonb)'),
+      to_regprocedure('public.claim_canonical_action_execution(uuid,uuid,text,text)'),
+      to_regprocedure('public.complete_canonical_action_execution(uuid,uuid,text,text,uuid,jsonb)'),
+      to_regprocedure('public.load_canonical_action_execution_request(uuid)'),
+      to_regprocedure('public.load_prompt_promotion_target(uuid,integer)'),
+      to_regprocedure('public.request_canonical_action_reversal(uuid,text)')
     )
 )
 SELECT is(
