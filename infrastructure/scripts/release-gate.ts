@@ -852,14 +852,14 @@ export function selectHostedAcceptanceProfile(
   const inferred = archiveRestore
     ? 'archive-restore'
     : costRuntime
-    ? 'cost-runtime'
-    : career
-      ? authBrowser
-        ? 'career-auth-browser'
-        : 'career'
-      : authBrowser
-        ? 'auth-browser'
-        : 'targeted';
+      ? 'cost-runtime'
+      : career
+        ? authBrowser
+          ? 'career-auth-browser'
+          : 'career'
+        : authBrowser
+          ? 'auth-browser'
+          : 'targeted';
   if (override !== 'auto' && override !== inferred) {
     if (override === 'career' && !career) {
       throw new Error(
