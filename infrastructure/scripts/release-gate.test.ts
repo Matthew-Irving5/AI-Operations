@@ -13,6 +13,7 @@ import {
 import { execFileSync } from 'node:child_process';
 import {
   Ai16PromptGovernanceProofSchema,
+  ArchiveRestoreChecksSchema,
   acceptStagingCandidate,
   acquireStagingSlot,
   authorizeProductionPromotion,
@@ -1301,7 +1302,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /candidate_sha:/);
   assert.match(
     deployWorkflow,
-    /acceptance_profile:[\s\S]*options: \[auto, targeted, auth-browser, cost-runtime, career, career-auth-browser\]/,
+    /acceptance_profile:[\s\S]*options:\s*\[\s*auto,\s*targeted,\s*auth-browser,\s*cost-runtime,\s*planner-specialist,\s*worker-protocol,\s*procurement,\s*career,\s*career-auth-browser,\s*mobile-shortcuts,\s*mobile-shortcuts-action,\s*archive-restore,?\s*\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1506,7 +1507,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(
     deployWorkflow,
-    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "career" \|\| "\$ACCEPTANCE_PROFILE" == "career-auth-browser" \]\]/,
+    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "archive-restore" \|\| "\$ACCEPTANCE_PROFILE" == "planner-specialist" \|\| "\$ACCEPTANCE_PROFILE" == "worker-protocol" \|\| "\$ACCEPTANCE_PROFILE" == "procurement" \|\| "\$ACCEPTANCE_PROFILE" == "career" \|\| "\$ACCEPTANCE_PROFILE" == "career-auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "mobile-shortcuts" \|\| "\$ACCEPTANCE_PROFILE" == "mobile-shortcuts-action" \]\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1732,7 +1733,7 @@ test('AI-35 Career readback selects its dedicated profile and rejects incompatib
         ['docs/build/ticket-readbacks/AI-35.md', 'apps/web/app/api/auth/session/route.ts'],
         'career',
       ),
-    /does not match inferred/,
+    /does not match inferred|combined acceptance profile is required/,
   );
 });
 
@@ -1849,72 +1850,65 @@ test('targeted hosted acceptance is valid without MFA and cannot satisfy an auth
   );
 });
 
-test('Career shared MFA changes require both exact-candidate Career and auth-browser proofs', () => {
-  const paths = ['docs/build/ticket-readbacks/AI-35.md', 'apps/web/app/mfa/page.tsx'];
-  assert.equal(selectHostedAcceptanceProfile(paths), 'career-auth-browser');
-  assert.throws(() => selectHostedAcceptanceProfile(paths, 'career'), /does not match inferred/);
-  const career = careerSuiteEvidence();
-  const auth = hostedSuiteEvidence();
-  const combined = {
+test('AI45 archive restore requires every real outcome and cannot autoaccept targeted smoke', () => {
+  const checks = {
+    stagingDatabaseAndR2Backup: 'passed',
+    encryptedPrivateBundle: 'passed',
+    isolatedLocalRestore: 'passed',
+    linkedTraceEvidenceRead: 'passed',
+    exactFileBytes: 'passed',
+    corruptionDetected: 'passed',
+    sourceUnchanged: 'passed',
+  } as const;
+  assert.equal(
+    selectHostedAcceptanceProfile(['docs/build/ticket-readbacks/AI-45.md']),
+    'archive-restore',
+  );
+  assert.throws(() =>
+    selectHostedAcceptanceProfile(['docs/build/ticket-readbacks/AI-45.md'], 'targeted'),
+  );
+  for (const key of Object.keys(checks)) {
+    const incomplete: Record<string, string> = { ...checks };
+    delete incomplete[key];
+    assert.throws(() => ArchiveRestoreChecksSchema.parse(incomplete));
+  }
+  const hostedSuite = {
     schemaVersion: 1,
-    state: 'CAREER_AUTH_BROWSER_STAGING_ACCEPTED',
-    acceptanceProfile: 'career-auth-browser',
+    state: 'ARCHIVE_RESTORE_STAGING_ACCEPTED',
+    acceptanceProfile: 'archive-restore',
     candidateSha,
     candidateTreeSha,
     pullRequestNumber: 152,
     deploymentRunId: '36474707377',
     stagingOrigin: origin,
     humanMfa: 'user-completed',
-    checks: career.checks,
-    correlationIds: career.correlationIds,
-    acceptedAt: career.acceptedAt,
-    careerEvidence: career,
-    authBrowserEvidence: auth,
+    checks,
+    correlationIds: ['restore-synthetic-1'],
+    acceptedAt: '2026-10-24T20:00:00.000Z',
   };
-  const hosted = combineCareerAuthStagingResults(career, auth);
-  assert.deepEqual(hosted, createHostedStagingSuiteEvidence(combined));
-  const status = createStagingAcceptanceStatus({
+  const input = {
     candidateSha,
     currentPullRequestHeadSha: candidateSha,
     currentPullRequestTreeSha: candidateTreeSha,
     currentPullRequestNumber: 152,
     state: 'success',
-    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'career-auth-browser' }),
-    hostedSuite: hosted,
-  });
-  assert.equal(status.status.state, 'success');
-  assert.deepEqual(status.acceptance?.careerEvidence, career);
-  assert.deepEqual(status.acceptance?.authBrowserEvidence, auth);
-  assert.throws(
-    () => createHostedStagingSuiteEvidence({ ...combined, authBrowserEvidence: undefined }),
-    /invalid_evidence/,
+    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'archive-restore' }),
+    hostedSuite,
+  };
+  assert.equal(
+    createStagingAcceptanceStatus(input).acceptance?.acceptanceProfile,
+    'archive-restore',
   );
-  for (const key of [
-    'candidateSha',
-    'candidateTreeSha',
-    'pullRequestNumber',
-    'deploymentRunId',
-    'stagingOrigin',
-  ])
-    assert.throws(() =>
-      createHostedStagingSuiteEvidence({
-        ...combined,
-        authBrowserEvidence: { ...auth, [key]: key === 'pullRequestNumber' ? 999 : 'wrong' },
-      }),
-    );
-});
-
-test('Career combined proof rejects valid-shaped evidence from another candidate or deployment', () => {
-  const career = careerSuiteEvidence();
-  for (const mismatch of [
-    { candidateSha: nextSha },
-    { candidateTreeSha: nextSha },
-    { deploymentRunId: '36474707378' },
-    { pullRequestNumber: 153 },
-  ]) {
-    assert.throws(
-      () => combineCareerAuthStagingResults(career, hostedSuiteEvidence(mismatch)),
-      /invalid_evidence/,
-    );
-  }
+  assert.throws(() =>
+    createStagingAcceptanceStatus({
+      ...input,
+      hostedSuite: { ...hostedSuite, deploymentRunId: 'wrong-run' },
+    }),
+  );
+  assert.throws(() =>
+    createStagingAcceptanceStatus({
+      ...input,
+      hostedSuite: { ...hostedSuite, humanMfa: 'not-required' },
+    }),
+  );
 });

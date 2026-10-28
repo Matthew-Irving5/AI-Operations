@@ -209,6 +209,7 @@ const AcceptanceProfileSchema = z.enum([
   'cost-runtime',
   'career',
   'career-auth-browser',
+  'archive-restore',
 ]);
 
 const CapabilityResultsSchema = z
@@ -227,6 +228,18 @@ const CostRuntimeChecksSchema = z
   .object({
     localCostMatrix: z.literal('passed'),
     oneBoundedProviderCall: z.literal('passed'),
+  })
+  .strict();
+
+export const ArchiveRestoreChecksSchema = z
+  .object({
+    stagingDatabaseAndR2Backup: z.literal('passed'),
+    encryptedPrivateBundle: z.literal('passed'),
+    isolatedLocalRestore: z.literal('passed'),
+    linkedTraceEvidenceRead: z.literal('passed'),
+    exactFileBytes: z.literal('passed'),
+    corruptionDetected: z.literal('passed'),
+    sourceUnchanged: z.literal('passed'),
   })
   .strict();
 
@@ -266,6 +279,7 @@ const AcceptanceEvidenceSchema = z
       TargetedCapabilityResultsSchema,
       CostRuntimeChecksSchema,
       CareerStagingAcceptanceChecksSchema,
+      ArchiveRestoreChecksSchema,
     ]),
     freshMfaAction: FreshMfaActionEvidenceSchema.optional(),
     promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
@@ -284,6 +298,7 @@ const AcceptanceEvidenceSchema = z
     const career =
       value.acceptanceProfile === 'career' || value.acceptanceProfile === 'career-auth-browser';
     const combinedCareer = value.acceptanceProfile === 'career-auth-browser';
+    const archiveRestore = value.acceptanceProfile === 'archive-restore';
     const validMfa = targeted || costRuntime || value.humanMfa === 'user-completed';
     const validChecks = targeted
       ? Array.isArray(value.checks)
@@ -292,9 +307,11 @@ const AcceptanceEvidenceSchema = z
           ? 'localCostMatrix' in value.checks
           : career
             ? 'authenticatedCareerSync' in value.checks
-            : 'authAal2' in value.checks);
+            : archiveRestore
+              ? 'isolatedLocalRestore' in value.checks
+              : 'authAal2' in value.checks);
     const validFreshMfaAction =
-      targeted || costRuntime || (career && !combinedCareer)
+      targeted || costRuntime || archiveRestore || (career && !combinedCareer)
         ? value.freshMfaAction === undefined
         : value.freshMfaAction !== undefined;
     const validCostRuntimeProof = costRuntime
@@ -393,6 +410,18 @@ const StagingReadyInputSchema = z
   .strict();
 
 const StagingAcceptanceInputSchema = z.discriminatedUnion('acceptanceProfile', [
+  z
+    .object({
+      candidateSha: ShaSchema,
+      deploymentRunId: RunIdSchema,
+      stagingOrigin: StageOrigin,
+      acceptanceProfile: z.literal('archive-restore'),
+      humanMfa: z.literal('user-completed'),
+      checks: ArchiveRestoreChecksSchema,
+      correlationIds: z.array(SafeIdSchema).min(1).max(20),
+      acceptedAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
   z
     .object({
       candidateSha: ShaSchema,
@@ -591,12 +620,30 @@ export const CareerAuthBrowserStagingEvidenceSchema = z
       });
   });
 
+const ArchiveRestoreStagingSuiteEvidenceSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    state: z.literal('ARCHIVE_RESTORE_STAGING_ACCEPTED'),
+    acceptanceProfile: z.literal('archive-restore'),
+    candidateSha: ShaSchema,
+    candidateTreeSha: ShaSchema,
+    pullRequestNumber: z.number().int().positive(),
+    deploymentRunId: RunIdSchema,
+    stagingOrigin: StageOrigin,
+    humanMfa: z.literal('user-completed'),
+    checks: ArchiveRestoreChecksSchema,
+    correlationIds: z.array(SafeIdSchema).min(1).max(20),
+    acceptedAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
 const HostedStagingSuiteEvidenceSchema = z.discriminatedUnion('acceptanceProfile', [
   AuthBrowserStagingSuiteEvidenceSchema,
   TargetedStagingSuiteEvidenceSchema,
   CostRuntimeStagingSuiteEvidenceSchema,
   CareerStagingAcceptanceEvidenceSchema,
   CareerAuthBrowserStagingEvidenceSchema,
+  ArchiveRestoreStagingSuiteEvidenceSchema,
 ]);
 
 const StagingAcceptanceCommandSchema = z
@@ -765,6 +812,7 @@ export function selectHostedAcceptanceProfile(
 ): HostedAcceptanceProfile {
   const normalizedFiles = files.map((raw) => raw.replaceAll('\\', '/'));
   const costRuntime = normalizedFiles.includes('docs/build/ticket-readbacks/AI-20.md');
+  const archiveRestore = normalizedFiles.includes('docs/build/ticket-readbacks/AI-45.md');
   const career = normalizedFiles.some(
     (file) =>
       file === 'docs/build/ticket-readbacks/AI-35.md' ||
@@ -797,16 +845,21 @@ export function selectHostedAcceptanceProfile(
       'AI-20 cost-runtime proof cannot share one acceptance profile with auth-browser or Career proof.',
     );
   }
+  if (archiveRestore && (costRuntime || authBrowser || career)) {
+    throw new Error('Archive restore requires its own staging candidate.');
+  }
 
-  const inferred = costRuntime
-    ? 'cost-runtime'
-    : career
-      ? authBrowser
-        ? 'career-auth-browser'
-        : 'career'
-      : authBrowser
-        ? 'auth-browser'
-        : 'targeted';
+  const inferred = archiveRestore
+    ? 'archive-restore'
+    : costRuntime
+      ? 'cost-runtime'
+      : career
+        ? authBrowser
+          ? 'career-auth-browser'
+          : 'career'
+        : authBrowser
+          ? 'auth-browser'
+          : 'targeted';
   if (override !== 'auto' && override !== inferred) {
     if (override === 'career' && !career) {
       throw new Error(
