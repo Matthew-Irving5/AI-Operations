@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { buildCareerEvidenceSnapshot, type CareerEvidenceSnapshot } from './career-summary';
 import { createSupabaseServerClient } from './supabase-server';
 
 const reportSchema = z.object({
@@ -615,10 +616,11 @@ export async function careerData(): Promise<
   Readonly<{
     evidence: PageData<z.infer<typeof careerEvidenceSchema>[]>;
     sourceCount: PageData<number>;
+    evidenceSnapshot: PageData<CareerEvidenceSnapshot | null>;
   }>
 > {
   const client = await createSupabaseServerClient();
-  const [evidence, sources] = await Promise.all([
+  const [evidence, sources, summaryEvidence] = await Promise.all([
     client
       .from('career_github_evidence')
       .select('repository_name,evidence_kind,source_url,source_date,retrieved_at')
@@ -628,6 +630,14 @@ export async function careerData(): Promise<
       .from('research_sources')
       .select('*', { count: 'exact', head: true })
       .eq('domain_area', 'career'),
+    client
+      .from('career_github_evidence')
+      .select(
+        'id,repository_external_id,repository_name,owner_login,evidence_kind,source_url,source_date,retrieved_at,payload',
+      )
+      .in('evidence_kind', ['repository', 'pull_request'])
+      .order('retrieved_at', { ascending: false })
+      .limit(100),
   ]);
   return {
     evidence: evidence.error
@@ -636,6 +646,9 @@ export async function careerData(): Promise<
     sourceCount: sources.error
       ? { data: 0, error: 'Career sources could not be loaded.' }
       : { data: sources.count ?? 0, error: null },
+    evidenceSnapshot: summaryEvidence.error
+      ? { data: null, error: 'Career summary evidence could not be loaded.' }
+      : buildCareerEvidenceSnapshot(summaryEvidence.data),
   };
 }
 

@@ -359,6 +359,10 @@ jobs:
             description="Staging is deployed; waiting for actual archive restore acceptance."
           elif [[ "$ACCEPTANCE_PROFILE" == "cost-runtime" ]]; then
             description="Staging is deployed; waiting for one-call cost-runtime evidence."
+          elif [[ "$ACCEPTANCE_PROFILE" == "career-auth-browser" ]]; then
+            description="Staging is deployed; waiting for both Career sync and auth-browser acceptance evidence."
+          elif [[ "$ACCEPTANCE_PROFILE" == "career" ]]; then
+            description="Staging is deployed; waiting for authenticated Career acceptance evidence."
           else
             description="Staging is deployed; waiting for auth-browser acceptance."
           fi

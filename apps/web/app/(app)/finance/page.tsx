@@ -1,4 +1,5 @@
 import { financeData } from '../../../lib/platform-data';
+import { selectMfaFactors } from '../../../lib/mfa-factor-selection';
 import { createSupabaseServerClient } from '../../../lib/supabase-server';
 import FinanceMappingForm from './finance-mapping-form';
 
@@ -6,7 +7,7 @@ export default async function FinancePage() {
   const { closes, transactionCount, accounts, categories, adapters } = await financeData();
   const supabase = await createSupabaseServerClient();
   const { data: factors } = await supabase.auth.mfa.listFactors();
-  const factorId = factors?.totp?.find((factor) => factor.status === 'verified')?.id;
+  const factorSelection = selectMfaFactors(factors?.totp);
   return (
     <>
       <h1>Finance Operations</h1>
@@ -65,7 +66,10 @@ export default async function FinancePage() {
         accounts={accounts.data}
         categories={categories.data}
         adapters={adapters.data}
-        {...(factorId ? { factorId } : {})}
+        availableFactors={factorSelection.availableFactors}
+        {...(factorSelection.defaultFactorId
+          ? { defaultFactorId: factorSelection.defaultFactorId }
+          : {})}
       />
     </>
   );

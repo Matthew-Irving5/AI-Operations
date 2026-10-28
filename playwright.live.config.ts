@@ -11,6 +11,9 @@ export default defineConfig({
   use: {
     baseURL:
       process.env.LIVE_E2E_BASE_URL ?? 'https://ai-operations-staging.ai-operations.workers.dev',
+    ...(process.env.LIVE_E2E_STORAGE_STATE
+      ? { storageState: process.env.LIVE_E2E_STORAGE_STATE }
+      : {}),
     trace: 'off',
     screenshot: 'off',
     video: 'off',
