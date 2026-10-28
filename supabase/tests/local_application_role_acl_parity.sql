@@ -44,8 +44,8 @@ WITH grants AS (
   LEFT JOIN pg_roles r ON r.oid=a.grantee
   WHERE n.nspname='public'
     AND (a.grantee=0 OR r.rolname IN ('anon','authenticated','service_role'))
-    -- These AI-18 routines are validated against their exact service_role
-    -- grants by rpc_security.sql; the captured staging fingerprint predates them.
+    -- Newer routines are validated against their exact grants by rpc_security.sql;
+    -- the captured staging fingerprint predates these routines.
     AND p.oid NOT IN (
       -- AI-19's transition RPC is separately checked in rpc_security.sql.
       to_regprocedure('public.transition_ai14_contract_handoff(uuid,uuid,public.handoff_status,boolean)'),

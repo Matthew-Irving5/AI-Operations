@@ -2179,6 +2179,9 @@ export type Database = {
           attempt_count: number;
           authority: string;
           cancelled_at: string | null;
+          channel: Database['public']['Enums']['conversation_channel'];
+          claim_token: string | null;
+          claimed_at: string | null;
           command_type: string;
           command_version: number;
           completed_at: string | null;
@@ -2188,12 +2191,15 @@ export type Database = {
           created_at: string;
           dependency: string | null;
           error_code: string | null;
+          execution_mode: string;
           id: string;
           idempotency_key: string;
           intent: string;
           interpreting_manager_code: string;
           mechanism: string;
+          policy_decision: Json | null;
           redacted_error: string | null;
+          request_fingerprint: string | null;
           required_capability: string;
           result_reference: string | null;
           scope: string;
@@ -2212,6 +2218,9 @@ export type Database = {
           attempt_count?: number;
           authority: string;
           cancelled_at?: string | null;
+          channel?: Database['public']['Enums']['conversation_channel'];
+          claim_token?: string | null;
+          claimed_at?: string | null;
           command_type: string;
           command_version?: number;
           completed_at?: string | null;
@@ -2221,12 +2230,15 @@ export type Database = {
           created_at?: string;
           dependency?: string | null;
           error_code?: string | null;
+          execution_mode?: string;
           id?: string;
           idempotency_key: string;
           intent: string;
           interpreting_manager_code: string;
           mechanism: string;
+          policy_decision?: Json | null;
           redacted_error?: string | null;
+          request_fingerprint?: string | null;
           required_capability: string;
           result_reference?: string | null;
           scope: string;
@@ -2245,6 +2257,9 @@ export type Database = {
           attempt_count?: number;
           authority?: string;
           cancelled_at?: string | null;
+          channel?: Database['public']['Enums']['conversation_channel'];
+          claim_token?: string | null;
+          claimed_at?: string | null;
           command_type?: string;
           command_version?: number;
           completed_at?: string | null;
@@ -2254,12 +2269,15 @@ export type Database = {
           created_at?: string;
           dependency?: string | null;
           error_code?: string | null;
+          execution_mode?: string;
           id?: string;
           idempotency_key?: string;
           intent?: string;
           interpreting_manager_code?: string;
           mechanism?: string;
+          policy_decision?: Json | null;
           redacted_error?: string | null;
+          request_fingerprint?: string | null;
           required_capability?: string;
           result_reference?: string | null;
           scope?: string;
@@ -4338,6 +4356,7 @@ export type Database = {
           id: string;
           is_completed: boolean;
           is_flagged: boolean;
+          list_name: string | null;
           notes: string;
           priority: string;
           raw_record_id: string;
@@ -4354,6 +4373,7 @@ export type Database = {
           id?: string;
           is_completed: boolean;
           is_flagged: boolean;
+          list_name?: string | null;
           notes: string;
           priority: string;
           raw_record_id: string;
@@ -4370,6 +4390,7 @@ export type Database = {
           id?: string;
           is_completed?: boolean;
           is_flagged?: boolean;
+          list_name?: string | null;
           notes?: string;
           priority?: string;
           raw_record_id?: string;
@@ -6750,6 +6771,7 @@ export type Database = {
     };
     Functions: {
       adapt_mobile_record_v1: { Args: { p_record_id: string }; Returns: string };
+      adapt_mobile_reminder_v2: { Args: { p_record_id: string }; Returns: string };
       adapt_mobile_snapshot: {
         Args: { p_snapshot_id: string; p_token_hash: string };
         Returns: Json;
@@ -6820,6 +6842,15 @@ export type Database = {
         };
       };
       cancel_queued_run: { Args: { p_run_id: string; p_user_id: string }; Returns: boolean };
+      claim_canonical_action_execution: {
+        Args: {
+          p_execution_request_id: string;
+          p_idempotency_key: string;
+          p_request_fingerprint: string;
+          p_user_id: string;
+        };
+        Returns: Json;
+      };
       claim_job_queue: {
         Args: { p_limit?: number; p_worker_id: string };
         Returns: {
@@ -7265,6 +7296,23 @@ export type Database = {
         Returns: Json;
       };
       is_allowed_aal2: { Args: Record<PropertyKey, never>; Returns: boolean };
+      load_canonical_action_execution_request: {
+        Args: { p_execution_request_id: string };
+        Returns: Json;
+      };
+      load_prompt_promotion_target: {
+        Args: { p_target_version: number; p_template_id: string };
+        Returns: Json;
+      };
+      lookup_canonical_action_execution: {
+        Args: {
+          p_execution_request_id: string;
+          p_idempotency_key: string;
+          p_request_fingerprint: string;
+          p_user_id: string;
+        };
+        Returns: Json;
+      };
       mark_instrumented_ai_call_submitted: {
         Args: { p_call_id: string; p_response_id: string };
         Returns: undefined;
@@ -7276,6 +7324,10 @@ export type Database = {
       mobile_is_valid_optional_offset_timestamp: { Args: { p_value: string }; Returns: boolean };
       mobile_parse_offset_timestamp: {
         Args: { p_allow_empty?: boolean; p_value: string };
+        Returns: string;
+      };
+      mobile_reminder_scope_code: {
+        Args: { p_enabled_lists: string[]; p_records: Json };
         Returns: string;
       };
       mobile_shortcut_numeric: { Args: { p_field: string; p_payload: Json }; Returns: number };
@@ -7291,6 +7343,16 @@ export type Database = {
       promote_mobile_health_snapshot_internal: {
         Args: { p_snapshot_internal_id: string };
         Returns: Json;
+      };
+      record_canonical_action_policy_decision: {
+        Args: {
+          p_execution_request_id: string;
+          p_idempotency_key: string;
+          p_policy_decision: Json;
+          p_request_fingerprint: string;
+          p_user_id: string;
+        };
+        Returns: boolean;
       };
       record_instrumented_ai_reconciliation_failure: {
         Args: { p_call_id: string; p_error_code: string; p_redacted_trace?: Json };

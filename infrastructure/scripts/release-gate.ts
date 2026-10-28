@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
+import { Ai20CostRuntimeProofSchema } from './ai20-cost-runtime-proof.js';
 
 const ShaSchema = z
   .string()
@@ -198,7 +199,12 @@ const ReadyEvidenceSchema = z
   })
   .strict();
 
-const AcceptanceProfileSchema = z.enum(['targeted', 'auth-browser']);
+const AcceptanceProfileSchema = z.enum([
+  'targeted',
+  'auth-browser',
+  'cost-runtime',
+  'planner-specialist',
+]);
 
 const CapabilityResultsSchema = z
   .object({
@@ -209,6 +215,13 @@ const CapabilityResultsSchema = z
     migrations: z.literal('passed'),
     edgeFunctions: z.literal('passed'),
     releaseVersion: z.literal('passed'),
+  })
+  .strict();
+
+const CostRuntimeChecksSchema = z
+  .object({
+    localCostMatrix: z.literal('passed'),
+    oneBoundedProviderCall: z.literal('passed'),
   })
   .strict();
 
@@ -232,6 +245,71 @@ const FreshMfaActionEvidenceSchema = z
   })
   .strict();
 
+const Ai17PlannerSpecialistChecksSchema = z
+  .object({ plannerToTravelJourney: z.literal('passed') })
+  .strict();
+
+export const Ai17PlannerSpecialistEvidenceSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    state: z.literal('PLANNER_SPECIALIST_STAGING_ACCEPTED'),
+    acceptanceProfile: z.literal('planner-specialist'),
+    candidateSha: ShaSchema,
+    candidateTreeSha: ShaSchema,
+    pullRequestNumber: z.number().int().positive(),
+    deploymentRunId: RunIdSchema,
+    stagingOrigin: StageOrigin,
+    humanMfa: z.literal('user-completed'),
+    manualMfaChallengeObserved: z.literal(true),
+    checks: Ai17PlannerSpecialistChecksSchema,
+    correlationIds: z.array(SafeIdSchema).length(1),
+    journey: z
+      .object({
+        sourceRunId: SafeIdSchema,
+        sourceCorrelationId: SafeIdSchema,
+        specialistRequestId: SafeIdSchema,
+        specialistRequestCorrelationId: SafeIdSchema,
+        specialistRunId: SafeIdSchema,
+        specialistReplyId: SafeIdSchema,
+        specialistReplyCorrelationId: SafeIdSchema,
+        specialistReportId: SafeIdSchema,
+        specialistRequestResultReference: SafeIdSchema,
+        specialistReplyResultReference: SafeIdSchema,
+        consolidatedReportId: SafeIdSchema,
+        consolidatedReportRunId: SafeIdSchema,
+        result: z.literal('passed'),
+      })
+      .strict(),
+    acceptedAt: z.string().datetime({ offset: true }),
+  })
+  .strict()
+  .superRefine((evidence, context) => {
+    const { journey } = evidence;
+    const identifiers = [
+      journey.sourceRunId,
+      journey.specialistRequestId,
+      journey.specialistRunId,
+      journey.specialistReplyId,
+      journey.specialistReportId,
+      journey.consolidatedReportId,
+    ];
+    if (
+      new Set(identifiers).size !== identifiers.length ||
+      evidence.correlationIds[0] !== journey.sourceCorrelationId ||
+      journey.specialistRequestCorrelationId !== journey.sourceCorrelationId ||
+      journey.specialistReplyCorrelationId !== journey.sourceCorrelationId ||
+      journey.specialistRequestResultReference !== journey.specialistReportId ||
+      journey.specialistReplyResultReference !== journey.specialistReportId ||
+      journey.consolidatedReportRunId !== journey.sourceRunId
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'Planner and Travel records must preserve their exact run, reply, result, and correlation links',
+      });
+    }
+  });
+
 const AcceptanceEvidenceSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -243,9 +321,16 @@ const AcceptanceEvidenceSchema = z
     stagingOrigin: StageOrigin,
     acceptanceProfile: AcceptanceProfileSchema,
     humanMfa: z.enum(['user-completed', 'not-required']),
-    checks: z.union([CapabilityResultsSchema, TargetedCapabilityResultsSchema]),
+    checks: z.union([
+      CapabilityResultsSchema,
+      TargetedCapabilityResultsSchema,
+      CostRuntimeChecksSchema,
+      Ai17PlannerSpecialistChecksSchema,
+    ]),
     freshMfaAction: FreshMfaActionEvidenceSchema.optional(),
     promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
+    costRuntimeProof: Ai20CostRuntimeProofSchema.optional(),
+    plannerSpecialistEvidence: Ai17PlannerSpecialistEvidenceSchema.optional(),
     correlationIds: z.array(SafeIdSchema).max(20),
     workflowRuns: Ai15WorkflowProofsSchema.optional(),
     acceptedAt: z.string().datetime({ offset: true }),
@@ -254,12 +339,49 @@ const AcceptanceEvidenceSchema = z
   .strict()
   .superRefine((value, context) => {
     const targeted = value.acceptanceProfile === 'targeted';
-    const validMfa = targeted || value.humanMfa === 'user-completed';
-    const validChecks = targeted ? Array.isArray(value.checks) : !Array.isArray(value.checks);
-    const validFreshMfaAction = targeted
-      ? value.freshMfaAction === undefined
-      : value.freshMfaAction !== undefined;
-    if (!validMfa || !validChecks || !validFreshMfaAction) {
+    const costRuntime = value.acceptanceProfile === 'cost-runtime';
+    const plannerSpecialist = value.acceptanceProfile === 'planner-specialist';
+    const validMfa = targeted || costRuntime || value.humanMfa === 'user-completed';
+    const validChecks = targeted
+      ? Array.isArray(value.checks)
+      : !Array.isArray(value.checks) &&
+        (costRuntime
+          ? 'localCostMatrix' in value.checks
+          : plannerSpecialist
+            ? 'plannerToTravelJourney' in value.checks
+            : 'authAal2' in value.checks);
+    const validFreshMfaAction =
+      targeted || costRuntime || plannerSpecialist
+        ? value.freshMfaAction === undefined
+        : value.freshMfaAction !== undefined;
+    const validCostRuntimeProof = costRuntime
+      ? value.costRuntimeProof !== undefined &&
+        value.costRuntimeProof.localProofSha === value.candidateSha &&
+        value.correlationIds.includes(value.costRuntimeProof.correlationId)
+      : value.costRuntimeProof === undefined;
+    const plannerSpecialistEvidence = value.plannerSpecialistEvidence;
+    const validPlannerSpecialistEvidence = plannerSpecialist
+      ? plannerSpecialistEvidence !== undefined &&
+        plannerSpecialistEvidence.candidateSha === value.candidateSha &&
+        plannerSpecialistEvidence.candidateTreeSha === value.candidateTreeSha &&
+        plannerSpecialistEvidence.pullRequestNumber === value.pullRequestNumber &&
+        plannerSpecialistEvidence.deploymentRunId === value.deploymentRunId &&
+        plannerSpecialistEvidence.stagingOrigin === value.stagingOrigin &&
+        plannerSpecialistEvidence.humanMfa === value.humanMfa &&
+        plannerSpecialistEvidence.acceptedAt === value.acceptedAt &&
+        plannerSpecialistEvidence.correlationIds.length === value.correlationIds.length &&
+        plannerSpecialistEvidence.correlationIds.every(
+          (id, index) => id === value.correlationIds[index],
+        ) &&
+        JSON.stringify(value.checks) === JSON.stringify(plannerSpecialistEvidence.checks)
+      : plannerSpecialistEvidence === undefined;
+    if (
+      !validMfa ||
+      !validChecks ||
+      !validFreshMfaAction ||
+      !validCostRuntimeProof ||
+      !validPlannerSpecialistEvidence
+    ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message:
@@ -314,21 +436,49 @@ const StagingReadyInputSchema = z
   })
   .strict();
 
-const StagingAcceptanceInputSchema = z
-  .object({
-    candidateSha: ShaSchema,
-    deploymentRunId: RunIdSchema,
-    stagingOrigin: StageOrigin,
-    acceptanceProfile: z.literal('auth-browser'),
-    humanMfa: z.literal('user-completed'),
-    checks: CapabilityResultsSchema,
-    freshMfaAction: FreshMfaActionEvidenceSchema,
-    correlationIds: z.array(SafeIdSchema).max(20),
-    workflowRuns: Ai15WorkflowProofsSchema.optional(),
-    promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
-    acceptedAt: z.string().datetime({ offset: true }),
-  })
-  .strict();
+const StagingAcceptanceInputSchema = z.discriminatedUnion('acceptanceProfile', [
+  z
+    .object({
+      candidateSha: ShaSchema,
+      deploymentRunId: RunIdSchema,
+      stagingOrigin: StageOrigin,
+      acceptanceProfile: z.literal('auth-browser'),
+      humanMfa: z.literal('user-completed'),
+      checks: CapabilityResultsSchema,
+      freshMfaAction: FreshMfaActionEvidenceSchema,
+      correlationIds: z.array(SafeIdSchema).max(20),
+      workflowRuns: Ai15WorkflowProofsSchema.optional(),
+      promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
+      acceptedAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+  z
+    .object({
+      candidateSha: ShaSchema,
+      deploymentRunId: RunIdSchema,
+      stagingOrigin: StageOrigin,
+      acceptanceProfile: z.literal('cost-runtime'),
+      humanMfa: z.enum(['user-completed', 'not-required']),
+      checks: CostRuntimeChecksSchema,
+      costRuntimeProof: Ai20CostRuntimeProofSchema,
+      correlationIds: z.array(SafeIdSchema).min(1).max(20),
+      acceptedAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+  z
+    .object({
+      candidateSha: ShaSchema,
+      deploymentRunId: RunIdSchema,
+      stagingOrigin: StageOrigin,
+      acceptanceProfile: z.literal('planner-specialist'),
+      humanMfa: z.literal('user-completed'),
+      checks: Ai17PlannerSpecialistChecksSchema,
+      plannerSpecialistEvidence: Ai17PlannerSpecialistEvidenceSchema,
+      correlationIds: z.array(SafeIdSchema).length(1),
+      acceptedAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+]);
 const CandidateStagingDeploymentEvidenceSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -394,9 +544,40 @@ const TargetedStagingSuiteEvidenceSchema = z
   })
   .strict();
 
+const CostRuntimeStagingSuiteEvidenceSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    state: z.literal('COST_RUNTIME_STAGING_ACCEPTED'),
+    acceptanceProfile: z.literal('cost-runtime'),
+    candidateSha: ShaSchema,
+    candidateTreeSha: ShaSchema,
+    pullRequestNumber: z.number().int().positive(),
+    deploymentRunId: RunIdSchema,
+    stagingOrigin: StageOrigin,
+    humanMfa: z.enum(['user-completed', 'not-required']),
+    checks: CostRuntimeChecksSchema,
+    costRuntimeProof: Ai20CostRuntimeProofSchema,
+    correlationIds: z.array(SafeIdSchema).min(1).max(20),
+    acceptedAt: z.string().datetime({ offset: true }),
+  })
+  .strict()
+  .superRefine((evidence, context) => {
+    if (
+      evidence.costRuntimeProof.localProofSha !== evidence.candidateSha ||
+      !evidence.correlationIds.includes(evidence.costRuntimeProof.correlationId)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'cost-runtime proof must be for the current candidate and include its trace ID',
+      });
+    }
+  });
+
 const HostedStagingSuiteEvidenceSchema = z.discriminatedUnion('acceptanceProfile', [
   AuthBrowserStagingSuiteEvidenceSchema,
   TargetedStagingSuiteEvidenceSchema,
+  CostRuntimeStagingSuiteEvidenceSchema,
+  Ai17PlannerSpecialistEvidenceSchema,
 ]);
 
 const StagingAcceptanceCommandSchema = z
@@ -559,9 +740,21 @@ export interface CandidateReadinessEvidence {
 export type HostedAcceptanceProfile = z.infer<typeof AcceptanceProfileSchema>;
 export type HostedStagingSuiteEvidence = z.infer<typeof HostedStagingSuiteEvidenceSchema>;
 
-export function selectHostedAcceptanceProfile(files: string[]): HostedAcceptanceProfile {
-  const authBrowser = files.some((raw) => {
-    const file = raw.replaceAll('\\', '/');
+export function selectHostedAcceptanceProfile(
+  files: string[],
+  override: string = 'auto',
+): HostedAcceptanceProfile {
+  const normalizedFiles = files.map((raw) => raw.replaceAll('\\', '/'));
+  const plannerSpecialist =
+    normalizedFiles.includes('docs/build/ticket-readbacks/AI-17.md') ||
+    normalizedFiles.includes('tests/e2e-live/ai17-planner-specialist.spec.ts');
+  const costRuntime = normalizedFiles.includes('docs/build/ticket-readbacks/AI-20.md');
+  const authBrowser = normalizedFiles.some((file) => {
+    if (
+      plannerSpecialist &&
+      (file === 'apps/web/app/api/workflows/launch/route.ts' || file === 'supabase/config.toml')
+    )
+      return false;
     return (
       file.startsWith('apps/web/app/api/auth/') ||
       file === 'apps/web/app/api/workflows/launch/route.ts' ||
@@ -579,7 +772,24 @@ export function selectHostedAcceptanceProfile(files: string[]): HostedAcceptance
       file === 'tests/e2e/platform-authenticated.spec.ts'
     );
   });
-  return authBrowser ? 'auth-browser' : 'targeted';
+  if ((costRuntime && plannerSpecialist) || ((costRuntime || plannerSpecialist) && authBrowser)) {
+    throw new Error(
+      'AI-20 cost-runtime and auth-browser proof cannot share one acceptance profile.',
+    );
+  }
+  const inferred = costRuntime
+    ? 'cost-runtime'
+    : plannerSpecialist
+      ? 'planner-specialist'
+      : authBrowser
+        ? 'auth-browser'
+        : 'targeted';
+  if (override !== 'auto' && override !== inferred) {
+    throw new Error(
+      `Requested staging profile '${override}' does not match inferred '${inferred}'.`,
+    );
+  }
+  return inferred;
 }
 
 export function createHostedStagingSuiteEvidence(input: unknown): HostedStagingSuiteEvidence {
@@ -752,6 +962,12 @@ export function createStagingAcceptanceStatus(input: unknown): StagingAcceptance
     checks,
     ...(parsed.hostedSuite.acceptanceProfile === 'auth-browser'
       ? { freshMfaAction: parsed.hostedSuite.freshMfaAction }
+      : {}),
+    ...(parsed.hostedSuite.acceptanceProfile === 'cost-runtime'
+      ? { costRuntimeProof: parsed.hostedSuite.costRuntimeProof }
+      : {}),
+    ...(parsed.hostedSuite.acceptanceProfile === 'planner-specialist'
+      ? { plannerSpecialistEvidence: parsed.hostedSuite }
       : {}),
     correlationIds: parsed.hostedSuite.correlationIds,
     ...(parsed.hostedSuite.workflowRuns ? { workflowRuns: parsed.hostedSuite.workflowRuns } : {}),

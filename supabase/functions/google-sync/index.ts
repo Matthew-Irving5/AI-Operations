@@ -1,5 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
-import { z } from "https://esm.sh/zod@4.1.5";
+import { z } from "https://esm.sh/zod@4.6.6";
 import { verifySharedSecret } from "../_shared/auth-contract.ts";
 import {
   isGoogleSyncError,

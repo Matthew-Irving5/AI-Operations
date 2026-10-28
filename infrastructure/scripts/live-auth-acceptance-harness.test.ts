@@ -10,6 +10,7 @@ import { createStagingAcceptanceStatus } from './release-gate.js';
 const runnerPath = resolve('infrastructure/scripts/run-live-e2e.ts');
 const journeyPath = resolve('tests/e2e-live/auth-acceptance.spec.ts');
 const combinedJourneyPath = resolve('tests/e2e-live/staging.spec.ts');
+const plannerJourneyPath = resolve('tests/e2e-live/ai17-planner-specialist.spec.ts');
 
 const promptGovernanceProof = {
   templateId: '00000000-0000-4000-8000-000000000001',
@@ -78,11 +79,48 @@ function assertOrdered(source: string, markers: string[]) {
 }
 
 describe('live auth acceptance harness', () => {
+  it('routes AI-17 through its candidate-bound Planner profile and strict evidence consumer', async () => {
+    const [runner, journey, releaseGate, workflow, packageJson] = await Promise.all([
+      readFile(runnerPath, 'utf8'),
+      readFile(plannerJourneyPath, 'utf8'),
+      readFile(resolve('infrastructure/scripts/release-gate.ts'), 'utf8'),
+      readFile(resolve('.github/workflows/deploy-staging.yml'), 'utf8'),
+      readFile(resolve('package.json'), 'utf8'),
+    ]);
+
+    assert.match(runner, /mode !== 'planner-specialist'/);
+    assert.match(
+      runner,
+      /mode === 'planner-specialist'[\s\S]*?tests\/e2e-live\/ai17-planner-specialist\.spec\.ts/,
+    );
+    assert.match(runner, /LIVE_E2E_AI17_ACCEPTANCE_OUTPUT_PATH/);
+    assert.match(runner, /createHostedStagingSuiteEvidence\(rawEvidence\)/);
+    assert.match(journey, /parseLiveE2eEnvironment\(process\.env, 'planner-specialist'\)/);
+    assert.match(journey, /state: 'PLANNER_SPECIALIST_STAGING_ACCEPTED'/);
+    assert.match(journey, /acceptanceProfile: 'planner-specialist'/);
+    assert.match(releaseGate, /plannerSpecialistEvidence: Ai17PlannerSpecialistEvidenceSchema/);
+    assert.match(
+      releaseGate,
+      /acceptanceProfile === 'planner-specialist'[\s\S]*plannerSpecialistEvidence/,
+    );
+    assert.match(workflow, /planner-specialist/);
+    assert.match(packageJson, /test:e2e:live:ai17/);
+  });
+
   it('runs AI-16, AI-19, and auth-browser acceptance in one headed browser journey', async () => {
     const [runner, journey] = await Promise.all([
       readFile(runnerPath, 'utf8'),
       readFile(combinedJourneyPath, 'utf8'),
     ]);
+    const authJourneyStart = journey.indexOf(
+      "test('staging proves AI-16 prompt promotion/rollback and AI-19 correlated workflows",
+    );
+    const costJourneyStart = journey.indexOf(
+      "test('staging proves one candidate-bound AI-20 Responses cost lifecycle",
+    );
+    assert.ok(authJourneyStart >= 0 && costJourneyStart > authJourneyStart);
+    const authTestBody = journey.slice(authJourneyStart, costJourneyStart);
+    const authSuite = journey.slice(0, costJourneyStart);
 
     assert.match(
       runner,
@@ -94,14 +132,17 @@ describe('live auth acceptance harness', () => {
     );
     const suiteBranch = suiteSelection.slice(suiteSelection.indexOf(": mode === 'suite'"));
     assert.doesNotMatch(suiteBranch, /auth-acceptance\.spec\.ts/);
-    assert.match(journey, /staleDenied: 'passed'/);
-    assert.match(journey, /freshReauthAccepted: 'passed'/);
-    assert.equal([...journey.matchAll(/await signInWithFreshMfa\(page\)/g)].length, 1);
-    assert.match(journey, /acceptanceProfile: 'auth-browser'/);
-    assert.match(journey, /promptGovernanceProof: governanceProof\.evidence/);
-    assert.doesNotMatch(journey, /serviceRows(?:<[^>]+>)?\(\s*['"]prompt_version_transitions['"]/);
-    assert.match(journey, /promotionIdempotencyKey: promotionKey/);
-    assert.match(journey, /rollbackIdempotencyKey: rollbackKey/);
+    assert.match(authSuite, /staleDenied: 'passed'/);
+    assert.match(authSuite, /freshReauthAccepted: 'passed'/);
+    assert.equal([...authTestBody.matchAll(/await signInWithFreshMfa\(page\)/g)].length, 1);
+    assert.match(authSuite, /acceptanceProfile: 'auth-browser'/);
+    assert.match(authSuite, /promptGovernanceProof: governanceProof\.evidence/);
+    assert.doesNotMatch(
+      authSuite,
+      /serviceRows(?:<[^>]+>)?\(\s*['"]prompt_version_transitions['"]/,
+    );
+    assert.match(authSuite, /promotionIdempotencyKey: promotionKey/);
+    assert.match(authSuite, /rollbackIdempotencyKey: rollbackKey/);
   });
 
   it('never uses the service role to read user-owned schedules', async () => {

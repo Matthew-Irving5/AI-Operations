@@ -105,10 +105,9 @@ const e2eEnvironment = {
   NEXT_PUBLIC_SUPABASE_ANON_KEY: valueFromSupabaseStatus(status, 'ANON_KEY'),
   E2E_JWT_SECRET: valueFromSupabaseStatus(status, 'JWT_SECRET'),
 };
-const playwrightInstallArgs = ['exec', 'playwright', 'install'];
-if (process.platform === 'linux') playwrightInstallArgs.push('--with-deps');
-playwrightInstallArgs.push('chromium', 'webkit');
-runInherited(pnpm(playwrightInstallArgs));
+runInherited(
+  pnpm(['exec', 'tsx', 'infrastructure/scripts/playwright-browser-setup.ts', 'chromium', 'webkit']),
+);
 // Keep the CI-equivalent runner explicit here. On Windows, forwarding a custom
 // environment through a second package-manager shell can drop E2E_JWT_SECRET.
 runInherited(pnpm(['exec', 'playwright', 'test'], e2eEnvironment));

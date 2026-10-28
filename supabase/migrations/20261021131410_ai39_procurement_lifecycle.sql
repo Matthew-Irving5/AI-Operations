@@ -1,0 +1,6 @@
+-- Compatibility marker for the already-applied AI-39 procurement migration.
+--
+-- Staging has this version in supabase_migrations.schema_migrations. The
+-- implementation remains owned by AI-39's candidate; this candidate carries
+-- the version for DB-03 history preflight without replaying unrelated
+-- procurement DDL into the AI-27 Google acceptance database.
