@@ -28,6 +28,7 @@ on:
             career,
             mobile-shortcuts,
             mobile-shortcuts-action,
+            archive-restore,
           ]
       deployment_run_id:
         description: Successful candidate deployment run ID; required for acceptance.
