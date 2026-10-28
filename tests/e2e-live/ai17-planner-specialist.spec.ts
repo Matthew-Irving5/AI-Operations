@@ -244,7 +244,7 @@ test('AI-17 completes one candidate-bound Planner-to-Travel journey @ai17-planne
     pullRequestNumber,
     deploymentRunId,
     stagingOrigin: stagingTarget.origin,
-    acceptanceProfile: 'auth-browser',
+    acceptanceProfile: 'planner-specialist',
     manualMfaChallengeObserved,
     journey: {
       sourceRunId: journey.sourceRun.id,
