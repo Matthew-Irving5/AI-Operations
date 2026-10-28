@@ -17,7 +17,7 @@ const EvidenceWriteCommonSchema = z
     deploymentRunId: z.string().regex(/^[1-9][0-9]{0,19}$/),
     stagingOrigin: z.literal('https://ai-operations-staging.ai-operations.workers.dev'),
     completeSuite: z.literal('passed'),
-    manualMfaChallengeObserved: z.literal(true),
+    manualMfaChallengeObserved: z.boolean(),
     browserChecks: z
       .object({ chromium: z.literal('passed'), webkit: z.literal('passed') })
       .strict(),
@@ -60,10 +60,27 @@ const TargetedEvidenceWriteInputSchema = EvidenceWriteCommonSchema.extend({
   promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
 }).strict();
 
-const EvidenceWriteInputSchema = z.discriminatedUnion('acceptanceProfile', [
-  AuthBrowserEvidenceWriteInputSchema,
-  TargetedEvidenceWriteInputSchema,
-]);
+const EvidenceWriteInputSchema = z
+  .discriminatedUnion('acceptanceProfile', [
+    AuthBrowserEvidenceWriteInputSchema,
+    TargetedEvidenceWriteInputSchema,
+  ])
+  .superRefine((input, context) => {
+    if (input.acceptanceProfile === 'auth-browser' && !input.manualMfaChallengeObserved) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'auth-browser acceptance requires an observed manual MFA challenge',
+        path: ['manualMfaChallengeObserved'],
+      });
+    }
+    if (input.acceptanceProfile === 'targeted' && input.manualMfaChallengeObserved) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'targeted acceptance must not claim operator MFA was required',
+        path: ['manualMfaChallengeObserved'],
+      });
+    }
+  });
 
 export async function writeLiveStagingAcceptanceEvidence(
   path: string,
@@ -77,7 +94,7 @@ export async function writeLiveStagingAcceptanceEvidence(
     pullRequestNumber: input.pullRequestNumber,
     deploymentRunId: input.deploymentRunId,
     stagingOrigin: input.stagingOrigin,
-    humanMfa: 'user-completed',
+    humanMfa: input.manualMfaChallengeObserved ? 'user-completed' : 'not-required',
     correlationIds: input.correlationIds,
     workflowRuns: input.workflowRuns,
     acceptedAt: input.acceptedAt,

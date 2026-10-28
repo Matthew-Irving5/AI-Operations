@@ -38,6 +38,8 @@ test('Worker preview source sync and build share one exclusive WSL workspace loc
 });
 
 test('isolated Supabase workdir includes canonical runtime workspace imports', () => {
+  assert.ok(localSupabaseWorkspaceFiles.includes('packages/contracts/src/action-policy.ts'));
+  assert.ok(localSupabaseWorkspaceFiles.includes('packages/manager-core/src/action-execution.ts'));
   const temporaryRoot = mkdtempSync(join(tmpdir(), 'ai14-qa-workspace-test-'));
   try {
     copyLocalSupabaseWorkspaceFiles(process.cwd(), temporaryRoot);

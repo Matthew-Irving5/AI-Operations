@@ -1,3 +1,19 @@
+import { z } from 'zod';
+
+const sourceActionBodySchema = z.object({
+  code: z.string().optional(),
+  message: z.string().optional(),
+  provider_revoked: z.boolean().optional(),
+  credential_deleted: z.boolean().optional(),
+});
+
+export async function readSourceActionBody(response: Response) {
+  // Apple revocation succeeds with HTTP 204, which deliberately has no JSON body.
+  if (response.status === 204) return {};
+  const body: unknown = await response.json();
+  return sourceActionBodySchema.parse(body);
+}
+
 export type SourceFreshness = {
   source: string;
   last_source_at: string | null;

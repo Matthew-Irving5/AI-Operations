@@ -532,9 +532,24 @@ export function compareMigrations(expected: string[], applied: string[], label: 
     : [`${label}: applied migration versions differ`];
 }
 
-export function missingAppliedMigrationVersions(applied: string[], candidate: string[]): string[] {
-  const candidateVersions = new Set(candidate);
-  return sorted([...new Set(applied.filter((version) => !candidateVersions.has(version)))]);
+export function missingAppliedMigrationVersions(
+  candidateVersions: string[],
+  appliedVersions: string[],
+): string[] {
+  const candidate = new Set(candidateVersions);
+  return sorted([...new Set(appliedVersions.filter((version) => !candidate.has(version)))]);
+}
+
+export function stagingMigrationPreflightMismatches(
+  candidateVersions: string[],
+  appliedVersions: string[],
+): string[] {
+  const missing = missingAppliedMigrationVersions(candidateVersions, appliedVersions);
+  return missing.length === 0
+    ? []
+    : [
+        `Staging migration preflight failed: candidate is missing versions already applied to persistent staging: ${missing.join(', ')}. Include the accepted migration history before deployment.`,
+      ];
 }
 
 export function migrationVersionFromFilename(fileName: string): string {
@@ -703,25 +718,6 @@ async function getMigrations(projectRef: string, token: string): Promise<string[
     }),
   });
   return rows.map(({ version }) => version);
-}
-
-async function preflightMigrationHistory(name: EnvironmentName): Promise<void> {
-  const prefix = name.toUpperCase();
-  const projectRef = requiredEnv(`${prefix}_SUPABASE_PROJECT_REF`);
-  if (projectRef !== manifest.environments[name].projectRef) {
-    throw new Error(`${name}: project ref does not match the configured environment.`);
-  }
-  const applied = await getMigrations(projectRef, requiredEnv(`${prefix}_SUPABASE_ACCESS_TOKEN`));
-  const candidate = localMigrations();
-  const missing = missingAppliedMigrationVersions(applied, candidate);
-  if (missing.length > 0) {
-    throw new Error(
-      `${name}: remote migration history contains versions absent from the candidate checkout: ${missing.join(', ')}. Include the approved migration files; never repair applied history to make a behind candidate deploy.`,
-    );
-  }
-  console.log(
-    `${name}: candidate checkout contains all ${applied.length} applied migration versions.`,
-  );
 }
 
 async function getSchemaDigest(projectRef: string, token: string): Promise<string> {
@@ -1405,6 +1401,46 @@ export async function runDriftCheck(
   };
 }
 
+export async function runStagingMigrationPreflight(): Promise<{
+  ok: boolean;
+  mismatches: string[];
+  evidence: {
+    mode: 'staging-migration-preflight';
+    candidateVersions?: string[];
+    appliedVersions?: string[];
+  };
+}> {
+  const projectRef = requiredEnv('STAGING_SUPABASE_PROJECT_REF');
+  const supabaseUrl = requiredEnv('STAGING_SUPABASE_URL');
+  const expected = manifest.environments.staging;
+  const environmentMismatches = validateExpectedEnvironment('staging', {
+    projectRef,
+    supabaseUrl,
+    origin: expected.origin,
+    appEnv: expected.appEnv,
+    workerName: expected.workerName,
+    archiveBucket: expected.archiveBucket,
+  });
+  if (environmentMismatches.length > 0)
+    return {
+      ok: false,
+      mismatches: environmentMismatches,
+      evidence: { mode: 'staging-migration-preflight' },
+    };
+
+  const candidateVersions = localMigrations();
+  const appliedVersions = await getMigrations(
+    projectRef,
+    requiredEnv('STAGING_SUPABASE_ACCESS_TOKEN'),
+  );
+  const mismatches = stagingMigrationPreflightMismatches(candidateVersions, appliedVersions);
+  return {
+    ok: mismatches.length === 0,
+    mismatches,
+    evidence: { mode: 'staging-migration-preflight', candidateVersions, appliedVersions },
+  };
+}
+
 export async function runPairCheck(): Promise<DriftReport> {
   const productionToken = requiredEnv('PRODUCTION_SUPABASE_ACCESS_TOKEN');
   const productionAttestation = loadSourceAttestation();
@@ -1493,7 +1529,9 @@ function summarize(value: Awaited<ReturnType<typeof inventory>>) {
 async function main(): Promise<void> {
   const mode = process.argv[2] === '--' ? process.argv[3] : process.argv[2];
   if (mode === 'preflight-staging-migrations') {
-    await preflightMigrationHistory('staging');
+    const report = await runStagingMigrationPreflight();
+    console.log(JSON.stringify(report, null, 2));
+    if (!report.ok) process.exitCode = 1;
     return;
   }
   if (mode === 'repo-local') {
@@ -1546,7 +1584,7 @@ async function main(): Promise<void> {
   }
   if (mode !== 'repo-staging' && mode !== 'staging-production') {
     throw new Error(
-      'Usage: pnpm environment:drift -- validate-staging|validate-production|repo-local|repo-staging|staging-production',
+      'Usage: pnpm environment:drift -- preflight-staging-migrations|validate-staging|validate-production|repo-local|repo-staging|staging-production',
     );
   }
   const report = mode === 'repo-staging' ? await runDriftCheck(mode) : await runPairCheck();

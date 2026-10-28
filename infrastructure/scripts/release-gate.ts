@@ -1,5 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
+import {
+  ProcurementStagingAcceptanceChecksSchema,
+  ProcurementStagingAcceptanceEvidenceSchema,
+} from './procurement-live-acceptance.js';
+import {
+  CareerStagingAcceptanceChecksSchema,
+  CareerStagingAcceptanceEvidenceSchema,
+} from './career-staging-acceptance-evidence.js';
 import { Ai20CostRuntimeProofSchema } from './ai20-cost-runtime-proof.js';
 import {
   CareerStagingAcceptanceChecksSchema,
@@ -14,6 +22,13 @@ const RunIdSchema = z.string().regex(/^[1-9][0-9]{0,19}$/);
 const SafeIdSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9:-]{0,127}$/);
 const DiagnosticCodeSchema = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/);
 const StageOrigin = z.literal('https://ai-operations-staging.ai-operations.workers.dev');
+const FreshMfaActionEvidenceSchema = z
+  .object({
+    staleDenied: z.literal('passed'),
+    staleAttemptUsedMfaGate: z.literal(false),
+    freshReauthAccepted: z.literal('passed'),
+  })
+  .strict();
 export const Ai15WorkflowProofsSchema = z
   .tuple([
     z
@@ -207,8 +222,10 @@ const AcceptanceProfileSchema = z.enum([
   'targeted',
   'auth-browser',
   'cost-runtime',
+  'procurement',
   'career',
-  'career-auth-browser',
+  'mobile-shortcuts',
+  'mobile-shortcuts-action',
 ]);
 
 const CapabilityResultsSchema = z
@@ -242,13 +259,192 @@ const TargetedCapabilityResultsSchema = z
   .min(1)
   .max(20);
 
-const FreshMfaActionEvidenceSchema = z
+const MobileShortcutChecksSchema = z
   .object({
-    staleDenied: z.literal('passed'),
-    staleAttemptUsedMfaGate: z.literal(false),
-    freshReauthAccepted: z.literal('passed'),
+    supportedDevicePairing: z.literal('passed'),
+    validSnapshotProvenance: z.literal('passed'),
+    replayNoDuplicateCanonicalRows: z.literal('passed'),
+    updatedSnapshotOnlyChanges: z.literal('passed'),
+    revokedDeviceRejectedWithoutWrites: z.literal('passed'),
+    invalidInputsRejected: z.literal('passed'),
+    interruptedIngestRecovery: z.literal('passed'),
+    freshnessTransitions: z.literal('passed'),
   })
   .strict();
+
+const MobileShortcutProofSchema = z
+  .object({
+    deviceId: SafeIdSchema,
+    shortcutRun: z.literal('operator-confirmed'),
+    pairingMfa: z.literal('user-completed'),
+    revocationMfa: z.literal('user-completed'),
+    pairingRequestId: SafeIdSchema,
+    validRequestId: SafeIdSchema,
+    replayRequestId: SafeIdSchema,
+    updatedRequestId: SafeIdSchema,
+    revokedRequestId: SafeIdSchema,
+    wrongSchemaRequestId: SafeIdSchema,
+    malformedRequestId: SafeIdSchema,
+    oversizedRequestId: SafeIdSchema,
+    wrongTokenRequestId: SafeIdSchema,
+    retryRequestId: SafeIdSchema,
+    rawSnapshotId: SafeIdSchema,
+    canonicalRecordId: SafeIdSchema,
+    provenanceRecordId: SafeIdSchema,
+    replayCreatedCanonicalRows: z.literal(0),
+    updatedChangedRecordCount: z.number().int().positive(),
+    updatedUnchangedRecordCount: z.number().int().nonnegative(),
+    revokedSubmissionStatus: z.number().int().min(400).max(499),
+    revokedSubmissionCreatedRows: z.literal(0),
+    invalidStatuses: z
+      .object({
+        wrongSchema: z.number().int().min(400).max(499),
+        malformed: z.number().int().min(400).max(499),
+        oversized: z.number().int().min(400).max(499),
+        wrongToken: z.number().int().min(400).max(499),
+      })
+      .strict(),
+    retryCreatedCanonicalRows: z.number().int().positive(),
+    freshnessStaleObserved: z.literal(true),
+    freshnessRecoveredAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
+export const MobileShortcutStagingEvidenceSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    state: z.literal('MOBILE_SHORTCUTS_STAGING_ACCEPTED'),
+    acceptanceProfile: z.literal('mobile-shortcuts'),
+    candidateSha: ShaSchema,
+    candidateTreeSha: ShaSchema,
+    pullRequestNumber: z.number().int().positive(),
+    deploymentRunId: RunIdSchema,
+    stagingOrigin: StageOrigin,
+    humanMfa: z.literal('user-completed'),
+    checks: MobileShortcutChecksSchema,
+    proof: MobileShortcutProofSchema,
+    correlationIds: z.array(SafeIdSchema).length(10),
+    acceptedAt: z.string().datetime({ offset: true }),
+  })
+  .strict()
+  .superRefine((evidence, context) => {
+    const proof = evidence.proof;
+    const requestIds = [
+      proof.pairingRequestId,
+      proof.validRequestId,
+      proof.replayRequestId,
+      proof.updatedRequestId,
+      proof.revokedRequestId,
+      proof.wrongSchemaRequestId,
+      proof.malformedRequestId,
+      proof.oversizedRequestId,
+      proof.wrongTokenRequestId,
+      proof.retryRequestId,
+    ];
+    if (
+      new Set(requestIds).size !== requestIds.length ||
+      evidence.correlationIds.some((id, index) => id !== requestIds[index]) ||
+      evidence.correlationIds.length !== requestIds.length
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'mobile request correlation IDs must be unique and match the recorded proof order',
+      });
+    }
+  });
+
+const Ai44ActionChecksSchema = z
+  .object({
+    staleSessionDenied: z.literal('passed'),
+    freshMfaActionAccepted: z.literal('passed'),
+    oneEffectCommitted: z.literal('passed'),
+    oneTerminalReceiptPersisted: z.literal('passed'),
+  })
+  .strict();
+
+export const Ai44ActionProofSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    state: z.literal('AI44_ACTION_STAGING_ACCEPTED'),
+    acceptanceProfile: z.literal('auth-browser'),
+    candidateSha: ShaSchema,
+    candidateTreeSha: ShaSchema,
+    pullRequestNumber: z.number().int().positive(),
+    deploymentRunId: RunIdSchema,
+    stagingOrigin: StageOrigin,
+    humanMfa: z.literal('user-completed'),
+    checks: Ai44ActionChecksSchema,
+    freshMfaAction: FreshMfaActionEvidenceSchema,
+    actionId: SafeIdSchema,
+    executionId: SafeIdSchema,
+    receiptId: SafeIdSchema,
+    effectCount: z.literal(1),
+    terminalReceiptCount: z.literal(1),
+    correlationIds: z.array(SafeIdSchema).length(1),
+    acceptedAt: z.string().datetime({ offset: true }),
+  })
+  .strict()
+  .superRefine((evidence, context) => {
+    if (new Set([evidence.actionId, evidence.executionId, evidence.receiptId]).size !== 3) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'AI-44 action, execution, and receipt identifiers must be distinct',
+      });
+    }
+  });
+
+const MobileActionChecksSchema = z
+  .object({
+    mobileShortcutJourney: z.literal('passed'),
+    canonicalActionJourney: z.literal('passed'),
+  })
+  .strict();
+
+const MobileActionStagingEvidenceSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    state: z.literal('MOBILE_ACTION_STAGING_ACCEPTED'),
+    acceptanceProfile: z.literal('mobile-shortcuts-action'),
+    candidateSha: ShaSchema,
+    candidateTreeSha: ShaSchema,
+    pullRequestNumber: z.number().int().positive(),
+    deploymentRunId: RunIdSchema,
+    stagingOrigin: StageOrigin,
+    humanMfa: z.literal('user-completed'),
+    checks: MobileActionChecksSchema,
+    mobileEvidence: MobileShortcutStagingEvidenceSchema,
+    actionEvidence: Ai44ActionProofSchema,
+    correlationIds: z.array(SafeIdSchema).min(11).max(11),
+    acceptedAt: z.string().datetime({ offset: true }),
+  })
+  .strict()
+  .superRefine((evidence, context) => {
+    const nested = [evidence.mobileEvidence, evidence.actionEvidence];
+    const metadataMatches = nested.every(
+      (proof) =>
+        proof.candidateSha === evidence.candidateSha &&
+        proof.candidateTreeSha === evidence.candidateTreeSha &&
+        proof.pullRequestNumber === evidence.pullRequestNumber &&
+        proof.deploymentRunId === evidence.deploymentRunId &&
+        proof.stagingOrigin === evidence.stagingOrigin,
+    );
+    const correlationIds = [
+      ...evidence.mobileEvidence.correlationIds,
+      ...evidence.actionEvidence.correlationIds,
+    ];
+    if (
+      !metadataMatches ||
+      new Set(correlationIds).size !== correlationIds.length ||
+      evidence.correlationIds.length !== correlationIds.length ||
+      evidence.correlationIds.some((id, index) => id !== correlationIds[index])
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          'combined mobile/action evidence must bind the same candidate and unique request IDs',
+      });
+    }
+  });
 
 const AcceptanceEvidenceSchema = z
   .object({
@@ -265,9 +461,13 @@ const AcceptanceEvidenceSchema = z
       CapabilityResultsSchema,
       TargetedCapabilityResultsSchema,
       CostRuntimeChecksSchema,
+      ProcurementStagingAcceptanceChecksSchema,
       CareerStagingAcceptanceChecksSchema,
+      MobileShortcutChecksSchema,
+      MobileActionChecksSchema,
     ]),
     freshMfaAction: FreshMfaActionEvidenceSchema.optional(),
+    mobileEvidence: MobileShortcutStagingEvidenceSchema.optional(),
     promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
     costRuntimeProof: Ai20CostRuntimeProofSchema.optional(),
     careerEvidence: CareerStagingAcceptanceEvidenceSchema.optional(),
@@ -276,25 +476,38 @@ const AcceptanceEvidenceSchema = z
     workflowRuns: Ai15WorkflowProofsSchema.optional(),
     acceptedAt: z.string().datetime({ offset: true }),
     accepted: z.literal(true),
+    procurementEvidence: ProcurementStagingAcceptanceEvidenceSchema.optional(),
+    careerEvidence: CareerStagingAcceptanceEvidenceSchema.optional(),
+    mobileActionEvidence: MobileActionStagingEvidenceSchema.optional(),
   })
   .strict()
   .superRefine((value, context) => {
     const targeted = value.acceptanceProfile === 'targeted';
     const costRuntime = value.acceptanceProfile === 'cost-runtime';
-    const career =
-      value.acceptanceProfile === 'career' || value.acceptanceProfile === 'career-auth-browser';
-    const combinedCareer = value.acceptanceProfile === 'career-auth-browser';
-    const validMfa = targeted || costRuntime || value.humanMfa === 'user-completed';
+    const procurement = value.acceptanceProfile === 'procurement';
+    const mobileShortcuts = value.acceptanceProfile === 'mobile-shortcuts';
+    const mobileAction = value.acceptanceProfile === 'mobile-shortcuts-action';
+    const career = value.acceptanceProfile === 'career';
+    const validMfa = targeted
+      ? value.humanMfa === 'not-required'
+      : costRuntime
+        ? ['user-completed', 'not-required'].includes(value.humanMfa)
+        : value.humanMfa === 'user-completed';
     const validChecks = targeted
       ? Array.isArray(value.checks)
-      : !Array.isArray(value.checks) &&
-        (costRuntime
-          ? 'localCostMatrix' in value.checks
-          : career
-            ? 'authenticatedCareerSync' in value.checks
-            : 'authAal2' in value.checks);
+      : costRuntime
+        ? !Array.isArray(value.checks) && 'localCostMatrix' in value.checks
+        : procurement
+          ? !Array.isArray(value.checks) && 'purchasePaymentDenied' in value.checks
+          : mobileShortcuts
+            ? !Array.isArray(value.checks) && 'supportedDevicePairing' in value.checks
+            : mobileAction
+              ? !Array.isArray(value.checks) && 'mobileShortcutJourney' in value.checks
+              : career
+                ? !Array.isArray(value.checks) && 'authenticatedCareerSync' in value.checks
+                : !Array.isArray(value.checks) && 'authAal2' in value.checks;
     const validFreshMfaAction =
-      targeted || costRuntime || (career && !combinedCareer)
+      targeted || costRuntime || procurement || mobileShortcuts || mobileAction || career
         ? value.freshMfaAction === undefined
         : value.freshMfaAction !== undefined;
     const validCostRuntimeProof = costRuntime
@@ -302,6 +515,22 @@ const AcceptanceEvidenceSchema = z
         value.costRuntimeProof.localProofSha === value.candidateSha &&
         value.correlationIds.includes(value.costRuntimeProof.correlationId)
       : value.costRuntimeProof === undefined;
+    const procurementEvidence = value.procurementEvidence;
+    const validProcurementEvidence = procurement
+      ? procurementEvidence !== undefined &&
+        procurementEvidence.candidateSha === value.candidateSha &&
+        procurementEvidence.candidateTreeSha === value.candidateTreeSha &&
+        procurementEvidence.pullRequestNumber === value.pullRequestNumber &&
+        procurementEvidence.deploymentRunId === value.deploymentRunId &&
+        procurementEvidence.stagingOrigin === value.stagingOrigin &&
+        procurementEvidence.humanMfa === value.humanMfa &&
+        procurementEvidence.acceptedAt === value.acceptedAt &&
+        procurementEvidence.correlationIds.length === value.correlationIds.length &&
+        procurementEvidence.correlationIds.every(
+          (id, index) => id === value.correlationIds[index],
+        ) &&
+        JSON.stringify(value.checks) === JSON.stringify(procurementEvidence.checks)
+      : procurementEvidence === undefined;
     const careerEvidence = value.careerEvidence;
     const validCareerEvidence = career
       ? careerEvidence !== undefined &&
@@ -316,32 +545,53 @@ const AcceptanceEvidenceSchema = z
         careerEvidence.correlationIds.every((id, index) => id === value.correlationIds[index]) &&
         JSON.stringify(value.checks) === JSON.stringify(careerEvidence.checks)
       : careerEvidence === undefined;
-    const validAuthBrowserEvidence = combinedCareer
-      ? value.authBrowserEvidence !== undefined &&
-        [
-          'candidateSha',
-          'candidateTreeSha',
-          'pullRequestNumber',
-          'deploymentRunId',
-          'stagingOrigin',
-        ].every(
-          (key) => Reflect.get(value.authBrowserEvidence!, key) === Reflect.get(value, key),
+    const mobileEvidence = value.mobileEvidence;
+    const validMobileEvidence = mobileShortcuts
+      ? mobileEvidence !== undefined &&
+        mobileEvidence.candidateSha === value.candidateSha &&
+        mobileEvidence.candidateTreeSha === value.candidateTreeSha &&
+        mobileEvidence.pullRequestNumber === value.pullRequestNumber &&
+        mobileEvidence.deploymentRunId === value.deploymentRunId &&
+        mobileEvidence.stagingOrigin === value.stagingOrigin &&
+        mobileEvidence.humanMfa === value.humanMfa &&
+        mobileEvidence.acceptedAt === value.acceptedAt &&
+        mobileEvidence.correlationIds.length === value.correlationIds.length &&
+        mobileEvidence.correlationIds.every((id, index) => id === value.correlationIds[index]) &&
+        JSON.stringify(value.checks) === JSON.stringify(mobileEvidence.checks)
+      : mobileEvidence === undefined;
+    const mobileActionEvidence = value.mobileActionEvidence;
+    const validMobileActionEvidence = mobileAction
+      ? mobileActionEvidence !== undefined &&
+        mobileActionEvidence.candidateSha === value.candidateSha &&
+        mobileActionEvidence.candidateTreeSha === value.candidateTreeSha &&
+        mobileActionEvidence.pullRequestNumber === value.pullRequestNumber &&
+        mobileActionEvidence.deploymentRunId === value.deploymentRunId &&
+        mobileActionEvidence.stagingOrigin === value.stagingOrigin &&
+        mobileActionEvidence.humanMfa === value.humanMfa &&
+        mobileActionEvidence.acceptedAt === value.acceptedAt &&
+        mobileActionEvidence.correlationIds.length === value.correlationIds.length &&
+        mobileActionEvidence.correlationIds.every(
+          (id, index) => id === value.correlationIds[index],
         ) &&
-        JSON.stringify(value.freshMfaAction) ===
-          JSON.stringify(value.authBrowserEvidence.freshMfaAction)
-      : value.authBrowserEvidence === undefined;
+        JSON.stringify(value.checks) ===
+          JSON.stringify({
+            mobileShortcutJourney: 'passed',
+            canonicalActionJourney: 'passed',
+          })
+      : mobileActionEvidence === undefined;
     if (
-      !validAuthBrowserEvidence ||
       !validMfa ||
       !validChecks ||
       !validFreshMfaAction ||
       !validCostRuntimeProof ||
-      !validCareerEvidence
+      !validProcurementEvidence ||
+      !validCareerEvidence ||
+      !validMobileEvidence ||
+      !validMobileActionEvidence
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message:
-          'acceptance profile, MFA evidence, fresh-MFA action proof and check shape must agree',
+        message: 'acceptance profile, proof, MFA evidence, and check shape must agree',
       });
     }
   });
@@ -426,11 +676,11 @@ const StagingAcceptanceInputSchema = z.discriminatedUnion('acceptanceProfile', [
       candidateSha: ShaSchema,
       deploymentRunId: RunIdSchema,
       stagingOrigin: StageOrigin,
-      acceptanceProfile: z.literal('career'),
+      acceptanceProfile: z.literal('procurement'),
       humanMfa: z.literal('user-completed'),
-      checks: CareerStagingAcceptanceChecksSchema,
-      careerEvidence: CareerStagingAcceptanceEvidenceSchema,
-      correlationIds: z.array(z.string().uuid()).length(3),
+      checks: ProcurementStagingAcceptanceChecksSchema,
+      procurementEvidence: ProcurementStagingAcceptanceEvidenceSchema,
+      correlationIds: z.array(SafeIdSchema).length(2),
       acceptedAt: z.string().datetime({ offset: true }),
     })
     .strict(),
@@ -439,13 +689,37 @@ const StagingAcceptanceInputSchema = z.discriminatedUnion('acceptanceProfile', [
       candidateSha: ShaSchema,
       deploymentRunId: RunIdSchema,
       stagingOrigin: StageOrigin,
-      acceptanceProfile: z.literal('career-auth-browser'),
+      acceptanceProfile: z.literal('career'),
       humanMfa: z.literal('user-completed'),
       checks: CareerStagingAcceptanceChecksSchema,
       careerEvidence: CareerStagingAcceptanceEvidenceSchema,
-      authBrowserEvidence: z.lazy(() => AuthBrowserStagingSuiteEvidenceSchema),
-      freshMfaAction: FreshMfaActionEvidenceSchema,
-      correlationIds: z.array(SafeIdSchema).min(1).max(20),
+      correlationIds: z.array(SafeIdSchema).length(3),
+      acceptedAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+  z
+    .object({
+      candidateSha: ShaSchema,
+      deploymentRunId: RunIdSchema,
+      stagingOrigin: StageOrigin,
+      acceptanceProfile: z.literal('mobile-shortcuts'),
+      humanMfa: z.literal('user-completed'),
+      checks: MobileShortcutChecksSchema,
+      mobileEvidence: MobileShortcutStagingEvidenceSchema,
+      correlationIds: z.array(SafeIdSchema).length(10),
+      acceptedAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+  z
+    .object({
+      candidateSha: ShaSchema,
+      deploymentRunId: RunIdSchema,
+      stagingOrigin: StageOrigin,
+      acceptanceProfile: z.literal('mobile-shortcuts-action'),
+      humanMfa: z.literal('user-completed'),
+      checks: MobileActionChecksSchema,
+      mobileActionEvidence: MobileActionStagingEvidenceSchema,
+      correlationIds: z.array(SafeIdSchema).length(11),
       acceptedAt: z.string().datetime({ offset: true }),
     })
     .strict(),
@@ -544,59 +818,14 @@ const CostRuntimeStagingSuiteEvidenceSchema = z
     }
   });
 
-export const CareerAuthBrowserStagingEvidenceSchema = z
-  .object({
-    schemaVersion: z.literal(1),
-    state: z.literal('CAREER_AUTH_BROWSER_STAGING_ACCEPTED'),
-    acceptanceProfile: z.literal('career-auth-browser'),
-    candidateSha: ShaSchema,
-    candidateTreeSha: ShaSchema,
-    pullRequestNumber: z.number().int().positive(),
-    deploymentRunId: RunIdSchema,
-    stagingOrigin: StageOrigin,
-    humanMfa: z.literal('user-completed'),
-    checks: CareerStagingAcceptanceChecksSchema,
-    correlationIds: z.array(SafeIdSchema).min(1).max(20),
-    acceptedAt: z.string().datetime({ offset: true }),
-    careerEvidence: CareerStagingAcceptanceEvidenceSchema,
-    authBrowserEvidence: AuthBrowserStagingSuiteEvidenceSchema,
-  })
-  .strict()
-  .superRefine((value, context) => {
-    for (const proof of [value.careerEvidence, value.authBrowserEvidence]) {
-      for (const key of [
-        'candidateSha',
-        'candidateTreeSha',
-        'pullRequestNumber',
-        'deploymentRunId',
-        'stagingOrigin',
-      ] as const) {
-        if (proof[key] !== value[key])
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            message:
-              'Both Career and auth-browser proof must match the exact candidate deployment.',
-          });
-      }
-    }
-    if (
-      JSON.stringify(value.checks) !== JSON.stringify(value.careerEvidence.checks) ||
-      JSON.stringify(value.correlationIds) !==
-        JSON.stringify(value.careerEvidence.correlationIds) ||
-      value.acceptedAt !== value.careerEvidence.acceptedAt
-    )
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Combined Career metadata must preserve the actual Career result.',
-      });
-  });
-
-const HostedStagingSuiteEvidenceSchema = z.discriminatedUnion('acceptanceProfile', [
+const HostedStagingSuiteEvidenceSchema = z.union([
   AuthBrowserStagingSuiteEvidenceSchema,
   TargetedStagingSuiteEvidenceSchema,
   CostRuntimeStagingSuiteEvidenceSchema,
+  ProcurementStagingAcceptanceEvidenceSchema,
   CareerStagingAcceptanceEvidenceSchema,
-  CareerAuthBrowserStagingEvidenceSchema,
+  MobileShortcutStagingEvidenceSchema,
+  MobileActionStagingEvidenceSchema,
 ]);
 
 const StagingAcceptanceCommandSchema = z
@@ -764,60 +993,133 @@ export function selectHostedAcceptanceProfile(
   override: string = 'auto',
 ): HostedAcceptanceProfile {
   const normalizedFiles = files.map((raw) => raw.replaceAll('\\', '/'));
+  const isAuthBrowserPath = (file: string) =>
+    file.startsWith('apps/web/app/api/auth/') ||
+    file === 'apps/web/app/api/workflows/launch/route.ts' ||
+    file.startsWith('apps/web/app/(app)/career/page.tsx') ||
+    file.startsWith('apps/web/app/(app)/devices/') ||
+    file === 'apps/web/app/(app)/app-shell.tsx' ||
+    file === 'apps/web/app/(app)/layout.tsx' ||
+    file === 'apps/web/app/(app)/navigation.ts' ||
+    file.startsWith('apps/web/app/login/') ||
+    file.startsWith('apps/web/app/mfa/') ||
+    file.startsWith('apps/web/lib/auth') ||
+    file.startsWith('apps/web/lib/local-test-auth') ||
+    file === 'apps/web/middleware.ts' ||
+    file.startsWith('apps/windows-worker/src/ai_operations_worker/') ||
+    file.startsWith('packages/contracts/src/action-policy') ||
+    file.startsWith('packages/manager-core/src/action-execution') ||
+    file === 'supabase/config.toml' ||
+    file.startsWith('supabase/functions/_shared/auth-assurance') ||
+    file.startsWith('supabase/functions/_shared/worker-protocol') ||
+    file.startsWith('supabase/functions/device-register/') ||
+    file.startsWith('supabase/functions/device-revoke/') ||
+    file.startsWith('supabase/functions/github-career-sync/') ||
+    file.startsWith('supabase/functions/ai-execute/canonical-action-') ||
+    file.startsWith('supabase/functions/ai-execute/prompt-promotion-adapter') ||
+    file.startsWith('supabase/functions/worker-poll/') ||
+    file.startsWith('supabase/functions/worker-heartbeat/') ||
+    file.startsWith('tests/e2e/auth.') ||
+    file === 'tests/e2e/platform-authenticated.spec.ts';
+  const authBrowserFiles = normalizedFiles.filter(isAuthBrowserPath);
+  const authBrowser = authBrowserFiles.length > 0;
   const costRuntime = normalizedFiles.includes('docs/build/ticket-readbacks/AI-20.md');
-  const career = normalizedFiles.some(
-    (file) =>
-      file === 'docs/build/ticket-readbacks/AI-35.md' ||
-      file === 'tests/e2e-live/career-acceptance.spec.ts',
-  );
+  const procurement =
+    normalizedFiles.includes('docs/build/ticket-readbacks/AI-39.md') ||
+    normalizedFiles.includes('tests/e2e-live/procurement-acceptance.spec.ts');
+  const career =
+    normalizedFiles.includes('docs/build/ticket-readbacks/AI-35.md') ||
+    normalizedFiles.includes('tests/e2e-live/career-acceptance.spec.ts');
+  const mobileShortcuts =
+    normalizedFiles.includes('docs/build/ticket-readbacks/AI-28.md') ||
+    normalizedFiles.includes('tests/e2e-live/mobile-shortcuts-acceptance.spec.ts');
   const careerSurfacePath = (file: string) =>
     file.startsWith('apps/web/app/(app)/career/') ||
     file.startsWith('supabase/functions/github-career-sync/');
-  const authBrowser = normalizedFiles.some((file) => {
-    if (careerSurfacePath(file)) return false;
-    return (
-      file.startsWith('apps/web/app/api/auth/') ||
-      file === 'apps/web/app/api/workflows/launch/route.ts' ||
-      file === 'apps/web/app/(app)/app-shell.tsx' ||
-      file === 'apps/web/app/(app)/layout.tsx' ||
-      file === 'apps/web/app/(app)/navigation.ts' ||
-      file.startsWith('apps/web/app/login/') ||
-      file.startsWith('apps/web/app/mfa/') ||
-      file.startsWith('apps/web/lib/auth') ||
-      file.startsWith('apps/web/lib/local-test-auth') ||
-      file === 'apps/web/middleware.ts' ||
-      file === 'supabase/config.toml' ||
-      file.startsWith('supabase/functions/_shared/auth-assurance') ||
-      file.startsWith('tests/e2e/auth.') ||
-      file === 'tests/e2e/platform-authenticated.spec.ts'
-    );
-  });
-  if (costRuntime && (authBrowser || career)) {
-    throw new Error(
-      'AI-20 cost-runtime proof cannot share one acceptance profile with auth-browser or Career proof.',
-    );
-  }
+  const mobileSurfacePath = (file: string) =>
+    file.startsWith('apps/web/app/api/apple-bridge/') ||
+    file.startsWith('supabase/functions/mobile-snapshot-ingest/') ||
+    file.startsWith('supabase/functions/device-register/') ||
+    file.startsWith('supabase/functions/device-revoke/');
+  const hasOtherAuthBrowserSurface = authBrowserFiles.some(
+    (file) => !(careerSurfacePath(file) && career) && !(mobileSurfacePath(file) && mobileShortcuts),
+  );
 
-  const inferred = costRuntime
-    ? 'cost-runtime'
-    : career
-      ? authBrowser
-        ? 'career-auth-browser'
-        : 'career'
-      : authBrowser
-        ? 'auth-browser'
-        : 'targeted';
-  if (override !== 'auto' && override !== inferred) {
-    if (override === 'career' && !career) {
+  const ticketProfiles = [costRuntime, procurement, career, mobileShortcuts].filter(Boolean);
+  if (ticketProfiles.length > 1)
+    throw new Error(
+      'Candidate requires incompatible ticket-specific hosted acceptance profiles; select a combined profile before staging.',
+    );
+  if ((costRuntime || procurement || career) && hasOtherAuthBrowserSurface)
+    throw new Error(
+      'Candidate requires both ticket-specific and generic auth-browser proof; a combined acceptance profile is required.',
+    );
+  if (override === 'mobile-shortcuts-action') {
+    if ((!mobileShortcuts && !authBrowser) || costRuntime || procurement || career)
+      throw new Error(
+        'The combined mobile/action profile requires a mobile marker or authenticated action surface and cannot replace another ticket-specific profile.',
+      );
+    return 'mobile-shortcuts-action';
+  }
+  if (override === 'mobile-shortcuts') {
+    if (!mobileShortcuts)
+      throw new Error(
+        'The mobile-shortcuts override requires the AI-28 readback or dedicated acceptance spec marker.',
+      );
+    if (authBrowser)
+      throw new Error(
+        'The mobile-shortcuts profile cannot replace authenticated action proof; use the combined mobile-shortcuts-action profile.',
+      );
+    return 'mobile-shortcuts';
+  }
+  if (override === 'auth-browser') {
+    if (ticketProfiles.length > 0)
+      throw new Error(
+        'A ticket-specific hosted proof cannot be replaced by the generic auth-browser suite.',
+      );
+    return 'auth-browser';
+  }
+  if (override === 'cost-runtime') {
+    if (!costRuntime)
+      throw new Error('The cost-runtime override requires the AI-20 readback marker.');
+    return 'cost-runtime';
+  }
+  if (override === 'procurement') {
+    if (!procurement)
+      throw new Error(
+        'The procurement override requires the AI-39 readback or dedicated acceptance spec marker.',
+      );
+    return 'procurement';
+  }
+  if (override === 'career') {
+    if (!career)
       throw new Error(
         'The career override requires the AI-35 readback or dedicated acceptance spec marker.',
       );
-    }
-    throw new Error(
-      "Requested staging profile '" + override + "' does not match inferred '" + inferred + "'.",
-    );
+    return 'career';
   }
-  return inferred;
+  if (override === 'targeted') {
+    if (ticketProfiles.length > 0 || authBrowser)
+      throw new Error('A required hosted proof cannot be replaced by targeted auto-acceptance.');
+    return 'targeted';
+  }
+  if (override !== 'auto')
+    throw new Error(
+      "Hosted acceptance profile override must be 'auto', 'auth-browser', 'cost-runtime', 'procurement', 'career', 'mobile-shortcuts', or 'mobile-shortcuts-action'.",
+    );
+  return costRuntime
+    ? 'cost-runtime'
+    : procurement
+      ? 'procurement'
+      : career
+        ? 'career'
+        : mobileShortcuts && authBrowser
+          ? 'mobile-shortcuts-action'
+          : mobileShortcuts
+            ? 'mobile-shortcuts'
+            : authBrowser
+              ? 'auth-browser'
+              : 'targeted';
 }
 export function createHostedStagingSuiteEvidence(input: unknown): HostedStagingSuiteEvidence {
   return parseEvidence(
@@ -993,18 +1295,23 @@ export function createStagingAcceptanceStatus(input: unknown): StagingAcceptance
     ...(parsed.hostedSuite.acceptanceProfile === 'cost-runtime'
       ? { costRuntimeProof: parsed.hostedSuite.costRuntimeProof }
       : {}),
+    ...(parsed.hostedSuite.acceptanceProfile === 'procurement'
+      ? { procurementEvidence: parsed.hostedSuite }
+      : {}),
     ...(parsed.hostedSuite.acceptanceProfile === 'career'
       ? { careerEvidence: parsed.hostedSuite }
-      : parsed.hostedSuite.acceptanceProfile === 'career-auth-browser'
-        ? {
-            careerEvidence: parsed.hostedSuite.careerEvidence,
-            authBrowserEvidence: parsed.hostedSuite.authBrowserEvidence,
-            freshMfaAction: parsed.hostedSuite.authBrowserEvidence.freshMfaAction,
-          }
-        : {}),
+      : {}),
+    ...(parsed.hostedSuite.acceptanceProfile === 'mobile-shortcuts'
+      ? { mobileEvidence: parsed.hostedSuite }
+      : {}),
+    ...(parsed.hostedSuite.acceptanceProfile === 'mobile-shortcuts-action'
+      ? { mobileActionEvidence: parsed.hostedSuite }
+      : {}),
     correlationIds: parsed.hostedSuite.correlationIds,
-    ...(parsed.hostedSuite.workflowRuns ? { workflowRuns: parsed.hostedSuite.workflowRuns } : {}),
-    ...(parsed.hostedSuite.promptGovernanceProof
+    ...('workflowRuns' in parsed.hostedSuite && parsed.hostedSuite.workflowRuns
+      ? { workflowRuns: parsed.hostedSuite.workflowRuns }
+      : {}),
+    ...('promptGovernanceProof' in parsed.hostedSuite && parsed.hostedSuite.promptGovernanceProof
       ? { promptGovernanceProof: parsed.hostedSuite.promptGovernanceProof }
       : {}),
     acceptedAt: parsed.hostedSuite.acceptedAt,
@@ -1324,7 +1631,7 @@ export function authorizeProductionPromotion(input: {
       'one associated merged PR',
       `${parsed.associatedPullRequests.length} PRs`,
     );
-  const mergedPr = parsed.associatedPullRequests[0];
+  const mergedPr = parsed.associatedPullRequests[0]!;
   if (mergedPr.state !== 'closed' || mergedPr.mergedAt === null)
     fail(
       'merge_pr_not_merged',
@@ -1394,16 +1701,9 @@ export function authorizeProductionPromotion(input: {
   });
 }
 
-export function recordProductionSmoke(input: {
-  deployedSha: string;
-  promotion: ProductionPromotionEvidence;
-  probes: Array<{
-    name: 'workerVersion' | 'loginShell' | 'authBoundary' | 'safeFunction';
-    result: 'passed' | 'failed';
-    diagnosticCode?: string;
-    observedReleaseSha?: string;
-  }>;
-}): ProductionSmokeEvidence {
+export function recordProductionSmoke(
+  input: z.input<typeof ProductionSmokeInputSchema>,
+): ProductionSmokeEvidence {
   const promotion = parseEvidence(
     ProductionPromotionEvidenceSchema,
     input.promotion,

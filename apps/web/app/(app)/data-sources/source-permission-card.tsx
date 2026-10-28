@@ -14,6 +14,7 @@ import {
   latestFreshness,
   parseGoogleSourceDiscoveryDiagnostic,
   parseGoogleSourceResources,
+  readSourceActionBody as responseBody,
   sourceDate,
   type GoogleSourceResources,
   type GoogleSourceDiscoveryDiagnostic,
@@ -39,13 +40,6 @@ type AppleDevice = {
   revoked_at: string | null;
   last_seen_at: string | null;
   created_at: string;
-};
-
-type ActionBody = {
-  code?: string;
-  message?: string;
-  provider_revoked?: boolean;
-  credential_deleted?: boolean;
 };
 
 type SelectionIntent = {
@@ -74,10 +68,6 @@ function parseSelectionIntent(value: unknown): SelectionIntent | null {
     selectedCalendarIds: calendarIds,
     selectedDriveFileIds: driveIds,
   };
-}
-
-async function responseBody(response: Response): Promise<ActionBody> {
-  return (await response.json().catch(() => null)) as ActionBody;
 }
 
 async function runGoogleSync(connectionId: string) {

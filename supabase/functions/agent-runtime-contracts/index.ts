@@ -207,7 +207,7 @@ async function createFixture(userId: string, fixtureKey: string) {
         status: action.status,
         proposed_payload: toNonNullJson(action.proposedPayload),
         contract_version: action.contractVersion,
-        approval_required: false,
+        approval_required: action.authority === "agent_proposal",
         authority: action.authority,
         approval_state: action.approvalState,
         required_capability: action.requiredCapability,

@@ -7,11 +7,15 @@ function assertEquals(actual: unknown, expected: unknown): void {
 }
 
 const runId = "11111111-1111-4111-8111-111111111111";
-const handler = (execute: (runId: string) => Promise<unknown>) =>
+const handler = (
+  execute: (runId: string) => Promise<unknown>,
+  executeAction?: (executionRequestId: string) => Promise<unknown>,
+) =>
   createWorkflowExecutionHandler({
     workerSecret: "worker-secret",
     serviceRoleKey: "service-role",
     execute,
+    executeAction,
     timingSafeEqual: (left, right) => left === right,
   });
 
@@ -45,6 +49,30 @@ Deno.test(
     });
   },
 );
+
+Deno.test("ai-execute dispatches authenticated canonical execution request ids", async () => {
+  const executionRequestId = "33333333-3333-4333-8333-333333333333";
+  const received: string[] = [];
+  const response = await handler(
+    () => Promise.reject(new Error("workflow_path_must_not_run")),
+    (id) => {
+      received.push(id);
+      return Promise.resolve({ kind: "in_progress" });
+    },
+  )(
+    new Request("https://local.test/ai-execute", {
+      method: "POST",
+      headers: {
+        "x-worker-secret": "worker-secret",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ executionRequestId }),
+    }),
+  );
+  assertEquals(response.status, 200);
+  assertEquals(received, [executionRequestId]);
+  assertEquals(await response.json(), { kind: "in_progress" });
+});
 
 Deno.test(
   "ai-execute rejects caller execution controls and invalid credentials before executing",

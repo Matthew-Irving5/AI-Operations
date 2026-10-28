@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isInstalledNextVersionCurrent, isSupportedNodeVersion } from './qa-doctor';
+import {
+  isPinnedSupabaseCliVersion,
+  isSupportedNodeVersion,
+  pinnedSupabaseCliVersion,
+} from './qa-doctor';
 
 test('qa doctor accepts the pinned Node floor and newer versions', () => {
   assert.equal(isSupportedNodeVersion('22.18.0'), true);
@@ -8,8 +12,20 @@ test('qa doctor accepts the pinned Node floor and newer versions', () => {
   assert.equal(isSupportedNodeVersion('22.17.9'), false);
 });
 
-test('qa doctor rejects a stale installed Next.js version', () => {
-  assert.equal(isInstalledNextVersionCurrent('16.4.1', '16.4.1'), true);
-  assert.equal(isInstalledNextVersionCurrent('16.4.1', '16.3.8'), false);
-  assert.equal(isInstalledNextVersionCurrent('16.4.1', undefined), false);
+const supabaseLockfile = `importers:
+  .:
+    devDependencies:
+      supabase:
+        specifier: ^2.118.0
+        version: 2.118.0
+`;
+
+test('qa doctor reads and enforces the lockfile-pinned Supabase CLI version', () => {
+  assert.equal(pinnedSupabaseCliVersion(supabaseLockfile), '2.118.0');
+  assert.equal(isPinnedSupabaseCliVersion(supabaseLockfile, '2.118.0'), true);
+  assert.equal(isPinnedSupabaseCliVersion(supabaseLockfile, '2.120.0'), false);
+});
+
+test('qa doctor fails closed when the lockfile does not pin Supabase', () => {
+  assert.throws(() => pinnedSupabaseCliVersion('importers:\n  .:\n'), /does not pin/);
 });

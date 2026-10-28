@@ -10,9 +10,35 @@ import {
   latestFreshness,
   parseGoogleSourceResources,
   parseGoogleSourceDiscoveryDiagnostic,
+  readSourceActionBody,
 } from './source-permissions';
 
 describe('source permission explanations', () => {
+  it('accepts the empty HTTP 204 Apple revocation contract', async () => {
+    await expect(readSourceActionBody(new Response(null, { status: 204 }))).resolves.toEqual({});
+  });
+
+  it('preserves validated Google revocation details', async () => {
+    const body = {
+      code: 'revoked',
+      message: 'Disconnected',
+      provider_revoked: true,
+      credential_deleted: true,
+    };
+    await expect(readSourceActionBody(Response.json(body))).resolves.toEqual(body);
+  });
+
+  it('rejects malformed JSON instead of treating it as an empty success', async () => {
+    await expect(readSourceActionBody(new Response('not JSON'))).rejects.toThrow();
+  });
+
+  it.each([null, [], { provider_revoked: 'true' }])(
+    'rejects malformed source action JSON: %j',
+    async (body) => {
+      await expect(readSourceActionBody(Response.json(body))).rejects.toThrow();
+    },
+  );
+
   it('keeps a revoke handoff available until the matching source card consumes it', () => {
     const values = new Map([
       ['source_revoke_intent', JSON.stringify({ sourceId: 'mailbox-1', provider: 'google' })],
