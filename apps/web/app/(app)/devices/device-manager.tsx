@@ -97,10 +97,12 @@ function errorText(body: ApiResult | null, status: number, stage: string) {
 }
 
 function workerConnected(device: Device, currentTimeMs: number): boolean {
-  return device.state !== 'revoked' &&
+  return (
+    device.state !== 'revoked' &&
     Boolean(device.last_heartbeat_at) &&
     Date.parse(device.last_heartbeat_at ?? '') >= currentTimeMs - 30 * 60_000 &&
-    device.health?.status.compatibility?.compatible === true;
+    device.health?.status.compatibility?.compatible === true
+  );
 }
 
 export function DeviceManager({

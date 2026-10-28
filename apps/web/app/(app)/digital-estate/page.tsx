@@ -67,7 +67,7 @@ export default async function DigitalEstatePage() {
       ) : (
         <p className="card">
           No scan has been requested. Deep scans require an individual hard cap, selected approved
-        roots, and a connected paired worker.
+          roots, and a connected paired worker.
         </p>
       )}
       <p className="card">
