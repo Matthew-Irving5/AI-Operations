@@ -1,3 +1,4 @@
+import { readAi17StagingReports } from './ai17-staging-reader.js';
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, readdir, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -29,12 +30,13 @@ async function main(): Promise<void> {
     mode !== 'suite' &&
     mode !== 'auth-acceptance' &&
     mode !== 'cost-acceptance' &&
+    mode !== 'planner-specialist' &&
     mode !== 'fixtures' &&
     mode !== 'fixture-mismatch' &&
     mode !== 'mismatch'
   ) {
     throw new Error(
-      'Choose one live E2E mode: suite, auth-acceptance, cost-acceptance, fixtures, fixture-mismatch, or mismatch.',
+      'Choose one live E2E mode: suite, auth-acceptance, cost-acceptance, planner-specialist, fixtures, fixture-mismatch, or mismatch.',
     );
   }
 
@@ -69,7 +71,10 @@ async function main(): Promise<void> {
   }
 
   if (
-    (mode === 'suite' || mode === 'auth-acceptance' || mode === 'cost-acceptance') &&
+    (mode === 'suite' ||
+      mode === 'auth-acceptance' ||
+      mode === 'cost-acceptance' ||
+      mode === 'planner-specialist') &&
     process.env.LIVE_E2E_MANUAL_MFA !== 'true'
   ) {
     throw new Error(
@@ -79,12 +84,19 @@ async function main(): Promise<void> {
   const env = parseLiveE2eEnvironment(process.env, mode);
   if (env.LIVE_E2E_BASE_URL !== stagingTarget.origin) throw new Error('Unexpected E2E origin.');
   if (mode === 'cost-acceptance') await assertAi20CostRuntimeReadiness();
+  if (mode === 'planner-specialist')
+    await readAi17StagingReports('00000000-0000-4000-8000-000000000000');
   let acceptanceOutputPath: string | undefined;
   let acceptanceCandidateSha: string | undefined;
   let acceptanceDeploymentRunId: string | undefined;
   let acceptanceCandidateTreeSha: string | undefined;
   let acceptancePullRequestNumber: number | undefined;
-  if (mode === 'suite' || mode === 'auth-acceptance' || mode === 'cost-acceptance') {
+  if (
+    mode === 'suite' ||
+    mode === 'auth-acceptance' ||
+    mode === 'cost-acceptance' ||
+    mode === 'planner-specialist'
+  ) {
     acceptanceCandidateSha = process.env.LIVE_E2E_CANDIDATE_SHA;
     acceptanceDeploymentRunId = process.env.LIVE_E2E_DEPLOYMENT_RUN_ID;
     acceptanceCandidateTreeSha = process.env.LIVE_E2E_CANDIDATE_TREE_SHA;
@@ -134,7 +146,11 @@ async function main(): Promise<void> {
         `live-staging-acceptance-${acceptanceCandidateSha}-${Date.now()}.json`,
       );
       await mkdir(resolve('test-results'), { recursive: true });
-      process.env.LIVE_E2E_ACCEPTANCE_OUTPUT_PATH = acceptanceOutputPath;
+      if (mode === 'planner-specialist') {
+        process.env.LIVE_E2E_AI17_ACCEPTANCE_OUTPUT_PATH = acceptanceOutputPath;
+      } else {
+        process.env.LIVE_E2E_ACCEPTANCE_OUTPUT_PATH = acceptanceOutputPath;
+      }
     }
   }
   if (mode === 'auth-acceptance') {
@@ -312,9 +328,11 @@ async function main(): Promise<void> {
         ? ['tests/e2e-live/auth-acceptance.spec.ts']
         : mode === 'cost-acceptance'
           ? ['tests/e2e-live/staging.spec.ts', '--grep=@ai20-cost-runtime-acceptance']
-          : mode === 'suite'
-            ? ['tests/e2e-live/staging.spec.ts', '--grep=@ai16-ai19-acceptance']
-            : [];
+          : mode === 'planner-specialist'
+            ? ['tests/e2e-live/ai17-planner-specialist.spec.ts']
+            : mode === 'suite'
+              ? ['tests/e2e-live/staging.spec.ts', '--grep=@ai16-ai19-acceptance']
+              : [];
     const liveArgs = [
       'pnpm',
       'exec',

@@ -81,6 +81,29 @@ Deno.test("current prompt response exposes only active Systems governance inputs
   }
 });
 
+Deno.test("Planner prompt governance keeps its own manager and empty prompt tool policy", () => {
+  const current = buildCurrentPromptResponse({
+    ...template,
+    code: "planner-agent-report",
+    managerCode: "personal",
+  }, version);
+  if (
+    !current || current.templateId !== template.id ||
+    current.toolPolicy.tools.length !== 0
+  ) {
+    throw new Error(
+      "planner_prompt_governance_must_remain_empty_and_manager_bound",
+    );
+  }
+  if (
+    buildCurrentPromptResponse({
+      ...template,
+      code: "planner-agent-report",
+      managerCode: "systems",
+    }, version)
+  ) throw new Error("planner_template_must_reject_non_personal_manager");
+});
+
 Deno.test("current prompt response rejects non-Systems, stale, or ungoverned versions", () => {
   if (
     buildCurrentPromptResponse({ ...template, managerCode: "finance" }, version)

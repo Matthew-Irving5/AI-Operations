@@ -1,4 +1,3 @@
-import { combineCareerAuthStagingResults } from './career-auth-staging-result.js';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
@@ -12,6 +11,7 @@ import {
 } from './live-acceptance-evidence.js';
 import { execFileSync } from 'node:child_process';
 import {
+  Ai17PlannerSpecialistEvidenceSchema,
   Ai16PromptGovernanceProofSchema,
   acceptStagingCandidate,
   acquireStagingSlot,
@@ -258,82 +258,6 @@ function ai20CostRuntimeEvidence(overrides: Record<string, unknown> = {}) {
     },
     correlationIds: [correlationId],
     acceptedAt: '2026-10-22T12:00:00.000Z',
-    ...overrides,
-  };
-}
-
-function careerSuiteEvidence(overrides: Record<string, unknown> = {}) {
-  const correlationIds = [
-    '00000000-0000-4000-8000-000000000011',
-    '00000000-0000-4000-8000-000000000012',
-    '00000000-0000-4000-8000-000000000013',
-  ];
-  const checks = {
-    authenticatedCareerSync: 'passed',
-    personalGithubScope: 'passed',
-    demonstratedSkillCitation: 'passed',
-    brightSgDenied: 'passed',
-    otherOwnerDenied: 'passed',
-    ownerDenialAuditNoProviderRequest: 'passed',
-    chromium: 'passed',
-  } as const;
-  return {
-    schemaVersion: 1,
-    state: 'CAREER_STAGING_ACCEPTED',
-    acceptanceProfile: 'career',
-    candidateSha,
-    candidateTreeSha,
-    pullRequestNumber: 152,
-    deploymentRunId: '36474707377',
-    stagingOrigin: origin,
-    humanMfa: 'user-completed',
-    correlationIds,
-    checks,
-    proof: {
-      githubOwner: 'Matthew-Irving5',
-      sync: {
-        httpStatus: 200,
-        repositories: 2,
-        evidenceRecords: 1,
-        requestId: correlationIds[0],
-        retrievedAt: '2026-10-22T10:00:00.000Z',
-      },
-      skillCitation: {
-        skillCount: 1,
-        evidenceStrength: 'authored-source-change',
-        mergedDate: '2026-10-21',
-        retrievedDate: '2026-10-22',
-        mergedPullRequestUrlSha256: 'a'.repeat(64),
-        sourceFileBlobUrlSha256: 'b'.repeat(64),
-        sourceFileExtension: 'ts',
-        addedLines: 14,
-      },
-      ownerDenials: [
-        {
-          ownerClass: 'brightsg',
-          httpStatus: 403,
-          code: 'github_owner_hard_denied',
-          requestId: correlationIds[1],
-          auditAction: 'github_career_sync_owner_denied',
-          auditTargetType: 'github_owner',
-          auditTargetId: 'hard_denied',
-          auditResult: 'denied',
-          providerRequestMade: false,
-        },
-        {
-          ownerClass: 'other',
-          httpStatus: 403,
-          code: 'github_owner_not_allowlisted',
-          requestId: correlationIds[2],
-          auditAction: 'github_career_sync_owner_denied',
-          auditTargetType: 'github_owner',
-          auditTargetId: 'not_allowlisted',
-          auditResult: 'denied',
-          providerRequestMade: false,
-        },
-      ],
-    },
-    acceptedAt: '2026-10-22T10:00:00.000Z',
     ...overrides,
   };
 }
@@ -1301,7 +1225,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /candidate_sha:/);
   assert.match(
     deployWorkflow,
-    /acceptance_profile:[\s\S]*options: \[auto, targeted, auth-browser, cost-runtime, career, career-auth-browser\]/,
+    /acceptance_profile:[\s\S]*options:\s*\[\s*auto,\s*targeted,\s*auth-browser,\s*cost-runtime,[\s\S]*?planner-specialist[\s\S]*?\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1506,7 +1430,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(
     deployWorkflow,
-    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "career" \|\| "\$ACCEPTANCE_PROFILE" == "career-auth-browser" \]\]/,
+    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser"[\s\S]*"\$ACCEPTANCE_PROFILE" == "planner-specialist"[\s\S]*\]\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1709,75 +1633,6 @@ test('AI-20 live acceptance command runs only its tagged provider proof', async 
   );
 });
 
-test('AI-35 Career readback selects its dedicated profile and rejects incompatible auth proof', () => {
-  assert.equal(
-    selectHostedAcceptanceProfile([
-      'docs/build/ticket-readbacks/AI-35.md',
-      'apps/web/app/(app)/career/page.tsx',
-      'supabase/functions/github-career-sync/index.ts',
-    ]),
-    'career',
-  );
-  assert.equal(
-    selectHostedAcceptanceProfile(['tests/e2e-live/career-acceptance.spec.ts'], 'career'),
-    'career',
-  );
-  assert.throws(
-    () => selectHostedAcceptanceProfile(['docs/testing/local-autonomous-qa.md'], 'career'),
-    /AI-35 readback or dedicated acceptance spec marker/,
-  );
-  assert.throws(
-    () =>
-      selectHostedAcceptanceProfile(
-        ['docs/build/ticket-readbacks/AI-35.md', 'apps/web/app/api/auth/session/route.ts'],
-        'career',
-      ),
-    /does not match inferred/,
-  );
-});
-
-test('AI-35 Career runner evidence converts through staging status into the strict acceptance consumer', () => {
-  const hostedSuite = createHostedStagingSuiteEvidence(careerSuiteEvidence());
-  const status = createStagingAcceptanceStatus({
-    candidateSha,
-    currentPullRequestHeadSha: candidateSha,
-    currentPullRequestTreeSha: candidateTreeSha,
-    currentPullRequestNumber: 152,
-    state: 'success',
-    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'career' }),
-    hostedSuite,
-  });
-
-  assert.equal(status.status.state, 'success');
-  assert.equal(status.acceptance?.acceptanceProfile, 'career');
-  assert.deepEqual(status.acceptance?.careerEvidence, hostedSuite);
-  assert.ok(status.acceptance);
-  const accepted = acceptStagingCandidate({
-    ready: ready(),
-    currentPullRequestHeadSha: candidateSha,
-    currentPullRequestTreeSha: candidateTreeSha,
-    currentPullRequestNumber: 152,
-    acceptance: status.acceptance,
-  });
-  assert.equal(accepted.state, 'STAGING_ACCEPTED');
-  assert.equal(accepted.acceptanceProfile, 'career');
-  assert.deepEqual(accepted.careerEvidence, hostedSuite);
-
-  assert.throws(
-    () =>
-      acceptStagingCandidate({
-        ready: ready(),
-        currentPullRequestHeadSha: candidateSha,
-        currentPullRequestTreeSha: candidateTreeSha,
-        currentPullRequestNumber: 152,
-        acceptance: careerSuiteEvidence() as unknown as Parameters<
-          typeof acceptStagingCandidate
-        >[0]['acceptance'],
-      }),
-    /invalid_evidence/,
-  );
-});
-
 test('targeted hosted acceptance is valid without MFA and cannot satisfy an auth-browser deployment', () => {
   assert.deepEqual(
     Ai16PromptGovernanceProofSchema.parse(ai16PromptGovernanceProof),
@@ -1849,72 +1704,122 @@ test('targeted hosted acceptance is valid without MFA and cannot satisfy an auth
   );
 });
 
-test('Career shared MFA changes require both exact-candidate Career and auth-browser proofs', () => {
-  const paths = ['docs/build/ticket-readbacks/AI-35.md', 'apps/web/app/mfa/page.tsx'];
-  assert.equal(selectHostedAcceptanceProfile(paths), 'career-auth-browser');
-  assert.throws(() => selectHostedAcceptanceProfile(paths, 'career'), /does not match inferred/);
-  const career = careerSuiteEvidence();
-  const auth = hostedSuiteEvidence();
-  const combined = {
+function plannerSpecialistSuiteEvidence(overrides: Record<string, unknown> = {}) {
+  const correlationId = '00000000-0000-4000-8000-000000000111';
+  return {
     schemaVersion: 1,
-    state: 'CAREER_AUTH_BROWSER_STAGING_ACCEPTED',
-    acceptanceProfile: 'career-auth-browser',
+    state: 'PLANNER_SPECIALIST_STAGING_ACCEPTED',
+    acceptanceProfile: 'planner-specialist',
     candidateSha,
     candidateTreeSha,
     pullRequestNumber: 152,
     deploymentRunId: '36474707377',
     stagingOrigin: origin,
     humanMfa: 'user-completed',
-    checks: career.checks,
-    correlationIds: career.correlationIds,
-    acceptedAt: career.acceptedAt,
-    careerEvidence: career,
-    authBrowserEvidence: auth,
+    manualMfaChallengeObserved: true,
+    checks: { plannerToTravelJourney: 'passed' },
+    correlationIds: [correlationId],
+    journey: {
+      sourceRunId: '00000000-0000-4000-8000-000000000112',
+      sourceCorrelationId: correlationId,
+      specialistRequestId: '00000000-0000-4000-8000-000000000113',
+      specialistRequestCorrelationId: correlationId,
+      specialistRunId: '00000000-0000-4000-8000-000000000114',
+      specialistReplyId: '00000000-0000-4000-8000-000000000115',
+      specialistReplyCorrelationId: correlationId,
+      specialistReportId: '00000000-0000-4000-8000-000000000116',
+      specialistRequestResultReference: '00000000-0000-4000-8000-000000000116',
+      specialistReplyResultReference: '00000000-0000-4000-8000-000000000116',
+      consolidatedReportId: '00000000-0000-4000-8000-000000000117',
+      consolidatedReportRunId: '00000000-0000-4000-8000-000000000112',
+      result: 'passed',
+    },
+    acceptedAt: '2026-10-23T10:00:00.000Z',
+    ...overrides,
   };
-  const hosted = combineCareerAuthStagingResults(career, auth);
-  assert.deepEqual(hosted, createHostedStagingSuiteEvidence(combined));
-  const status = createStagingAcceptanceStatus({
+}
+
+test('AI-17 Planner-to-specialist selection routes its launch boundary to the dedicated profile', () => {
+  const ai17CandidateFiles = [
+    'docs/build/ticket-readbacks/AI-17.md',
+    'apps/web/app/api/workflows/launch/route.ts',
+    'tests/e2e-live/ai17-planner-specialist.spec.ts',
+  ];
+  assert.equal(selectHostedAcceptanceProfile(ai17CandidateFiles), 'planner-specialist');
+  assert.equal(
+    selectHostedAcceptanceProfile(ai17CandidateFiles, 'planner-specialist'),
+    'planner-specialist',
+  );
+  assert.equal(
+    selectHostedAcceptanceProfile(['tests/e2e-live/ai17-planner-specialist.spec.ts']),
+    'planner-specialist',
+  );
+  assert.throws(
+    () =>
+      selectHostedAcceptanceProfile(['apps/web/app/(app)/personal/page.tsx'], 'planner-specialist'),
+    /does not match inferred|combined acceptance profile is required/,
+  );
+  assert.throws(
+    () =>
+      selectHostedAcceptanceProfile([
+        ...ai17CandidateFiles,
+        'apps/web/app/api/auth/mfa/verify/route.ts',
+      ]),
+    /cannot share one acceptance profile/,
+  );
+  assert.throws(
+    () => selectHostedAcceptanceProfile(ai17CandidateFiles, 'auth-browser'),
+    /does not match inferred|combined acceptance profile is required/,
+  );
+});
+
+test('AI-17 producer evidence passes the strict staged release consumer only for its exact run', () => {
+  const hostedSuite = plannerSpecialistSuiteEvidence();
+  assert.deepEqual(Ai17PlannerSpecialistEvidenceSchema.parse(hostedSuite), hostedSuite);
+  assert.deepEqual(createHostedStagingSuiteEvidence(hostedSuite), hostedSuite);
+  const accepted = createStagingAcceptanceStatus({
     candidateSha,
     currentPullRequestHeadSha: candidateSha,
     currentPullRequestTreeSha: candidateTreeSha,
     currentPullRequestNumber: 152,
     state: 'success',
-    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'career-auth-browser' }),
-    hostedSuite: hosted,
+    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'planner-specialist' }),
+    hostedSuite,
   });
-  assert.equal(status.status.state, 'success');
-  assert.deepEqual(status.acceptance?.careerEvidence, career);
-  assert.deepEqual(status.acceptance?.authBrowserEvidence, auth);
-  assert.throws(
-    () => createHostedStagingSuiteEvidence({ ...combined, authBrowserEvidence: undefined }),
-    /invalid_evidence/,
+  assert.equal(accepted.status.state, 'success');
+  assert.equal(accepted.acceptance?.acceptanceProfile, 'planner-specialist');
+  assert.deepEqual(accepted.acceptance?.plannerSpecialistEvidence, hostedSuite);
+  assert.deepEqual(
+    acceptStagingCandidate({
+      ready: ready(),
+      currentPullRequestHeadSha: candidateSha,
+      currentPullRequestTreeSha: candidateTreeSha,
+      currentPullRequestNumber: 152,
+      acceptance: accepted.acceptance!,
+    }).acceptanceProfile,
+    'planner-specialist',
   );
-  for (const key of [
-    'candidateSha',
-    'candidateTreeSha',
-    'pullRequestNumber',
-    'deploymentRunId',
-    'stagingOrigin',
-  ])
-    assert.throws(() =>
-      createHostedStagingSuiteEvidence({
-        ...combined,
-        authBrowserEvidence: { ...auth, [key]: key === 'pullRequestNumber' ? 999 : 'wrong' },
-      }),
-    );
-});
 
-test('Career combined proof rejects valid-shaped evidence from another candidate or deployment', () => {
-  const career = careerSuiteEvidence();
-  for (const mismatch of [
-    { candidateSha: nextSha },
-    { candidateTreeSha: nextSha },
-    { deploymentRunId: '36474707378' },
-    { pullRequestNumber: 153 },
+  const { journey } = hostedSuite;
+  for (const malformed of [
+    { ...hostedSuite, journey: { ...journey, specialistReplyCorrelationId: 'wrong-trace' } },
+    { ...hostedSuite, journey: { ...journey, specialistReplyResultReference: 'wrong-report' } },
+    { ...hostedSuite, journey: { ...journey, consolidatedReportRunId: 'wrong-run' } },
+    { ...hostedSuite, manualMfaChallengeObserved: false },
   ]) {
-    assert.throws(
-      () => combineCareerAuthStagingResults(career, hostedSuiteEvidence(mismatch)),
-      /invalid_evidence/,
-    );
+    assert.throws(() => createHostedStagingSuiteEvidence(malformed), /invalid_evidence/);
   }
+  assert.throws(
+    () =>
+      createStagingAcceptanceStatus({
+        candidateSha,
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        state: 'success',
+        deployment: candidateDeploymentEvidence({ acceptanceProfile: 'planner-specialist' }),
+        hostedSuite: { ...hostedSuite, deploymentRunId: '36474707378' },
+      }),
+    /deployment_run_mismatch/,
+  );
 });

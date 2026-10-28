@@ -1,5 +1,6 @@
 import { personalOperationsData } from '../../../lib/platform-data';
 import PersonalProfileForm from './personal-profile-form';
+import { OnDemandLaunchForm } from '../on-demand-launch-form';
 
 export default async function PersonalOperationsPage() {
   const { events, reminders, routines } = await personalOperationsData();
@@ -81,6 +82,7 @@ export default async function PersonalOperationsPage() {
         <p className="card">No routines configured.</p>
       )}
       <PersonalProfileForm />
+      <OnDemandLaunchForm manager="personal" />
     </>
   );
 }

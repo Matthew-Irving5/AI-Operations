@@ -59,7 +59,18 @@ WITH grants AS (
       to_regprocedure('public.record_prompt_evaluation(uuid,jsonb)'),
       to_regprocedure('public.transition_prompt_version(uuid,integer,integer,uuid,text,text)'),
       to_regprocedure('public.create_prompt_candidate(uuid,text,text,jsonb,text,integer,integer,jsonb)'),
-      -- AI-44 canonical action RPCs are checked against their exact grants.
+      -- AI-17 delegation and handoff ACLs are checked exactly by rpc_security.sql.
+      to_regprocedure('public.create_inter_agent_request_run(jsonb,integer,text[],uuid)'),
+      to_regprocedure('public.resume_inter_agent_source_run(uuid)'),
+      to_regprocedure('public.complete_inter_agent_request(uuid,jsonb,text,timestamptz)'),
+      to_regprocedure('public.finalize_inter_agent_destination_run()'),
+      to_regprocedure('public.resume_waiting_inter_agent_source()'),
+      to_regprocedure('public.expire_inter_agent_requests(integer)'),
+      to_regprocedure('public.create_conversation_handoff(jsonb)'),
+      to_regprocedure('public.resolve_conversation_handoff(uuid,uuid,text,text,uuid,timestamptz)'),
+      -- AI-17 Planner provider settlement is checked against its exact service_role grant.
+      to_regprocedure('public.complete_inter_agent_plan_with_queue(uuid,text,uuid,uuid,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)'),
+      -- Preserve existing AI-44 exclusions; these RPCs have exact assertions below.
       to_regprocedure('public.lookup_canonical_action_execution(uuid,uuid,text,text)'),
       to_regprocedure('public.record_canonical_action_policy_decision(uuid,uuid,text,text,jsonb)'),
       to_regprocedure('public.claim_canonical_action_execution(uuid,uuid,text,text)'),
@@ -75,7 +86,7 @@ SELECT is(
   -- record_conversation_handoff_event(); rpc_security.sql enforces its exact
   -- anon/authenticated/service_role false/false/false matrix.
   'ffaef55c0e51180628d1c8eceb878126',
-  'local routine ACL tuples include AI20 reservation/pricing RPCs; canonical action RPCs are checked separately'
+  'local routine ACL tuples include the reviewed AI20 reservation and pricing RPC signatures'
 );
 
 SELECT is(

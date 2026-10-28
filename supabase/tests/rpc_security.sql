@@ -45,6 +45,17 @@ insert into rpc_security_expected values
   ('public.settle_instrumented_ai_call(uuid,numeric,bigint,bigint,bigint,bigint,integer,jsonb,jsonb,boolean)', false, false, true),
   ('public.mark_instrumented_ai_call_submitted(uuid,text)', false, false, true),
   ('public.calculate_instrumented_ai_cost(uuid,bigint,bigint,bigint,integer,bigint,uuid)', false, false, true),
+  -- AI-17 delegation and handoff entry points are server-owned; lifecycle
+  -- helpers remain internal or are invoked only by PostgreSQL triggers/cron.
+  ('public.create_inter_agent_request_run(jsonb,integer,text[],uuid)', false, false, true),
+  ('public.resume_inter_agent_source_run(uuid)', false, false, false),
+  ('public.complete_inter_agent_request(uuid,jsonb,text,timestamptz)', false, false, true),
+  ('public.finalize_inter_agent_destination_run()', false, false, false),
+  ('public.resume_waiting_inter_agent_source()', false, false, false),
+  ('public.expire_inter_agent_requests(integer)', false, false, false),
+  ('public.create_conversation_handoff(jsonb)', false, false, true),
+  ('public.resolve_conversation_handoff(uuid,uuid,text,text,uuid,timestamptz)', false, false, true),
+  ('public.complete_inter_agent_plan_with_queue(uuid,text,uuid,uuid,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)', false, false, true),
   ('public.execute_digital_estate_workflow(uuid)', false, false, true),
   ('public.record_instrumented_ai_reconciliation_failure(uuid,text,jsonb)', false, false, true),
   ('public.commit_instrumented_ai_report(uuid,text,text,text,text,text,jsonb,jsonb,jsonb,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)', false, false, true),

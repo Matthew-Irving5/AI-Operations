@@ -13,6 +13,7 @@ describe('live E2E staging target guard', () => {
   it('accepts only the explicitly configured staging app and Supabase project', () => {
     expect(parseLiveE2eEnvironment(valid, 'suite')).toMatchObject(valid);
     expect(parseLiveE2eEnvironment(valid, 'auth-acceptance')).toMatchObject(valid);
+    expect(parseLiveE2eEnvironment(valid, 'planner-specialist')).toMatchObject(valid);
   });
 
   it('does not require or return automated MFA configuration', () => {
