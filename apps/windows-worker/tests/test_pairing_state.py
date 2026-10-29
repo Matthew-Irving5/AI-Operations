@@ -201,7 +201,7 @@ def test_idle_active_worker_wakes_for_heartbeat_before_poll_interval(
     monkeypatch.setattr("ai_operations_worker.client.time.monotonic", fake_monotonic)
     monkeypatch.setattr("ai_operations_worker.client.time.sleep", sleeps.append)
     monkeypatch.setattr(client, "heartbeat", fake_heartbeat)
-    monkeypatch.setattr(client, "run_once", lambda: {})
+    monkeypatch.setattr(client, "run_once", dict)
 
     client.run_forever()
 
