@@ -303,7 +303,10 @@ export function DeviceManager({
       });
       if (!response.ok) throw new Error('control_request_failed');
       await navigator.clipboard.writeText(workerStartCommand);
-      setControlState((current) => ({ ...current, [deviceId]: 'Started — command copied; queued…' }));
+      setControlState((current) => ({
+        ...current,
+        [deviceId]: 'Started — command copied; queued…',
+      }));
       router.refresh();
     } catch {
       setControlTargets((current) => {
