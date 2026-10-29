@@ -111,3 +111,60 @@ def test_reported_version_matches_packaged_worker_version() -> None:
     metadata = tomllib.loads(project_file.read_text(encoding="utf-8"))
 
     assert metadata["project"]["version"] == WORKER_VERSION
+
+
+def test_heartbeat_applies_server_mode_without_repairing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    responses = iter([
+        {"control": {"mode": "online", "stop": False}},
+        {"control": {"mode": "active", "stop": False}},
+        {"control": {"mode": "offline", "stop": True}},
+    ])
+
+    def fake_post(
+        client: ControlPlaneClient,
+        path: str,
+        body: dict[str, object],
+    ) -> dict[str, object]:
+        assert path == "/worker-heartbeat"
+        return next(responses)
+
+    monkeypatch.setattr(ControlPlaneClient, "post", fake_post)
+    client = ControlPlaneClient(WorkerConfiguration(
+        endpoint=WorkerEndpoint("https://example.supabase.co/functions/v1"),
+        worker_secret="secret",
+        device_id="00000000-0000-4000-8000-000000000001",
+        state_path=tmp_path / "state.sqlite",
+        key_path=tmp_path / "worker.key.dpapi",
+        manifest_public_key_b64="",
+        allowed_roots=(tmp_path,),
+        quarantine_root=tmp_path / "quarantine",
+    ))
+
+    assert client.heartbeat()["control"] == {"mode": "online", "stop": False}
+    assert client.mode == "online"
+    assert client.heartbeat()["control"] == {"mode": "active", "stop": False}
+    assert client.mode == "active"
+    assert client.heartbeat()["control"] == {"mode": "offline", "stop": True}
+    assert client.mode == "offline"
+
+
+def test_paused_worker_does_not_poll(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = ControlPlaneClient(WorkerConfiguration(
+        endpoint=WorkerEndpoint("https://example.supabase.co/functions/v1"),
+        worker_secret="secret",
+        device_id="00000000-0000-4000-8000-000000000001",
+        state_path=tmp_path / "state.sqlite",
+        key_path=tmp_path / "worker.key.dpapi",
+        manifest_public_key_b64="",
+        allowed_roots=(tmp_path,),
+        quarantine_root=tmp_path / "quarantine",
+    ))
+    client.mode = "online"
+    monkeypatch.setattr(client, "poll", lambda: pytest.fail("paused worker polled"))
+    assert client.run_once() == {"paused": True, "mode": "online"}

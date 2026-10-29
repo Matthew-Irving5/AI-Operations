@@ -9,6 +9,9 @@ export type WorkerDevice = {
   user_id: string;
   public_key_b64: string;
   state: string;
+  desired_state: "active" | "online" | "offline";
+  control_generation: number;
+  acknowledged_generation: number;
   revoked_at: string | null;
 };
 
@@ -48,7 +51,7 @@ export async function authenticateWorker(
     return { code: "unauthorised" };
   }
   const result = await client.from("worker_devices").select(
-    "id,user_id,public_key_b64,state,revoked_at,worker_secret_hash",
+    "id,user_id,public_key_b64,state,desired_state,control_generation,acknowledged_generation,revoked_at,worker_secret_hash",
   ).eq("id", deviceId).maybeSingle();
   if (result.error || !result.data) return { code: "unauthorised" };
   if (result.data.state === "revoked" || result.data.revoked_at) {
@@ -67,6 +70,9 @@ export async function authenticateWorker(
       user_id: result.data.user_id,
       public_key_b64: result.data.public_key_b64,
       state: result.data.state,
+      desired_state: result.data.desired_state ?? "active",
+      control_generation: Number(result.data.control_generation ?? 0),
+      acknowledged_generation: Number(result.data.acknowledged_generation ?? 0),
       revoked_at: result.data.revoked_at,
     },
   };

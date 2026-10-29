@@ -51,6 +51,13 @@ Deno.serve(async (request) => {
       requestId,
     );
   }
+  if (auth.device.state !== "active" || auth.device.desired_state !== "active") {
+    return json(
+      { code: "worker_not_active", stage: "poll", state: auth.device.state },
+      409,
+      requestId,
+    );
+  }
   const compatibility = assessWorkerCompatibility(
     report.workerVersion,
     report.capabilities,
@@ -68,6 +75,14 @@ Deno.serve(async (request) => {
       426,
       requestId,
     );
+  }
+  const { error: pollStampError } = await workerService.from("worker_devices")
+    .update({ last_poll_at: new Date().toISOString(), observed_mode: "active" })
+    .eq("id", auth.device.id)
+    .eq("state", "active")
+    .eq("desired_state", "active");
+  if (pollStampError) {
+    return json({ code: "poll_state_update_failed", stage: "poll" }, 500, requestId);
   }
   const scan = await workerService.from("digital_scans").select(
     "id,scan_kind,approved_roots",

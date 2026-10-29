@@ -24,6 +24,7 @@ export const workerHeartbeatSchema = z.object({
   capabilities: capabilitiesSchema,
   status: z.object({
     transport: z.literal("outbound_https"),
+    mode: z.enum(["active", "online", "offline"]).optional(),
   }).strict().optional().default({ transport: "outbound_https" }),
 }).strict();
 

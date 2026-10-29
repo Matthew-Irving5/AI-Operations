@@ -38,7 +38,8 @@ class WorkerConfiguration:
     manifest_public_key_b64: str
     allowed_roots: tuple[Path, ...]
     quarantine_root: Path
-    heartbeat_seconds: int = 15 * 60
+    heartbeat_seconds: int = 60
+    online_heartbeat_seconds: int = 30
     poll_seconds: int = 5 * 60
 
 class ControlPlaneClient:
@@ -48,6 +49,7 @@ class ControlPlaneClient:
             raise ValueError("worker_identity_required")
         self.config = config
         self.state = StateStore(config.state_path)
+        self.mode = "active"
 
     def post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         request = Request(
@@ -81,11 +83,17 @@ class ControlPlaneClient:
         }
 
     def heartbeat(self) -> dict[str, Any]:
-        return self.post("/worker-heartbeat", {
+        response = self.post("/worker-heartbeat", {
             "deviceId": self.config.device_id,
             **self.protocol_metadata(),
             "status": {"transport": "outbound_https"},
         })
+        control = response.get("control")
+        if isinstance(control, dict):
+            mode = control.get("mode")
+            if mode in {"active", "online", "offline"}:
+                self.mode = mode
+        return response
 
     def poll(self) -> dict[str, Any]:
         return self.post("/worker-poll", {
@@ -94,6 +102,8 @@ class ControlPlaneClient:
         })
 
     def run_once(self) -> dict[str, Any]:
+        if self.mode != "active":
+            return {"paused": True, "mode": self.mode}
         self.send_queued_results()
         task = self.poll()
         scan = task.get("scan")
@@ -158,14 +168,21 @@ class ControlPlaneClient:
             try:
                 now = time.monotonic()
                 if now >= next_heartbeat:
-                    self.heartbeat()
-                    next_heartbeat = now + self.config.heartbeat_seconds
+                    heartbeat = self.heartbeat()
+                    control = heartbeat.get("control")
+                    if isinstance(control, dict) and control.get("stop") is True:
+                        return
+                    heartbeat_interval = self.config.online_heartbeat_seconds if self.mode == "online" else self.config.heartbeat_seconds
+                    next_heartbeat = now + heartbeat_interval
                 task = self.run_once()
-                delay = 15 if task.get("scan") or task.get("manifest") else self.config.poll_seconds
+                if self.mode == "online":
+                    delay = self.config.online_heartbeat_seconds
+                else:
+                    delay = 15 if task.get("scan") or task.get("manifest") else self.config.poll_seconds
             except OSError:
                 delay = min(max(delay * 2, 30), 3600)
             except RuntimeError as error:
-                if str(error).startswith(("401:", "403:", "426:")):
+                if str(error).startswith(("401:", "403:", "409:", "426:")):
                     return
                 delay = min(max(delay * 2, 30), 3600)
             time.sleep(delay)

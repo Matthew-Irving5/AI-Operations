@@ -60,11 +60,15 @@ Deno.serve(async (request) => {
     );
   }
   const now = new Date().toISOString();
+  const effectiveMode = auth.device.desired_state;
   const { data, error } = await workerService.from("worker_devices").update({
-    state: "online",
+    state: effectiveMode,
     last_heartbeat_at: now,
-  }).eq("id", auth.device.id).in("state", ["paired", "online", "offline"])
-    .select("id").maybeSingle();
+    observed_mode: effectiveMode,
+    acknowledged_generation: auth.device.control_generation,
+  }).eq("id", auth.device.id).in("state", ["paired", "active", "online", "offline"])
+    .select("id,desired_state,control_generation,acknowledged_generation,state")
+    .maybeSingle();
   if (error || !data) {
     return json(
       { code: "heartbeat_rejected", stage: "heartbeat" },
@@ -81,6 +85,8 @@ Deno.serve(async (request) => {
       ...report.status,
       capabilities: report.capabilities,
       compatibility,
+      desiredState: effectiveMode,
+      controlGeneration: auth.device.control_generation,
     },
   });
   if (heartbeatError) {
@@ -90,14 +96,28 @@ Deno.serve(async (request) => {
       requestId,
     );
   }
-  const { error: queuedError } = await workerService.from("digital_scans")
-    .update({
-      status: "queued",
-    }).eq("device_id", auth.device.id).eq("status", "waiting_for_device");
+  const { error: queuedError } = effectiveMode === "active"
+    ? await workerService.from("digital_scans")
+      .update({ status: "queued" })
+      .eq("device_id", auth.device.id)
+      .eq("status", "waiting_for_device")
+    : null;
   return queuedError
     ? json({ code: "scan_queue_failed", stage: "heartbeat" }, 500, requestId)
     : json(
-      { ok: true, lastHeartbeatAt: now, compatibility, stage: "heartbeat" },
+      {
+        ok: true,
+        lastHeartbeatAt: now,
+        compatibility,
+        control: {
+          desiredState: effectiveMode,
+          generation: auth.device.control_generation,
+          acknowledgedGeneration: auth.device.control_generation,
+          mode: effectiveMode,
+          stop: effectiveMode === "offline",
+        },
+        stage: "heartbeat",
+      },
       200,
       requestId,
     );
