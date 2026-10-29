@@ -3415,7 +3415,10 @@ export type Database = {
           correlation_id: string;
           created_at: string;
           deadline_at: string | null;
+          delegation_depth: number | null;
           destination_manager_code: string;
+          destination_run_id: string | null;
+          destination_workflow_definition_id: string | null;
           id: string;
           idempotency_key: string;
           objective: string;
@@ -3423,6 +3426,8 @@ export type Database = {
           required_output_contract: NonNullable<Json>;
           result: Json | null;
           result_reference: string | null;
+          resumed_at: string | null;
+          routing_path: string[] | null;
           source_manager_code: string;
           source_message_id: string | null;
           source_run_id: string | null;
@@ -3438,7 +3443,10 @@ export type Database = {
           correlation_id?: string;
           created_at?: string;
           deadline_at?: string | null;
+          delegation_depth?: number | null;
           destination_manager_code: string;
+          destination_run_id?: string | null;
+          destination_workflow_definition_id?: string | null;
           id?: string;
           idempotency_key: string;
           objective: string;
@@ -3446,6 +3454,8 @@ export type Database = {
           required_output_contract: NonNullable<Json>;
           result?: Json | null;
           result_reference?: string | null;
+          resumed_at?: string | null;
+          routing_path?: string[] | null;
           source_manager_code: string;
           source_message_id?: string | null;
           source_run_id?: string | null;
@@ -3461,7 +3471,10 @@ export type Database = {
           correlation_id?: string;
           created_at?: string;
           deadline_at?: string | null;
+          delegation_depth?: number | null;
           destination_manager_code?: string;
+          destination_run_id?: string | null;
+          destination_workflow_definition_id?: string | null;
           id?: string;
           idempotency_key?: string;
           objective?: string;
@@ -3469,6 +3482,8 @@ export type Database = {
           required_output_contract?: NonNullable<Json>;
           result?: Json | null;
           result_reference?: string | null;
+          resumed_at?: string | null;
+          routing_path?: string[] | null;
           source_manager_code?: string;
           source_message_id?: string | null;
           source_run_id?: string | null;
@@ -3490,6 +3505,20 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: 'managers';
             referencedColumns: ['code'];
+          },
+          {
+            foreignKeyName: 'inter_agent_requests_destination_run_user_fk';
+            columns: ['destination_run_id', 'user_id'];
+            isOneToOne: false;
+            referencedRelation: 'workflow_runs';
+            referencedColumns: ['id', 'user_id'];
+          },
+          {
+            foreignKeyName: 'inter_agent_requests_destination_workflow_definition_id_fkey';
+            columns: ['destination_workflow_definition_id'];
+            isOneToOne: false;
+            referencedRelation: 'workflow_definitions';
+            referencedColumns: ['id'];
           },
           {
             foreignKeyName: 'inter_agent_requests_source_manager_code_fkey';
@@ -4899,6 +4928,7 @@ export type Database = {
         Row: {
           completed_at: string | null;
           created_at: string;
+          decision_record: Json | null;
           hard_cap_minor: number;
           id: string;
           manager_code: string;
@@ -4906,14 +4936,17 @@ export type Database = {
           report_id: string | null;
           request: NonNullable<Json>;
           reserved_minor: number;
+          revises_research_run_id: string | null;
           search_limit: number;
           searches_used: number;
           status: string;
           user_id: string;
+          workflow_run_id: string | null;
         };
         Insert: {
           completed_at?: string | null;
           created_at?: string;
+          decision_record?: Json | null;
           hard_cap_minor: number;
           id?: string;
           manager_code: string;
@@ -4921,14 +4954,17 @@ export type Database = {
           report_id?: string | null;
           request: NonNullable<Json>;
           reserved_minor?: number;
+          revises_research_run_id?: string | null;
           search_limit: number;
           searches_used?: number;
           status?: string;
           user_id: string;
+          workflow_run_id?: string | null;
         };
         Update: {
           completed_at?: string | null;
           created_at?: string;
+          decision_record?: Json | null;
           hard_cap_minor?: number;
           id?: string;
           manager_code?: string;
@@ -4936,10 +4972,12 @@ export type Database = {
           report_id?: string | null;
           request?: NonNullable<Json>;
           reserved_minor?: number;
+          revises_research_run_id?: string | null;
           search_limit?: number;
           searches_used?: number;
           status?: string;
           user_id?: string;
+          workflow_run_id?: string | null;
         };
         Relationships: [
           {
@@ -4950,10 +4988,24 @@ export type Database = {
             referencedColumns: ['id'];
           },
           {
+            foreignKeyName: 'on_demand_research_runs_revises_research_run_id_fkey';
+            columns: ['revises_research_run_id'];
+            isOneToOne: false;
+            referencedRelation: 'on_demand_research_runs';
+            referencedColumns: ['id'];
+          },
+          {
             foreignKeyName: 'on_demand_research_runs_user_id_fkey';
             columns: ['user_id'];
             isOneToOne: false;
             referencedRelation: 'app_users';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'on_demand_research_runs_workflow_run_id_fkey';
+            columns: ['workflow_run_id'];
+            isOneToOne: false;
+            referencedRelation: 'workflow_runs';
             referencedColumns: ['id'];
           },
         ];
@@ -5241,10 +5293,13 @@ export type Database = {
       };
       procurement_recommendations: {
         Row: {
+          candidate_id: string | null;
           citations: NonNullable<Json>;
           compliance_passed: boolean;
           created_at: string;
           currency: string | null;
+          decision_rank: number | null;
+          details: NonNullable<Json>;
           id: string;
           recommendation_kind: string;
           research_run_id: string;
@@ -5256,10 +5311,13 @@ export type Database = {
           warranty_summary: string | null;
         };
         Insert: {
+          candidate_id?: string | null;
           citations: NonNullable<Json>;
           compliance_passed: boolean;
           created_at?: string;
           currency?: string | null;
+          decision_rank?: number | null;
+          details?: NonNullable<Json>;
           id?: string;
           recommendation_kind: string;
           research_run_id: string;
@@ -5271,10 +5329,13 @@ export type Database = {
           warranty_summary?: string | null;
         };
         Update: {
+          candidate_id?: string | null;
           citations?: NonNullable<Json>;
           compliance_passed?: boolean;
           created_at?: string;
           currency?: string | null;
+          decision_rank?: number | null;
+          details?: NonNullable<Json>;
           id?: string;
           recommendation_kind?: string;
           research_run_id?: string;
@@ -6455,10 +6516,15 @@ export type Database = {
       };
       worker_devices: {
         Row: {
+          acknowledged_generation: number;
+          control_generation: number;
           created_at: string;
+          desired_state: string;
           id: string;
           label: string;
           last_heartbeat_at: string | null;
+          last_poll_at: string | null;
+          observed_mode: string | null;
           paired_at: string | null;
           pairing_expires_at: string | null;
           pairing_hash: string | null;
@@ -6469,10 +6535,15 @@ export type Database = {
           worker_secret_hash: string | null;
         };
         Insert: {
+          acknowledged_generation?: number;
+          control_generation?: number;
           created_at?: string;
+          desired_state?: string;
           id?: string;
           label: string;
           last_heartbeat_at?: string | null;
+          last_poll_at?: string | null;
+          observed_mode?: string | null;
           paired_at?: string | null;
           pairing_expires_at?: string | null;
           pairing_hash?: string | null;
@@ -6483,10 +6554,15 @@ export type Database = {
           worker_secret_hash?: string | null;
         };
         Update: {
+          acknowledged_generation?: number;
+          control_generation?: number;
           created_at?: string;
+          desired_state?: string;
           id?: string;
           label?: string;
           last_heartbeat_at?: string | null;
+          last_poll_at?: string | null;
+          observed_mode?: string | null;
           paired_at?: string | null;
           pairing_expires_at?: string | null;
           pairing_hash?: string | null;
@@ -6928,6 +7004,33 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      commit_instrumented_ai_procurement_report_with_queue: {
+        Args: {
+          p_actions: Json;
+          p_actual_cost: number;
+          p_cached_input_tokens: number;
+          p_call_id: string;
+          p_decision: Json;
+          p_input_tokens: number;
+          p_job_id: string;
+          p_markdown: string;
+          p_notification_policy: string;
+          p_output_tokens: number;
+          p_provider_usage: Json;
+          p_reasoning_tokens: number;
+          p_redacted_trace: Json;
+          p_report_type: string;
+          p_response_id: string;
+          p_run_id: string;
+          p_search_calls: number;
+          p_sections: Json;
+          p_sources: Json;
+          p_structured_metrics: Json;
+          p_summary: string;
+          p_title: string;
+        };
+        Returns: string;
+      };
       commit_instrumented_ai_report: {
         Args: {
           p_actions: Json;
@@ -6972,6 +7075,16 @@ export type Database = {
         };
         Returns: string;
       };
+      commit_procurement_decision: {
+        Args: {
+          p_decision: Json;
+          p_report_id: string;
+          p_run_id: string;
+          p_search_calls: number;
+          p_sources: Json;
+        };
+        Returns: string;
+      };
       complete_canonical_action_execution: {
         Args: {
           p_claim_token: string;
@@ -6984,6 +7097,26 @@ export type Database = {
         Returns: Json;
       };
       complete_deterministic_workflow_run: { Args: { p_run_id: string }; Returns: string };
+      complete_inter_agent_plan_with_queue: {
+        Args: {
+          p_actual_cost: number;
+          p_cached_input_tokens: number;
+          p_call_id: string;
+          p_input_tokens: number;
+          p_job_id: string;
+          p_output_tokens: number;
+          p_provider_usage: Json;
+          p_reasoning_tokens: number;
+          p_redacted_trace: Json;
+          p_request_id: string;
+          p_response_id: string;
+        };
+        Returns: boolean;
+      };
+      complete_inter_agent_request: {
+        Args: { p_completed_at: string; p_reply: Json; p_request_id: string; p_status: string };
+        Returns: Json;
+      };
       complete_job_queue:
         | {
             Args: {
@@ -7129,6 +7262,16 @@ export type Database = {
           label: string;
         }[];
       };
+      create_conversation_handoff: { Args: { p_handoff: Json }; Returns: Json };
+      create_inter_agent_request_run: {
+        Args: {
+          p_cost_root_run_id: string;
+          p_delegation_depth: number;
+          p_request: Json;
+          p_routing_path: string[];
+        };
+        Returns: Json;
+      };
       create_mfa_action_gate: { Args: { p_action_key: string }; Returns: string };
       create_on_demand_run: {
         Args: {
@@ -7149,6 +7292,20 @@ export type Database = {
           p_manager_code: string;
           p_model_ceiling: string;
           p_request: Json;
+          p_search_ceiling: number;
+          p_user_id: string;
+          p_workflow_id: string;
+        };
+        Returns: string;
+      };
+      create_procurement_revision_request: {
+        Args: {
+          p_hard_cap: number;
+          p_idempotency_key: string;
+          p_manager_code: string;
+          p_model_ceiling: string;
+          p_request: Json;
+          p_revises_research_run_id: string;
           p_search_ceiling: number;
           p_user_id: string;
           p_workflow_id: string;
@@ -7221,6 +7378,8 @@ export type Database = {
       execute_health_finance_workflow: { Args: { p_run_id: string }; Returns: string };
       execute_personal_workflow: { Args: { p_run_id: string }; Returns: string };
       execute_systems_workflow: { Args: { p_run_id: string }; Returns: string };
+      expire_inter_agent_requests: { Args: { p_limit?: number }; Returns: number };
+      expire_stale_digital_scans: { Args: { p_now?: string }; Returns: number };
       fail_instrumented_ai_provider_response: {
         Args: {
           p_actual_cost: number;
@@ -7420,6 +7579,18 @@ export type Database = {
         Args: { p_amount: number; p_run_id: string; p_user_id: string };
         Returns: string;
       };
+      resolve_conversation_handoff: {
+        Args: {
+          p_actor_manager_code: string;
+          p_correlation_id: string;
+          p_handoff_id: string;
+          p_status: string;
+          p_transitioned_at: string;
+          p_user_id: string;
+        };
+        Returns: Json;
+      };
+      resume_inter_agent_source_run: { Args: { p_source_run_id: string }; Returns: string };
       revoke_apple_bridge_device: {
         Args: { p_device_id: string; p_gate_id: string };
         Returns: Json;
@@ -7427,6 +7598,14 @@ export type Database = {
       revoke_worker_device_from_mfa_gate: {
         Args: { p_device_id: string; p_gate_id: string };
         Returns: Json;
+      };
+      set_worker_desired_state: {
+        Args: { p_desired_state: string; p_device_id: string };
+        Returns: {
+          control_generation: number;
+          desired_state: string;
+          device_id: string;
+        }[];
       };
       settle_instrumented_ai_call: {
         Args: {

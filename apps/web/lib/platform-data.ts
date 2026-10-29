@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { buildCareerEvidenceSnapshot, type CareerEvidenceSnapshot } from './career-summary';
-import { createSupabaseServerClient } from './supabase-server';
+import {
+  createSupabaseAccessTokenClient,
+  createSupabaseServerClient,
+  getAuthenticatedServerAccessToken,
+} from './supabase-server';
 
 const reportSchema = z.object({
   id: z.string().uuid(),
@@ -215,6 +219,30 @@ const digitalScanSchema = z.object({
   completed_at: z.string().nullable(),
   created_at: z.string(),
 });
+const workerHealthSchema = z.object({
+  worker_version: z.string().nullable(),
+  received_at: z.string(),
+  status: z.object({
+    capabilities: z.array(z.string()).default([]),
+    compatibility: z
+      .object({
+        compatible: z.boolean(),
+        code: z
+          .enum([
+            'worker_version_required',
+            'worker_upgrade_required',
+            'worker_capability_missing',
+            'worker_capability_unsupported',
+          ])
+          .optional(),
+        minimumVersion: z.string(),
+        actualVersion: z.string().nullable().optional(),
+        requiredCapabilities: z.array(z.string()),
+        actualCapabilities: z.array(z.string()),
+      })
+      .optional(),
+  }),
+});
 const workerDeviceSchema = z.object({
   id: z.string().uuid(),
   label: z.string(),
@@ -223,7 +251,11 @@ const workerDeviceSchema = z.object({
   paired_at: z.string().nullable(),
   revoked_at: z.string().nullable(),
   last_heartbeat_at: z.string().nullable(),
+  health: workerHealthSchema.nullable(),
+  health_error: z.boolean(),
 });
+export type WorkerDevice = z.infer<typeof workerDeviceSchema>;
+
 const onboardingItemSchema = z.object({
   code: z.string(),
   completed_at: z.string().nullable(),
@@ -688,28 +720,104 @@ export async function digitalEstateData(): Promise<
   Readonly<{
     scans: PageData<z.infer<typeof digitalScanSchema>[]>;
     devices: PageData<z.infer<typeof workerDeviceSchema>[]>;
+    summary: Readonly<{
+      pairedDevices: number;
+      totalScans: number;
+      last30DaysScans: number;
+      pendingScans: number;
+    }>;
+    generatedAt: number;
   }>
 > {
-  const client = await createSupabaseServerClient();
-  const [scans, devices] = await Promise.all([
-    client
-      .from('digital_scans')
-      .select('id,device_id,scan_kind,status,progress,result_verified_at,created_at,completed_at')
-      .order('created_at', { ascending: false })
-      .limit(25),
-    client
-      .from('worker_devices')
-      .select('id,label,state,public_key_b64,paired_at,revoked_at,last_heartbeat_at')
-      .order('created_at', { ascending: false })
-      .limit(25),
-  ]);
+  // Revalidate/refresh the cookie-backed JWT before querying AAL2-protected
+  // worker health. Pairing and fresh-MFA routes may rotate the session token;
+  // using a stale cookie here makes the heartbeat row look unavailable.
+  const accessToken = await getAuthenticatedServerAccessToken();
+  const client = accessToken
+    ? createSupabaseAccessTokenClient(accessToken)
+    : await createSupabaseServerClient();
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
+  const generatedAt = Date.now();
+  const [scans, devices, pairedCount, totalScanCount, last30Count, pendingCount] =
+    await Promise.all([
+      client
+        .from('digital_scans')
+        .select('id,device_id,scan_kind,status,progress,result_verified_at,created_at,completed_at')
+        .order('created_at', { ascending: false })
+        .limit(25),
+      client
+        .from('worker_devices')
+        .select('id,label,state,public_key_b64,paired_at,revoked_at,last_heartbeat_at')
+        .order('created_at', { ascending: false })
+        .limit(25),
+      client
+        .from('worker_devices')
+        .select('id', { count: 'exact', head: true })
+        .neq('state', 'revoked'),
+      client.from('digital_scans').select('id', { count: 'exact', head: true }),
+      client
+        .from('digital_scans')
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', cutoff),
+      client
+        .from('digital_scans')
+        .select('id', { count: 'exact', head: true })
+        .not('status', 'in', '(complete,cancelled)'),
+    ]);
+  const summary = {
+    pairedDevices: pairedCount.count ?? 0,
+    totalScans: totalScanCount.count ?? 0,
+    last30DaysScans: last30Count.count ?? 0,
+    pendingScans: pendingCount.count ?? 0,
+  };
+  if (devices.error) {
+    return {
+      scans: scans.error
+        ? { data: [], error: 'Digital scans could not be loaded.' }
+        : parsedRows(scans.data, z.array(digitalScanSchema)),
+      devices: { data: [], error: 'Worker devices could not be loaded.' },
+      summary,
+      generatedAt,
+    };
+  }
+
+  const healthResults = await Promise.all(
+    devices.data.map(async (device) => {
+      const result = await client
+        .from('worker_heartbeats')
+        .select('worker_version,received_at,status')
+        .eq('device_id', device.id)
+        .order('received_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const parsedHealth =
+        result.error || !result.data ? null : workerHealthSchema.safeParse(result.data);
+      return {
+        deviceId: device.id,
+        health: parsedHealth?.success ? parsedHealth.data : null,
+        healthError: Boolean(result.error || (parsedHealth && !parsedHealth.success)),
+      };
+    }),
+  );
+  const healthByDevice = new Map(healthResults.map((result) => [result.deviceId, result]));
+  const rows = devices.data.map((device) => {
+    const health = healthByDevice.get(device.id);
+    return {
+      ...device,
+      health: health?.health ?? null,
+      health_error: health?.healthError ?? false,
+    };
+  });
+  const parsedDevices = workerDeviceSchema.array().safeParse(rows);
   return {
     scans: scans.error
       ? { data: [], error: 'Digital scans could not be loaded.' }
       : parsedRows(scans.data, z.array(digitalScanSchema)),
-    devices: devices.error
-      ? { data: [], error: 'Worker devices could not be loaded.' }
-      : parsedRows(devices.data, z.array(workerDeviceSchema)),
+    devices: parsedDevices.success
+      ? { data: parsedDevices.data, error: null }
+      : { data: [], error: 'Worker device health could not be loaded.' },
+    summary,
+    generatedAt,
   };
 }
 

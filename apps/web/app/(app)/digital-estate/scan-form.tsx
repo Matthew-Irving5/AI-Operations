@@ -115,7 +115,7 @@ export function DigitalScanForm({ deviceId }: Readonly<{ deviceId: string }>) {
         setStatus(
           result?.replay
             ? 'This scan request was already queued; no duplicate was created.'
-            : 'Scan queued. The worker will collect it when online.',
+            : 'Scan queued. The connected worker will collect it shortly.',
         );
         return;
       }
@@ -180,31 +180,29 @@ export function DigitalScanForm({ deviceId }: Readonly<{ deviceId: string }>) {
   }
 
   return (
-    <section className="card">
-      <h2>Launch scan</h2>
-      <p className="label">
-        Fresh MFA is required to queue a local scan. The request is read-only and bounded to the
-        approved roots.
-      </p>
+    <section className="card launch-scan-card launch-scan-form">
       <label>
-        Approved roots
-        <span className="label">
-          Use a safe synthetic onboarding folder; sensitive paths are excluded.
-        </span>
-        <textarea value={roots} onChange={(event) => setRoots(event.target.value)} rows={3} />
-      </label>
-      <label>
-        Scan type
+        <span className="field-label">Scan Type</span>
         <select
+          aria-label="Scan Type"
           value={scanKind}
           onChange={(event) => setScanKind(event.target.value as 'lightweight' | 'deep')}
         >
-          <option value="lightweight">Lightweight inventory</option>
-          <option value="deep">Deep organisation analysis</option>
+          <option value="lightweight">Lightweight</option>
+          <option value="deep">Deep</option>
         </select>
       </label>
+      <label>
+        <span className="field-label">Approved Roots</span>
+        <textarea
+          aria-label="Approved Roots"
+          value={roots}
+          onChange={(event) => setRoots(event.target.value)}
+          rows={3}
+        />
+      </label>
       <button type="button" disabled={!roots.trim()} onClick={submit}>
-        Queue bounded scan (fresh MFA required)
+        Queue Scan
       </button>
       <p aria-live="polite">{status}</p>
     </section>

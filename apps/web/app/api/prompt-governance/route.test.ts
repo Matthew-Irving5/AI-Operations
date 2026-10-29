@@ -46,6 +46,27 @@ describe('prompt governance route', () => {
     );
   });
 
+  it('forwards only the approved Planner template code for current prompt lookup', async () => {
+    const request = {
+      operation: 'get_current',
+      templateCode: 'planner-agent-report',
+    };
+    const response = await POST(sameOriginRequest(request));
+    expect(response.status).toBe(200);
+    const [, init] = vi.mocked(globalThis.fetch).mock.calls[0] ?? [];
+    expect(JSON.parse(String(init?.body))).toEqual(request);
+    expect(
+      (
+        await POST(
+          sameOriginRequest({
+            operation: 'get_current',
+            templateCode: 'unrestricted-template',
+          }),
+        )
+      ).status,
+    ).toBe(400);
+  });
+
   it('rejects unsupported, cross-origin, and unauthenticated requests before forwarding', async () => {
     expect((await POST(sameOriginRequest({ operation: 'read_prompt_table' }))).status).toBe(400);
 

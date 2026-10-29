@@ -49,7 +49,14 @@ Deno.serve(async (request) => {
   if (body.operation === "create_candidate") {
     return await createCandidate(body);
   }
-  if (body.operation === "get_current") return await getCurrent();
+  if (body.operation === "get_current") {
+    const templateCode = body.templateCode ?? "controlled-agent-report";
+    if (
+      templateCode !== "controlled-agent-report" &&
+      templateCode !== "planner-agent-report"
+    ) return json({ code: "prompt_template_not_found" }, 404);
+    return await getCurrent(templateCode);
+  }
   if (body.operation === "evaluate") return await evaluateCandidate(body);
   if (body.operation === "promote" || body.operation === "rollback") {
     return await transition(body, identity.user.id);
@@ -57,12 +64,17 @@ Deno.serve(async (request) => {
   return json({ code: "invalid_operation" }, 400);
 });
 
-async function getCurrent() {
+async function getCurrent(
+  templateCode: "controlled-agent-report" | "planner-agent-report",
+) {
+  const managerCode = templateCode === "planner-agent-report"
+    ? "personal"
+    : "systems";
   const templateResult = await service
     .from("prompt_templates")
     .select("id,code,active_version,managers!inner(code)")
-    .eq("code", "controlled-agent-report")
-    .eq("managers.code", "systems")
+    .eq("code", templateCode)
+    .eq("managers.code", managerCode)
     .maybeSingle();
   if (templateResult.error) {
     return json({ code: "prompt_template_lookup_failed" }, 500);
@@ -102,24 +114,30 @@ async function getCurrent() {
     : json({ code: "active_prompt_governance_invalid" }, 500);
 }
 
-async function loadSystemsTemplate(templateId: unknown) {
+async function loadGovernedTemplate(templateId: unknown) {
   if (typeof templateId !== "string" || !/^[0-9a-f-]{36}$/i.test(templateId)) {
     return null;
   }
   const result = await service
     .from("prompt_templates")
-    .select("id,active_version,manager_id,managers!inner(code)")
+    .select("id,code,active_version,manager_id,managers!inner(code)")
     .eq("id", templateId)
     .maybeSingle();
   if (result.error || !result.data) return null;
   const manager = Array.isArray(result.data.managers)
     ? result.data.managers[0]
     : result.data.managers;
-  return isRecord(manager) && manager.code === "systems" ? result.data : null;
+  const supported = isRecord(manager) && (
+    (result.data.code === "controlled-agent-report" &&
+      manager.code === "systems") ||
+    (result.data.code === "planner-agent-report" &&
+      manager.code === "personal")
+  );
+  return supported ? result.data : null;
 }
 
 async function createCandidate(body: Record<string, unknown>) {
-  const template = await loadSystemsTemplate(body.templateId);
+  const template = await loadGovernedTemplate(body.templateId);
   if (!template) return json({ code: "prompt_template_not_found" }, 404);
   if (
     typeof body.systemText !== "string" ||
@@ -180,7 +198,7 @@ async function evaluateCandidate(body: Record<string, unknown>) {
   ) {
     return json({ code: "prompt_candidate_not_evaluable" }, 409);
   }
-  if (!(await loadSystemsTemplate(result.data.template_id))) {
+  if (!(await loadGovernedTemplate(result.data.template_id))) {
     return json({ code: "prompt_template_not_found" }, 404);
   }
   const governance = {
@@ -223,7 +241,7 @@ async function transition(body: Record<string, unknown>, actorUserId: string) {
   ) {
     return json({ code: "invalid_prompt_transition" }, 400);
   }
-  const template = await loadSystemsTemplate(body.templateId);
+  const template = await loadGovernedTemplate(body.templateId);
   if (!template) return json({ code: "prompt_template_not_found" }, 404);
   const result = await service.rpc("transition_prompt_version", {
     p_template_id: template.id,
