@@ -3,13 +3,21 @@ import { DigitalScanForm } from './scan-form';
 
 export default async function DigitalEstatePage() {
   const { scans, devices } = await digitalEstateData();
+  const visibleDevices = devices.data.filter((device) => device.state !== 'revoked');
+  const cutoff = Date.now() - 30 * 24 * 60 * 60_000;
+  const visibleScans = scans.data.filter((scan) => {
+    if (scan.status === 'cancelled') return false;
+    if (scan.status === 'complete' && scan.completed_at && Date.parse(scan.completed_at) < cutoff) return false;
+    return !(scan.status !== 'complete' && Date.parse(scan.created_at) < cutoff);
+  });
+  const last30 = scans.data.filter((scan) => Date.parse(scan.created_at) >= cutoff).length;
+  const pending = scans.data.filter((scan) => !['complete', 'cancelled'].includes(scan.status)).length;
   return (
     <>
       <h1>Digital Estate</h1>
       <p className="notice">
-        The Windows worker is outbound-only. It reads only approved roots, excludes sensitive and
-        work paths, and executes only fresh-MFA-approved signed manifests. Keep the worker process
-        running on your PC while a scan is queued.
+        The Windows worker is outbound-only. Start it from Devices before queueing a scan; paused
+        workers remain online for control but do not poll.
       </p>
       {(scans.error ?? devices.error) ? (
         <p className="notice" role="alert">
@@ -20,22 +28,29 @@ export default async function DigitalEstatePage() {
         <article className="card">
           <div className="label">Paired devices</div>
           <div className="value">
-            {devices.data.filter((device) => device.state !== 'revoked').length}
+            {visibleDevices.length}
           </div>
         </article>
         <article className="card">
-          <div className="label">Recent scans</div>
+          <div className="label">Total scans</div>
           <div className="value">{scans.data.length}</div>
+        </article>
+        <article className="card">
+          <div className="label">Last 30 days</div>
+          <div className="value">{last30}</div>
+        </article>
+        <article className="card">
+          <div className="label">Pending scans</div>
+          <div className="value">{pending}</div>
         </article>
       </section>
       <h2>Worker devices</h2>
-      {devices.data.length ? (
+      {visibleDevices.length ? (
         <section className="stack">
-          {devices.data.map((device) => (
+          {visibleDevices.map((device) => (
             <article className="card" key={device.id}>
               <h3>{device.label}</h3>
-              <p>
-                {device.state}; last heartbeat{' '}
+              <p className={`worker-status worker-status-${device.state}`}><strong>{device.state}</strong>; last heartbeat{' '}
                 {device.last_heartbeat_at
                   ? new Date(device.last_heartbeat_at).toLocaleString('en-GB')
                   : 'not received'}
@@ -50,17 +65,15 @@ export default async function DigitalEstatePage() {
         </p>
       )}
       <h2>Scan history</h2>
-      {devices.data.find((device) => device.state !== 'revoked') ? (
-        <DigitalScanForm deviceId={devices.data.find((device) => device.state !== 'revoked')!.id} />
+      {visibleDevices[0] ? (
+        <DigitalScanForm deviceId={visibleDevices[0].id} />
       ) : null}
-      {scans.data.length ? (
+      {visibleScans.length ? (
         <section className="stack">
-          {scans.data.map((scan) => (
+          {visibleScans.map((scan) => (
             <article className="card" key={scan.id}>
               <h3>{scan.scan_kind} scan</h3>
-              <p>
-                {scan.status}; {scan.progress}% complete.
-              </p>
+              <p className={`scan-status scan-status-${scan.status}`}><strong>{scan.status}</strong></p>
             </article>
           ))}
         </section>

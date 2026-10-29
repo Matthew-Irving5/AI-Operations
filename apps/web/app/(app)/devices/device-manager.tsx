@@ -105,6 +105,16 @@ function workerConnected(device: Device, currentTimeMs: number): boolean {
   );
 }
 
+type WorkerMode = 'active' | 'online' | 'offline' | 'revoked';
+
+function workerMode(device: Device, currentTimeMs: number): WorkerMode {
+  if (device.state === 'revoked') return 'revoked';
+  if (!device.last_heartbeat_at || Date.parse(device.last_heartbeat_at) < currentTimeMs - 2 * 60_000) {
+    return 'offline';
+  }
+  return device.state === 'active' ? 'active' : 'online';
+}
+
 export function DeviceManager({
   devices,
   scans,
@@ -122,6 +132,7 @@ export function DeviceManager({
   const [publicKey, setPublicKey] = useState('');
   const [message, setMessage] = useState('');
   const [connectionCheckMessage, setConnectionCheckMessage] = useState('');
+  const [controlState, setControlState] = useState<Record<string, string>>({});
   const [pairing, setPairing] = useState<{
     deviceId: string;
     code: string;
@@ -255,25 +266,44 @@ export function DeviceManager({
     });
   }
 
+  async function controlWorker(deviceId: string, action: 'online' | 'active' | 'offline') {
+    const pending = action === 'active' ? 'resuming…' : action === 'online' ? 'pausing…' : 'stopping…';
+    setControlState((current) => ({ ...current, [deviceId]: pending }));
+    try {
+      const response = await fetch('/api/devices/control', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ deviceId, desiredState: action }),
+      });
+      if (!response.ok) throw new Error('control_request_failed');
+      setControlState((current) => ({ ...current, [deviceId]: `${action === 'active' ? 'resumed' : action === 'online' ? 'paused' : 'stopped'}` }));
+      window.setTimeout(() => setControlState((current) => ({ ...current, [deviceId]: '' })), 3000);
+      router.refresh();
+    } catch {
+      setControlState((current) => ({ ...current, [deviceId]: 'Unable to update worker state.' }));
+    }
+  }
+
+  async function startWorker(deviceId: string) {
+    setControlState((current) => ({ ...current, [deviceId]: 'starting…' }));
+    try {
+      await navigator.clipboard.writeText(workerStartCommand);
+      setControlState((current) => ({ ...current, [deviceId]: 'Start command copied.' }));
+      window.setTimeout(() => setControlState((current) => ({ ...current, [deviceId]: '' })), 3000);
+    } catch {
+      setControlState((current) => ({ ...current, [deviceId]: 'Could not copy the start command.' }));
+    }
+  }
+
   return (
     <section className="stack" aria-label="Windows worker management">
       <article className="card">
         <h2>Start your Windows worker</h2>
         <p>
           The website can queue a scan only while the paired worker process is running on your PC.
-          Run this command in PowerShell, then refresh worker status.
+          Use Start when it is offline; the launcher is copied to your clipboard for PowerShell.
         </p>
-        <pre aria-label="Worker start command">
-          <code>{workerStartCommand}</code>
-        </pre>
-        <button
-          type="button"
-          onClick={checkConnection}
-          disabled={isRefreshing}
-          aria-busy={isRefreshing}
-        >
-          {isRefreshing ? 'Checking…' : 'Check connection'}
-        </button>
+        <p>Start, pause, resume, or stop the paired worker without changing its identity.</p>
         <p aria-live="polite">{connectionCheckMessage}</p>
       </article>
       <article className="card">
@@ -328,23 +358,27 @@ export function DeviceManager({
         )}
         <p aria-live="polite">{message}</p>
       </article>
-      {devices.map((device) => (
+      {devices.filter((device) => device.state !== 'revoked').map((device) => (
         <article className="card" key={device.id}>
           <h2>{device.label}</h2>
-          <p>
-            {device.state === 'revoked'
-              ? 'revoked'
-              : workerConnected(device, currentTimeMs)
-                ? 'connected'
-                : 'not connected — start the worker'}
-            ; last heartbeat{' '}
+          {(() => {
+            const mode = workerMode(device, currentTimeMs);
+            return <>
+            <p className={`worker-status worker-status-${mode}`}><strong>{mode}</strong>; last heartbeat{' '}
             {device.last_heartbeat_at
               ? new Date(device.last_heartbeat_at).toLocaleString('en-GB', {
                   timeZone: 'Europe/London',
                 })
               : 'not received'}
-            .
-          </p>
+            .</p>
+            <div className="button-row" aria-label={`${mode} worker controls`}>
+              {mode === 'offline' && <button type="button" onClick={() => void startWorker(device.id)} disabled={Boolean(controlState[device.id]?.endsWith('…'))}>Start</button>}
+              {mode === 'active' && <><button type="button" onClick={() => void controlWorker(device.id, 'online')} disabled={Boolean(controlState[device.id]?.endsWith('…'))}>Pause</button><button type="button" onClick={() => void controlWorker(device.id, 'offline')} disabled={Boolean(controlState[device.id]?.endsWith('…'))}>Stop</button></>}
+              {mode === 'online' && <button type="button" onClick={() => void controlWorker(device.id, 'active')} disabled={Boolean(controlState[device.id]?.endsWith('…'))}>Resume</button>}
+            </div>
+            {controlState[device.id] ? <p aria-live="polite">{controlState[device.id]}</p> : null}
+            </>;
+          })()}
           {workerConnected(device, currentTimeMs) ? (
             <p role="status">Connection verified by a heartbeat within the last 30 minutes.</p>
           ) : null}

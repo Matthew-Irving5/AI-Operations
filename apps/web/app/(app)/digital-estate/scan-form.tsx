@@ -180,21 +180,18 @@ export function DigitalScanForm({ deviceId }: Readonly<{ deviceId: string }>) {
   }
 
   return (
-    <section className="card">
+    <section className="card launch-scan-card">
       <h2>Launch scan</h2>
-      <p className="label">
-        Fresh MFA is required to queue a local scan. The request is read-only and bounded to the
-        approved roots.
-      </p>
+      <p>Fresh MFA is required. The request is read-only and bounded to the approved roots.</p>
       <label>
-        Approved roots
-        <span className="label">
+        <strong>Approved roots</strong>
+        <span className="label" style={{ display: 'block', marginTop: '0.35rem' }}>
           Use a safe synthetic onboarding folder; sensitive paths are excluded.
         </span>
-        <textarea value={roots} onChange={(event) => setRoots(event.target.value)} rows={3} />
+        <textarea aria-label="Approved roots" value={roots} onChange={(event) => setRoots(event.target.value)} rows={3} />
       </label>
       <label>
-        Scan type
+        <strong>Scan type</strong>
         <select
           value={scanKind}
           onChange={(event) => setScanKind(event.target.value as 'lightweight' | 'deep')}
@@ -204,7 +201,7 @@ export function DigitalScanForm({ deviceId }: Readonly<{ deviceId: string }>) {
         </select>
       </label>
       <button type="button" disabled={!roots.trim()} onClick={submit}>
-        Queue bounded scan (fresh MFA required)
+        Queue Scan
       </button>
       <p aria-live="polite">{status}</p>
     </section>
