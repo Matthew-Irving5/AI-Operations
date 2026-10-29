@@ -2,7 +2,7 @@ import { digitalEstateData } from '../../../lib/platform-data';
 import { DigitalScanForm } from './scan-form';
 
 export default async function DigitalEstatePage() {
-  const { scans, devices } = await digitalEstateData();
+  const { scans, devices, summary } = await digitalEstateData();
   const visibleDevices = devices.data.filter((device) => device.state !== 'revoked');
   const cutoff = Date.now() - 30 * 24 * 60 * 60_000;
   const visibleScans = scans.data.filter((scan) => {
@@ -10,8 +10,6 @@ export default async function DigitalEstatePage() {
     if (scan.status === 'complete' && scan.completed_at && Date.parse(scan.completed_at) < cutoff) return false;
     return !(scan.status !== 'complete' && Date.parse(scan.created_at) < cutoff);
   });
-  const last30 = scans.data.filter((scan) => Date.parse(scan.created_at) >= cutoff).length;
-  const pending = scans.data.filter((scan) => !['complete', 'cancelled'].includes(scan.status)).length;
   return (
     <>
       <h1>Digital Estate</h1>
@@ -28,20 +26,20 @@ export default async function DigitalEstatePage() {
         <article className="card">
           <div className="label">Paired devices</div>
           <div className="value">
-            {visibleDevices.length}
+            {summary.pairedDevices}
           </div>
         </article>
         <article className="card">
           <div className="label">Total scans</div>
-          <div className="value">{scans.data.length}</div>
+          <div className="value">{summary.totalScans}</div>
         </article>
         <article className="card">
           <div className="label">Last 30 days</div>
-          <div className="value">{last30}</div>
+          <div className="value">{summary.last30DaysScans}</div>
         </article>
         <article className="card">
           <div className="label">Pending scans</div>
-          <div className="value">{pending}</div>
+          <div className="value">{summary.pendingScans}</div>
         </article>
       </section>
       <h2>Worker devices</h2>

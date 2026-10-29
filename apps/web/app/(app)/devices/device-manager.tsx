@@ -287,6 +287,12 @@ export function DeviceManager({
   async function startWorker(deviceId: string) {
     setControlState((current) => ({ ...current, [deviceId]: 'starting…' }));
     try {
+      const response = await fetch('/api/devices/control', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ deviceId, desiredState: 'active' }),
+      });
+      if (!response.ok) throw new Error('control_request_failed');
       await navigator.clipboard.writeText(workerStartCommand);
       setControlState((current) => ({ ...current, [deviceId]: 'Start command copied.' }));
       window.setTimeout(() => setControlState((current) => ({ ...current, [deviceId]: '' })), 3000);

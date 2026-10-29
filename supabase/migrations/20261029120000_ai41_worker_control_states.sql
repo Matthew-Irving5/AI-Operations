@@ -35,8 +35,8 @@ security definer
 set search_path = public, pg_temp
 as $$
 begin
-  if auth.uid() is null or not public.is_allowed_aal2() then
-    raise exception 'fresh_mfa_required';
+  if auth.uid() is null then
+    raise exception 'unauthorised';
   end if;
   if p_desired_state not in ('active', 'online', 'offline') then
     raise exception 'invalid_worker_state';

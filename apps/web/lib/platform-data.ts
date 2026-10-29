@@ -720,6 +720,12 @@ export async function digitalEstateData(): Promise<
   Readonly<{
     scans: PageData<z.infer<typeof digitalScanSchema>[]>;
     devices: PageData<z.infer<typeof workerDeviceSchema>[]>;
+    summary: Readonly<{
+      pairedDevices: number;
+      totalScans: number;
+      last30DaysScans: number;
+      pendingScans: number;
+    }>;
   }>
 > {
   // Revalidate/refresh the cookie-backed JWT before querying AAL2-protected
@@ -729,7 +735,8 @@ export async function digitalEstateData(): Promise<
   const client = accessToken
     ? createSupabaseAccessTokenClient(accessToken)
     : await createSupabaseServerClient();
-  const [scans, devices] = await Promise.all([
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
+  const [scans, devices, pairedCount, totalScanCount, last30Count, pendingCount] = await Promise.all([
     client
       .from('digital_scans')
       .select('id,device_id,scan_kind,status,progress,result_verified_at,created_at,completed_at')
@@ -740,13 +747,24 @@ export async function digitalEstateData(): Promise<
       .select('id,label,state,public_key_b64,paired_at,revoked_at,last_heartbeat_at')
       .order('created_at', { ascending: false })
       .limit(25),
+    client.from('worker_devices').select('id', { count: 'exact', head: true }).neq('state', 'revoked'),
+    client.from('digital_scans').select('id', { count: 'exact', head: true }),
+    client.from('digital_scans').select('id', { count: 'exact', head: true }).gte('created_at', cutoff),
+    client.from('digital_scans').select('id', { count: 'exact', head: true }).not('status', 'in', '(complete,cancelled)'),
   ]);
+  const summary = {
+    pairedDevices: pairedCount.count ?? 0,
+    totalScans: totalScanCount.count ?? 0,
+    last30DaysScans: last30Count.count ?? 0,
+    pendingScans: pendingCount.count ?? 0,
+  };
   if (devices.error) {
     return {
       scans: scans.error
         ? { data: [], error: 'Digital scans could not be loaded.' }
         : parsedRows(scans.data, z.array(digitalScanSchema)),
       devices: { data: [], error: 'Worker devices could not be loaded.' },
+      summary,
     };
   }
 
@@ -785,6 +803,7 @@ export async function digitalEstateData(): Promise<
     devices: parsedDevices.success
       ? { data: parsedDevices.data, error: null }
       : { data: [], error: 'Worker device health could not be loaded.' },
+    summary,
   };
 }
 
