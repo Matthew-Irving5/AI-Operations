@@ -292,6 +292,8 @@ select ok(
         and column_info.attname = any(array[
           'id', 'user_id', 'label', 'public_key_b64', 'pairing_expires_at',
           'paired_at', 'revoked_at', 'last_heartbeat_at', 'state', 'created_at'
+          , 'desired_state', 'control_generation', 'acknowledged_generation',
+          'last_poll_at', 'observed_mode'
         ])
       )
   ),

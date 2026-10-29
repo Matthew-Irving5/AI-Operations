@@ -6516,10 +6516,15 @@ export type Database = {
       };
       worker_devices: {
         Row: {
+          acknowledged_generation: number;
+          control_generation: number;
           created_at: string;
+          desired_state: string;
           id: string;
           label: string;
           last_heartbeat_at: string | null;
+          last_poll_at: string | null;
+          observed_mode: string | null;
           paired_at: string | null;
           pairing_expires_at: string | null;
           pairing_hash: string | null;
@@ -6530,10 +6535,15 @@ export type Database = {
           worker_secret_hash: string | null;
         };
         Insert: {
+          acknowledged_generation?: number;
+          control_generation?: number;
           created_at?: string;
+          desired_state?: string;
           id?: string;
           label: string;
           last_heartbeat_at?: string | null;
+          last_poll_at?: string | null;
+          observed_mode?: string | null;
           paired_at?: string | null;
           pairing_expires_at?: string | null;
           pairing_hash?: string | null;
@@ -6544,10 +6554,15 @@ export type Database = {
           worker_secret_hash?: string | null;
         };
         Update: {
+          acknowledged_generation?: number;
+          control_generation?: number;
           created_at?: string;
+          desired_state?: string;
           id?: string;
           label?: string;
           last_heartbeat_at?: string | null;
+          last_poll_at?: string | null;
+          observed_mode?: string | null;
           paired_at?: string | null;
           pairing_expires_at?: string | null;
           pairing_hash?: string | null;
@@ -7364,6 +7379,7 @@ export type Database = {
       execute_personal_workflow: { Args: { p_run_id: string }; Returns: string };
       execute_systems_workflow: { Args: { p_run_id: string }; Returns: string };
       expire_inter_agent_requests: { Args: { p_limit?: number }; Returns: number };
+      expire_stale_digital_scans: { Args: { p_now?: string }; Returns: number };
       fail_instrumented_ai_provider_response: {
         Args: {
           p_actual_cost: number;
@@ -7582,6 +7598,14 @@ export type Database = {
       revoke_worker_device_from_mfa_gate: {
         Args: { p_device_id: string; p_gate_id: string };
         Returns: Json;
+      };
+      set_worker_desired_state: {
+        Args: { p_desired_state: string; p_device_id: string };
+        Returns: {
+          control_generation: number;
+          desired_state: string;
+          device_id: string;
+        }[];
       };
       settle_instrumented_ai_call: {
         Args: {

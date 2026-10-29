@@ -88,6 +88,7 @@ insert into rpc_security_expected values
   ('public.update_google_source_selection(uuid,text[],text[],uuid)', false, true, false),
   ('public.create_worker_device_from_mfa_gate(uuid,text,text,text,timestamptz)', false, true, false),
   ('public.revoke_worker_device_from_mfa_gate(uuid,uuid)', false, true, false),
+  ('public.set_worker_desired_state(uuid,text)', false, true, false),
   -- AI-44 canonical action RPCs have explicit service-role or authenticated grants.
   ('public.lookup_canonical_action_execution(uuid,uuid,text,text)', false, false, true),
   ('public.record_canonical_action_policy_decision(uuid,uuid,text,text,jsonb)', false, false, true),

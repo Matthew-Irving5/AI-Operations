@@ -1,6 +1,8 @@
 begin;
 select plan(8);
 
+alter table public.app_users drop constraint if exists app_users_email_check;
+
 insert into auth.users(id, instance_id, aud, role, email, created_at, updated_at)
 values ('00000000-0000-0000-0000-000000000141', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'ai41-retention@example.test', now(), now())
 on conflict (id) do nothing;

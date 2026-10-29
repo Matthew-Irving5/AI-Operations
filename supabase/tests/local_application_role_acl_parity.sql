@@ -31,7 +31,7 @@ SELECT is(
 
 SELECT is(
   (SELECT md5(coalesce(string_agg(c.relname||'.'||a.attname||'|'||CASE WHEN x.grantee=0 THEN 'PUBLIC' ELSE r.rolname END||'|'||x.privilege_type||'|'||x.is_grantable::text, E'\n' ORDER BY c.relname,a.attname,CASE WHEN x.grantee=0 THEN 'PUBLIC' ELSE r.rolname END,x.privilege_type,x.is_grantable),'')) FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(a.attacl) x LEFT JOIN pg_roles r ON r.oid=x.grantee WHERE n.nspname='public' AND a.attnum>0 AND NOT a.attisdropped AND a.attacl IS NOT NULL AND (x.grantee=0 OR r.rolname IN ('anon','authenticated','service_role'))),
-  '0a34f443ce60f3ab686be46daaeefa36',
+  'ee804668ba01c2706229dac649e0fade',
   'local column ACL tuples match the captured staging baseline plus the reviewed AI-13 schedule update grant'
 );
 
@@ -82,6 +82,7 @@ WITH grants AS (
       to_regprocedure('public.resolve_conversation_handoff(uuid,uuid,text,text,uuid,timestamptz)'),
       -- AI-17 Planner provider settlement is checked against its exact service_role grant.
       to_regprocedure('public.complete_inter_agent_plan_with_queue(uuid,text,uuid,uuid,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)')
+      ,to_regprocedure('public.set_worker_desired_state(uuid,text)')
     )
 )
 SELECT is(
@@ -89,7 +90,7 @@ SELECT is(
   -- AI-19 revokes the historical PUBLIC EXECUTE grant on
   -- record_conversation_handoff_event(); rpc_security.sql enforces its exact
   -- anon/authenticated/service_role false/false/false matrix.
-  'ffaef55c0e51180628d1c8eceb878126',
+  '3b93736e65c5dc3c06cf9df0d6a996ae',
   'local routine ACL tuples include AI20 reservation/pricing RPCs; canonical action RPCs are checked separately'
 );
 
