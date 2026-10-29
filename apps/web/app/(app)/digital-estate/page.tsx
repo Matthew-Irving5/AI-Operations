@@ -2,9 +2,9 @@ import { digitalEstateData } from '../../../lib/platform-data';
 import { DigitalScanForm } from './scan-form';
 
 export default async function DigitalEstatePage() {
-  const { scans, devices, summary } = await digitalEstateData();
+  const { scans, devices, summary, generatedAt } = await digitalEstateData();
   const visibleDevices = devices.data.filter((device) => device.state !== 'revoked');
-  const cutoff = Date.now() - 30 * 24 * 60 * 60_000;
+  const cutoff = generatedAt - 30 * 24 * 60 * 60_000;
   const visibleScans = scans.data.filter((scan) => {
     if (scan.status === 'cancelled') return false;
     if (scan.status === 'complete' && scan.completed_at && Date.parse(scan.completed_at) < cutoff)

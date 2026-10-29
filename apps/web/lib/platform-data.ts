@@ -726,6 +726,7 @@ export async function digitalEstateData(): Promise<
       last30DaysScans: number;
       pendingScans: number;
     }>;
+    generatedAt: number;
   }>
 > {
   // Revalidate/refresh the cookie-backed JWT before querying AAL2-protected
@@ -736,6 +737,7 @@ export async function digitalEstateData(): Promise<
     ? createSupabaseAccessTokenClient(accessToken)
     : await createSupabaseServerClient();
   const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
+  const generatedAt = Date.now();
   const [scans, devices, pairedCount, totalScanCount, last30Count, pendingCount] =
     await Promise.all([
       client
@@ -775,6 +777,7 @@ export async function digitalEstateData(): Promise<
         : parsedRows(scans.data, z.array(digitalScanSchema)),
       devices: { data: [], error: 'Worker devices could not be loaded.' },
       summary,
+      generatedAt,
     };
   }
 
@@ -814,6 +817,7 @@ export async function digitalEstateData(): Promise<
       ? { data: parsedDevices.data, error: null }
       : { data: [], error: 'Worker device health could not be loaded.' },
     summary,
+    generatedAt,
   };
 }
 
