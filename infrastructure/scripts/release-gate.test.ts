@@ -1519,6 +1519,11 @@ test('production deploy requires status-bound staging acceptance and squash PR p
   );
   assert.match(
     workflow,
+    /supabase db push --linked --include-all --password "\$DB_PASSWORD" --yes/,
+    'production migration push must preserve the complete approved migration history',
+  );
+  assert.match(
+    workflow,
     /\.event == "push" and \.status == "completed" and \.conclusion == "success"/,
   );
   assert.match(workflow, /commits\/\$sha\/pulls/);
