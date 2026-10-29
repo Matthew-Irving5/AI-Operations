@@ -66,7 +66,12 @@ Deno.serve(async (request) => {
     last_heartbeat_at: now,
     observed_mode: effectiveMode,
     acknowledged_generation: auth.device.control_generation,
-  }).eq("id", auth.device.id).in("state", ["paired", "active", "online", "offline"])
+  }).eq("id", auth.device.id).in("state", [
+    "paired",
+    "active",
+    "online",
+    "offline",
+  ])
     .select("id,desired_state,control_generation,acknowledged_generation,state")
     .maybeSingle();
   if (error || !data) {
@@ -96,11 +101,11 @@ Deno.serve(async (request) => {
       requestId,
     );
   }
-  const { error: queuedError } = effectiveMode === "active"
-    ? await workerService.from("digital_scans")
+  const queuedError = effectiveMode === "active"
+    ? (await workerService.from("digital_scans")
       .update({ status: "queued" })
       .eq("device_id", auth.device.id)
-      .eq("status", "waiting_for_device")
+      .eq("status", "waiting_for_device")).error
     : null;
   return queuedError
     ? json({ code: "scan_queue_failed", stage: "heartbeat" }, 500, requestId)
