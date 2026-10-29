@@ -168,3 +168,42 @@ def test_paused_worker_does_not_poll(
     client.mode = "online"
     monkeypatch.setattr(client, "poll", lambda: pytest.fail("paused worker polled"))
     assert client.run_once() == {"paused": True, "mode": "online"}
+
+
+def test_idle_active_worker_wakes_for_heartbeat_before_poll_interval(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = ControlPlaneClient(WorkerConfiguration(
+        endpoint=WorkerEndpoint("https://example.supabase.co/functions/v1"),
+        worker_secret="secret",
+        device_id="00000000-0000-4000-8000-000000000001",
+        state_path=tmp_path / "state.sqlite",
+        key_path=tmp_path / "worker.key.dpapi",
+        manifest_public_key_b64="",
+        allowed_roots=(tmp_path,),
+        quarantine_root=tmp_path / "quarantine",
+    ))
+    clock = iter([0.0, 0.0, 60.0, 60.0, 120.0])
+    sleeps: list[float] = []
+    heartbeats = 0
+
+    def fake_monotonic() -> float:
+        return next(clock)
+
+    def fake_heartbeat() -> dict[str, object]:
+        nonlocal heartbeats
+        heartbeats += 1
+        return {"control": {"mode": "active", "stop": False}} if heartbeats == 1 else {
+            "control": {"mode": "offline", "stop": True},
+        }
+
+    monkeypatch.setattr("ai_operations_worker.client.time.monotonic", fake_monotonic)
+    monkeypatch.setattr("ai_operations_worker.client.time.sleep", sleeps.append)
+    monkeypatch.setattr(client, "heartbeat", fake_heartbeat)
+    monkeypatch.setattr(client, "run_once", lambda: {})
+
+    client.run_forever()
+
+    assert heartbeats == 2
+    assert sleeps == [60.0]

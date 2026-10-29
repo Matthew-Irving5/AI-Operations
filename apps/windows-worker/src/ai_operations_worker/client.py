@@ -179,6 +179,10 @@ class ControlPlaneClient:
                     delay = self.config.online_heartbeat_seconds
                 else:
                     delay = 15 if task.get("scan") or task.get("manifest") else self.config.poll_seconds
+                # A long poll interval must never postpone the next heartbeat.
+                # Without this bound an idle active worker slept for five minutes,
+                # while the UI correctly marked it offline after two minutes.
+                delay = min(delay, max(0.0, next_heartbeat - time.monotonic()))
             except OSError:
                 delay = min(max(delay * 2, 30), 3600)
             except RuntimeError as error:

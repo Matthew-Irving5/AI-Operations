@@ -3,17 +3,9 @@
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { WorkerDevice } from '../../../lib/platform-data';
+import { titleCase, workerDisplayState } from '../../../lib/worker-state';
 
 type Device = WorkerDevice;
-type Scan = {
-  id: string;
-  device_id: string;
-  scan_kind: string;
-  status: string;
-  progress: number;
-  result_verified_at: string | null;
-};
-
 type ApiResult = {
   code?: string;
   stage?: string;
@@ -96,36 +88,12 @@ function errorText(body: ApiResult | null, status: number, stage: string) {
     .join(' | ');
 }
 
-function workerConnected(device: Device, currentTimeMs: number): boolean {
-  return (
-    device.state !== 'revoked' &&
-    Boolean(device.last_heartbeat_at) &&
-    Date.parse(device.last_heartbeat_at ?? '') >= currentTimeMs - 30 * 60_000 &&
-    device.health?.status.compatibility?.compatible === true
-  );
-}
-
-type WorkerMode = 'active' | 'online' | 'offline' | 'revoked';
-
-function workerMode(device: Device, currentTimeMs: number): WorkerMode {
-  if (device.state === 'revoked') return 'revoked';
-  if (
-    !device.last_heartbeat_at ||
-    Date.parse(device.last_heartbeat_at) < currentTimeMs - 2 * 60_000
-  ) {
-    return 'offline';
-  }
-  return device.state === 'active' ? 'active' : 'online';
-}
-
 export function DeviceManager({
   devices,
-  scans,
   currentTimeMs,
   workerStartCommand,
 }: Readonly<{
   devices: Device[];
-  scans: Scan[];
   currentTimeMs: number;
   workerStartCommand: string;
 }>) {
@@ -134,7 +102,6 @@ export function DeviceManager({
   const [label, setLabel] = useState('Windows PC');
   const [publicKey, setPublicKey] = useState('');
   const [message, setMessage] = useState('');
-  const [connectionCheckMessage, setConnectionCheckMessage] = useState('');
   const [controlState, setControlState] = useState<Record<string, string>>({});
   const [pairing, setPairing] = useState<{
     deviceId: string;
@@ -262,11 +229,7 @@ export function DeviceManager({
   }
 
   function checkConnection() {
-    setConnectionCheckMessage('Refreshing worker heartbeat status…');
-    startRefresh(() => {
-      router.refresh();
-      setConnectionCheckMessage('Worker status refresh requested.');
-    });
+    startRefresh(() => router.refresh());
   }
 
   async function controlWorker(deviceId: string, action: 'online' | 'active' | 'offline') {
@@ -303,6 +266,7 @@ export function DeviceManager({
       await navigator.clipboard.writeText(workerStartCommand);
       setControlState((current) => ({ ...current, [deviceId]: 'Start command copied.' }));
       window.setTimeout(() => setControlState((current) => ({ ...current, [deviceId]: '' })), 3000);
+      router.refresh();
     } catch {
       setControlState((current) => ({
         ...current,
@@ -313,15 +277,6 @@ export function DeviceManager({
 
   return (
     <section className="stack" aria-label="Windows worker management">
-      <article className="card">
-        <h2>Start your Windows worker</h2>
-        <p>
-          The website can queue a scan only while the paired worker process is running on your PC.
-          Use Start when it is offline; the launcher is copied to your clipboard for PowerShell.
-        </p>
-        <p>Start, pause, resume, or stop the paired worker without changing its identity.</p>
-        <p aria-live="polite">{connectionCheckMessage}</p>
-      </article>
       <article className="card">
         <h2>Register Windows worker</h2>
         <p>
@@ -380,11 +335,12 @@ export function DeviceManager({
           <article className="card" key={device.id}>
             <h2>{device.label}</h2>
             {(() => {
-              const mode = workerMode(device, currentTimeMs);
+              const mode = workerDisplayState(device, currentTimeMs);
+              const pending = Boolean(controlState[device.id]?.endsWith('…'));
               return (
                 <>
                   <p className={`worker-status worker-status-${mode}`}>
-                    <strong>{mode}</strong>; last heartbeat{' '}
+                    <strong>{titleCase(mode)}</strong>; last heartbeat{' '}
                     {device.last_heartbeat_at
                       ? new Date(device.last_heartbeat_at).toLocaleString('en-GB', {
                           timeZone: 'Europe/London',
@@ -397,7 +353,7 @@ export function DeviceManager({
                       <button
                         type="button"
                         onClick={() => void startWorker(device.id)}
-                        disabled={Boolean(controlState[device.id]?.endsWith('…'))}
+                        disabled={pending}
                       >
                         Start
                       </button>
@@ -407,14 +363,14 @@ export function DeviceManager({
                         <button
                           type="button"
                           onClick={() => void controlWorker(device.id, 'online')}
-                          disabled={Boolean(controlState[device.id]?.endsWith('…'))}
+                          disabled={pending}
                         >
                           Pause
                         </button>
                         <button
                           type="button"
                           onClick={() => void controlWorker(device.id, 'offline')}
-                          disabled={Boolean(controlState[device.id]?.endsWith('…'))}
+                          disabled={pending}
                         >
                           Stop
                         </button>
@@ -424,11 +380,19 @@ export function DeviceManager({
                       <button
                         type="button"
                         onClick={() => void controlWorker(device.id, 'active')}
-                        disabled={Boolean(controlState[device.id]?.endsWith('…'))}
+                        disabled={pending}
                       >
                         Resume
                       </button>
                     )}
+                    <button
+                      className="button-danger"
+                      type="button"
+                      onClick={() => startRevoke(device.id)}
+                      disabled={pending}
+                    >
+                      Revoke
+                    </button>
                   </div>
                   {controlState[device.id] ? (
                     <p aria-live="polite">{controlState[device.id]}</p>
@@ -436,63 +400,6 @@ export function DeviceManager({
                 </>
               );
             })()}
-            {workerConnected(device, currentTimeMs) ? (
-              <p role="status">Connection verified by a heartbeat within the last 30 minutes.</p>
-            ) : null}
-            {device.health_error ? (
-              <p role="alert">Worker version and capability status could not be loaded.</p>
-            ) : !device.health ? (
-              <p role="status">
-                Worker version and capabilities will appear after its next heartbeat.
-              </p>
-            ) : (
-              <>
-                <p>
-                  Worker version: <code>{device.health.worker_version ?? 'not reported'}</code>.
-                </p>
-                <p>
-                  Compatibility:{' '}
-                  {device.health.status.compatibility?.compatible
-                    ? 'supported'
-                    : device.health.status.compatibility?.code === 'worker_upgrade_required'
-                      ? `upgrade required; minimum ${device.health.status.compatibility.minimumVersion}, reported ${device.health.status.compatibility.actualVersion ?? 'unknown'}`
-                      : device.health.status.compatibility?.code === 'worker_capability_missing'
-                        ? 'required inventory capability missing; polling is blocked'
-                        : device.health.status.compatibility?.code ===
-                            'worker_capability_unsupported'
-                          ? 'worker reports an unsupported capability; polling is blocked'
-                          : device.health.status.compatibility?.code === 'worker_version_required'
-                            ? 'version reporting required; polling is blocked'
-                            : 'compatibility has not been reported'}
-                  .
-                </p>
-                <p>
-                  Capabilities:{' '}
-                  {device.health.status.capabilities?.length
-                    ? device.health.status.capabilities.join(', ')
-                    : 'none reported'}
-                  .
-                </p>
-              </>
-            )}
-            {scans.some(
-              (scan) =>
-                scan.device_id === device.id &&
-                scan.scan_kind === 'lightweight' &&
-                scan.status === 'complete' &&
-                Boolean(scan.result_verified_at),
-            ) ? (
-              <p role="status">Verified smoke scan complete.</p>
-            ) : (
-              <p>
-                <a href="/digital-estate">Run smoke scan</a> after the heartbeat is received.
-              </p>
-            )}
-            {device.state !== 'revoked' && (
-              <button type="button" onClick={() => startRevoke(device.id)}>
-                Revoke after fresh MFA
-              </button>
-            )}
           </article>
         ))}
       <button

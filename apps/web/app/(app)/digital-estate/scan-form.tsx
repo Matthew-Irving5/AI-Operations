@@ -180,30 +180,26 @@ export function DigitalScanForm({ deviceId }: Readonly<{ deviceId: string }>) {
   }
 
   return (
-    <section className="card launch-scan-card">
-      <h2>Launch scan</h2>
-      <p>Fresh MFA is required. The request is read-only and bounded to the approved roots.</p>
+    <section className="card launch-scan-card launch-scan-form">
       <label>
-        <strong>Approved roots</strong>
-        <span className="label" style={{ display: 'block', marginTop: '0.35rem' }}>
-          Use a safe synthetic onboarding folder; sensitive paths are excluded.
-        </span>
+        <span className="field-label">Scan Type</span>
+        <select
+          aria-label="Scan Type"
+          value={scanKind}
+          onChange={(event) => setScanKind(event.target.value as 'lightweight' | 'deep')}
+        >
+          <option value="lightweight">Lightweight</option>
+          <option value="deep">Deep</option>
+        </select>
+      </label>
+      <label>
+        <span className="field-label">Approved Roots</span>
         <textarea
-          aria-label="Approved roots"
+          aria-label="Approved Roots"
           value={roots}
           onChange={(event) => setRoots(event.target.value)}
           rows={3}
         />
-      </label>
-      <label>
-        <strong>Scan type</strong>
-        <select
-          value={scanKind}
-          onChange={(event) => setScanKind(event.target.value as 'lightweight' | 'deep')}
-        >
-          <option value="lightweight">Lightweight inventory</option>
-          <option value="deep">Deep organisation analysis</option>
-        </select>
       </label>
       <button type="button" disabled={!roots.trim()} onClick={submit}>
         Queue Scan
