@@ -103,6 +103,9 @@ export function DeviceManager({
   const [publicKey, setPublicKey] = useState('');
   const [message, setMessage] = useState('');
   const [controlState, setControlState] = useState<Record<string, string>>({});
+  const [controlTargets, setControlTargets] = useState<
+    Record<string, 'active' | 'online' | 'offline'>
+  >({});
   const [pairing, setPairing] = useState<{
     deviceId: string;
     code: string;
@@ -232,9 +235,44 @@ export function DeviceManager({
     startRefresh(() => router.refresh());
   }
 
+  useEffect(() => {
+    const waitingForControl = Object.keys(controlTargets).length > 0;
+    if (!waitingForControl) return;
+    const interval = window.setInterval(() => {
+      startRefresh(() => router.refresh());
+    }, 10000);
+    return () => window.clearInterval(interval);
+  }, [controlTargets, router, startRefresh]);
+
+  useEffect(() => {
+    const confirmed = Object.entries(controlTargets).filter(([deviceId, target]) => {
+      const device = devices.find((candidate) => candidate.id === deviceId);
+      return device ? workerDisplayState(device, currentTimeMs) === target : false;
+    });
+    if (confirmed.length === 0) return;
+    const timer = window.setTimeout(() => {
+      setControlTargets((current) => {
+        const next = { ...current };
+        for (const [deviceId] of confirmed) delete next[deviceId];
+        return next;
+      });
+      setControlState((current) => {
+        const next = { ...current };
+        for (const [deviceId] of confirmed) delete next[deviceId];
+        return next;
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [controlTargets, currentTimeMs, devices]);
+
   async function controlWorker(deviceId: string, action: 'online' | 'active' | 'offline') {
     const pending =
-      action === 'active' ? 'resuming…' : action === 'online' ? 'pausing…' : 'stopping…';
+      action === 'active'
+        ? 'Resumed — queued…'
+        : action === 'online'
+          ? 'Paused — queued…'
+          : 'Stopped — queued…';
+    setControlTargets((current) => ({ ...current, [deviceId]: action }));
     setControlState((current) => ({ ...current, [deviceId]: pending }));
     try {
       const response = await fetch('/api/devices/control', {
@@ -243,19 +281,20 @@ export function DeviceManager({
         body: JSON.stringify({ deviceId, desiredState: action }),
       });
       if (!response.ok) throw new Error('control_request_failed');
-      setControlState((current) => ({
-        ...current,
-        [deviceId]: `${action === 'active' ? 'resumed' : action === 'online' ? 'paused' : 'stopped'}`,
-      }));
-      window.setTimeout(() => setControlState((current) => ({ ...current, [deviceId]: '' })), 3000);
       router.refresh();
     } catch {
+      setControlTargets((current) => {
+        const next = { ...current };
+        delete next[deviceId];
+        return next;
+      });
       setControlState((current) => ({ ...current, [deviceId]: 'Unable to update worker state.' }));
     }
   }
 
   async function startWorker(deviceId: string) {
-    setControlState((current) => ({ ...current, [deviceId]: 'starting…' }));
+    setControlTargets((current) => ({ ...current, [deviceId]: 'active' }));
+    setControlState((current) => ({ ...current, [deviceId]: 'Started — queued…' }));
     try {
       const response = await fetch('/api/devices/control', {
         method: 'POST',
@@ -264,10 +303,14 @@ export function DeviceManager({
       });
       if (!response.ok) throw new Error('control_request_failed');
       await navigator.clipboard.writeText(workerStartCommand);
-      setControlState((current) => ({ ...current, [deviceId]: 'Start command copied.' }));
-      window.setTimeout(() => setControlState((current) => ({ ...current, [deviceId]: '' })), 3000);
+      setControlState((current) => ({ ...current, [deviceId]: 'Started — command copied; queued…' }));
       router.refresh();
     } catch {
+      setControlTargets((current) => {
+        const next = { ...current };
+        delete next[deviceId];
+        return next;
+      });
       setControlState((current) => ({
         ...current,
         [deviceId]: 'Could not copy the start command.',
