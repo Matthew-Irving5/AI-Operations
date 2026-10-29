@@ -109,7 +109,10 @@ type WorkerMode = 'active' | 'online' | 'offline' | 'revoked';
 
 function workerMode(device: Device, currentTimeMs: number): WorkerMode {
   if (device.state === 'revoked') return 'revoked';
-  if (!device.last_heartbeat_at || Date.parse(device.last_heartbeat_at) < currentTimeMs - 2 * 60_000) {
+  if (
+    !device.last_heartbeat_at ||
+    Date.parse(device.last_heartbeat_at) < currentTimeMs - 2 * 60_000
+  ) {
     return 'offline';
   }
   return device.state === 'active' ? 'active' : 'online';
@@ -267,7 +270,8 @@ export function DeviceManager({
   }
 
   async function controlWorker(deviceId: string, action: 'online' | 'active' | 'offline') {
-    const pending = action === 'active' ? 'resuming…' : action === 'online' ? 'pausing…' : 'stopping…';
+    const pending =
+      action === 'active' ? 'resuming…' : action === 'online' ? 'pausing…' : 'stopping…';
     setControlState((current) => ({ ...current, [deviceId]: pending }));
     try {
       const response = await fetch('/api/devices/control', {
@@ -276,7 +280,10 @@ export function DeviceManager({
         body: JSON.stringify({ deviceId, desiredState: action }),
       });
       if (!response.ok) throw new Error('control_request_failed');
-      setControlState((current) => ({ ...current, [deviceId]: `${action === 'active' ? 'resumed' : action === 'online' ? 'paused' : 'stopped'}` }));
+      setControlState((current) => ({
+        ...current,
+        [deviceId]: `${action === 'active' ? 'resumed' : action === 'online' ? 'paused' : 'stopped'}`,
+      }));
       window.setTimeout(() => setControlState((current) => ({ ...current, [deviceId]: '' })), 3000);
       router.refresh();
     } catch {
@@ -297,7 +304,10 @@ export function DeviceManager({
       setControlState((current) => ({ ...current, [deviceId]: 'Start command copied.' }));
       window.setTimeout(() => setControlState((current) => ({ ...current, [deviceId]: '' })), 3000);
     } catch {
-      setControlState((current) => ({ ...current, [deviceId]: 'Could not copy the start command.' }));
+      setControlState((current) => ({
+        ...current,
+        [deviceId]: 'Could not copy the start command.',
+      }));
     }
   }
 
@@ -364,85 +374,127 @@ export function DeviceManager({
         )}
         <p aria-live="polite">{message}</p>
       </article>
-      {devices.filter((device) => device.state !== 'revoked').map((device) => (
-        <article className="card" key={device.id}>
-          <h2>{device.label}</h2>
-          {(() => {
-            const mode = workerMode(device, currentTimeMs);
-            return <>
-            <p className={`worker-status worker-status-${mode}`}><strong>{mode}</strong>; last heartbeat{' '}
-            {device.last_heartbeat_at
-              ? new Date(device.last_heartbeat_at).toLocaleString('en-GB', {
-                  timeZone: 'Europe/London',
-                })
-              : 'not received'}
-            .</p>
-            <div className="button-row" aria-label={`${mode} worker controls`}>
-              {mode === 'offline' && <button type="button" onClick={() => void startWorker(device.id)} disabled={Boolean(controlState[device.id]?.endsWith('…'))}>Start</button>}
-              {mode === 'active' && <><button type="button" onClick={() => void controlWorker(device.id, 'online')} disabled={Boolean(controlState[device.id]?.endsWith('…'))}>Pause</button><button type="button" onClick={() => void controlWorker(device.id, 'offline')} disabled={Boolean(controlState[device.id]?.endsWith('…'))}>Stop</button></>}
-              {mode === 'online' && <button type="button" onClick={() => void controlWorker(device.id, 'active')} disabled={Boolean(controlState[device.id]?.endsWith('…'))}>Resume</button>}
-            </div>
-            {controlState[device.id] ? <p aria-live="polite">{controlState[device.id]}</p> : null}
-            </>;
-          })()}
-          {workerConnected(device, currentTimeMs) ? (
-            <p role="status">Connection verified by a heartbeat within the last 30 minutes.</p>
-          ) : null}
-          {device.health_error ? (
-            <p role="alert">Worker version and capability status could not be loaded.</p>
-          ) : !device.health ? (
-            <p role="status">
-              Worker version and capabilities will appear after its next heartbeat.
-            </p>
-          ) : (
-            <>
-              <p>
-                Worker version: <code>{device.health.worker_version ?? 'not reported'}</code>.
+      {devices
+        .filter((device) => device.state !== 'revoked')
+        .map((device) => (
+          <article className="card" key={device.id}>
+            <h2>{device.label}</h2>
+            {(() => {
+              const mode = workerMode(device, currentTimeMs);
+              return (
+                <>
+                  <p className={`worker-status worker-status-${mode}`}>
+                    <strong>{mode}</strong>; last heartbeat{' '}
+                    {device.last_heartbeat_at
+                      ? new Date(device.last_heartbeat_at).toLocaleString('en-GB', {
+                          timeZone: 'Europe/London',
+                        })
+                      : 'not received'}
+                    .
+                  </p>
+                  <div className="button-row" aria-label={`${mode} worker controls`}>
+                    {mode === 'offline' && (
+                      <button
+                        type="button"
+                        onClick={() => void startWorker(device.id)}
+                        disabled={Boolean(controlState[device.id]?.endsWith('…'))}
+                      >
+                        Start
+                      </button>
+                    )}
+                    {mode === 'active' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void controlWorker(device.id, 'online')}
+                          disabled={Boolean(controlState[device.id]?.endsWith('…'))}
+                        >
+                          Pause
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void controlWorker(device.id, 'offline')}
+                          disabled={Boolean(controlState[device.id]?.endsWith('…'))}
+                        >
+                          Stop
+                        </button>
+                      </>
+                    )}
+                    {mode === 'online' && (
+                      <button
+                        type="button"
+                        onClick={() => void controlWorker(device.id, 'active')}
+                        disabled={Boolean(controlState[device.id]?.endsWith('…'))}
+                      >
+                        Resume
+                      </button>
+                    )}
+                  </div>
+                  {controlState[device.id] ? (
+                    <p aria-live="polite">{controlState[device.id]}</p>
+                  ) : null}
+                </>
+              );
+            })()}
+            {workerConnected(device, currentTimeMs) ? (
+              <p role="status">Connection verified by a heartbeat within the last 30 minutes.</p>
+            ) : null}
+            {device.health_error ? (
+              <p role="alert">Worker version and capability status could not be loaded.</p>
+            ) : !device.health ? (
+              <p role="status">
+                Worker version and capabilities will appear after its next heartbeat.
               </p>
+            ) : (
+              <>
+                <p>
+                  Worker version: <code>{device.health.worker_version ?? 'not reported'}</code>.
+                </p>
+                <p>
+                  Compatibility:{' '}
+                  {device.health.status.compatibility?.compatible
+                    ? 'supported'
+                    : device.health.status.compatibility?.code === 'worker_upgrade_required'
+                      ? `upgrade required; minimum ${device.health.status.compatibility.minimumVersion}, reported ${device.health.status.compatibility.actualVersion ?? 'unknown'}`
+                      : device.health.status.compatibility?.code === 'worker_capability_missing'
+                        ? 'required inventory capability missing; polling is blocked'
+                        : device.health.status.compatibility?.code ===
+                            'worker_capability_unsupported'
+                          ? 'worker reports an unsupported capability; polling is blocked'
+                          : device.health.status.compatibility?.code === 'worker_version_required'
+                            ? 'version reporting required; polling is blocked'
+                            : 'compatibility has not been reported'}
+                  .
+                </p>
+                <p>
+                  Capabilities:{' '}
+                  {device.health.status.capabilities?.length
+                    ? device.health.status.capabilities.join(', ')
+                    : 'none reported'}
+                  .
+                </p>
+              </>
+            )}
+            {scans.some(
+              (scan) =>
+                scan.device_id === device.id &&
+                scan.scan_kind === 'lightweight' &&
+                scan.status === 'complete' &&
+                Boolean(scan.result_verified_at),
+            ) ? (
+              <p role="status">Verified smoke scan complete.</p>
+            ) : (
               <p>
-                Compatibility:{' '}
-                {device.health.status.compatibility?.compatible
-                  ? 'supported'
-                  : device.health.status.compatibility?.code === 'worker_upgrade_required'
-                    ? `upgrade required; minimum ${device.health.status.compatibility.minimumVersion}, reported ${device.health.status.compatibility.actualVersion ?? 'unknown'}`
-                    : device.health.status.compatibility?.code === 'worker_capability_missing'
-                      ? 'required inventory capability missing; polling is blocked'
-                      : device.health.status.compatibility?.code === 'worker_capability_unsupported'
-                        ? 'worker reports an unsupported capability; polling is blocked'
-                        : device.health.status.compatibility?.code === 'worker_version_required'
-                          ? 'version reporting required; polling is blocked'
-                          : 'compatibility has not been reported'}
-                .
+                <a href="/digital-estate">Run smoke scan</a> after the heartbeat is received.
               </p>
-              <p>
-                Capabilities:{' '}
-                {device.health.status.capabilities?.length
-                  ? device.health.status.capabilities.join(', ')
-                  : 'none reported'}
-                .
-              </p>
-            </>
-          )}
-          {scans.some(
-            (scan) =>
-              scan.device_id === device.id &&
-              scan.scan_kind === 'lightweight' &&
-              scan.status === 'complete' &&
-              Boolean(scan.result_verified_at),
-          ) ? (
-            <p role="status">Verified smoke scan complete.</p>
-          ) : (
-            <p>
-              <a href="/digital-estate">Run smoke scan</a> after the heartbeat is received.
-            </p>
-          )}
-          {device.state !== 'revoked' && (
-            <button type="button" onClick={() => startRevoke(device.id)}>
-              Revoke after fresh MFA
-            </button>
-          )}
-        </article>
-      ))}
+            )}
+            {device.state !== 'revoked' && (
+              <button type="button" onClick={() => startRevoke(device.id)}>
+                Revoke after fresh MFA
+              </button>
+            )}
+          </article>
+        ))}
       <button
         type="button"
         onClick={checkConnection}

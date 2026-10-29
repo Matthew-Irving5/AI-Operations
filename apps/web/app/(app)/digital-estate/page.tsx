@@ -7,7 +7,8 @@ export default async function DigitalEstatePage() {
   const cutoff = Date.now() - 30 * 24 * 60 * 60_000;
   const visibleScans = scans.data.filter((scan) => {
     if (scan.status === 'cancelled') return false;
-    if (scan.status === 'complete' && scan.completed_at && Date.parse(scan.completed_at) < cutoff) return false;
+    if (scan.status === 'complete' && scan.completed_at && Date.parse(scan.completed_at) < cutoff)
+      return false;
     return !(scan.status !== 'complete' && Date.parse(scan.created_at) < cutoff);
   });
   return (
@@ -25,9 +26,7 @@ export default async function DigitalEstatePage() {
       <section className="grid" aria-label="Digital Estate status">
         <article className="card">
           <div className="label">Paired devices</div>
-          <div className="value">
-            {summary.pairedDevices}
-          </div>
+          <div className="value">{summary.pairedDevices}</div>
         </article>
         <article className="card">
           <div className="label">Total scans</div>
@@ -48,7 +47,8 @@ export default async function DigitalEstatePage() {
           {visibleDevices.map((device) => (
             <article className="card" key={device.id}>
               <h3>{device.label}</h3>
-              <p className={`worker-status worker-status-${device.state}`}><strong>{device.state}</strong>; last heartbeat{' '}
+              <p className={`worker-status worker-status-${device.state}`}>
+                <strong>{device.state}</strong>; last heartbeat{' '}
                 {device.last_heartbeat_at
                   ? new Date(device.last_heartbeat_at).toLocaleString('en-GB')
                   : 'not received'}
@@ -63,15 +63,15 @@ export default async function DigitalEstatePage() {
         </p>
       )}
       <h2>Scan history</h2>
-      {visibleDevices[0] ? (
-        <DigitalScanForm deviceId={visibleDevices[0].id} />
-      ) : null}
+      {visibleDevices[0] ? <DigitalScanForm deviceId={visibleDevices[0].id} /> : null}
       {visibleScans.length ? (
         <section className="stack">
           {visibleScans.map((scan) => (
             <article className="card" key={scan.id}>
               <h3>{scan.scan_kind} scan</h3>
-              <p className={`scan-status scan-status-${scan.status}`}><strong>{scan.status}</strong></p>
+              <p className={`scan-status scan-status-${scan.status}`}>
+                <strong>{scan.status}</strong>
+              </p>
             </article>
           ))}
         </section>

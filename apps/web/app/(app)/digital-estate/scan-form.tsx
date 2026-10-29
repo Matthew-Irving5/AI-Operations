@@ -188,7 +188,12 @@ export function DigitalScanForm({ deviceId }: Readonly<{ deviceId: string }>) {
         <span className="label" style={{ display: 'block', marginTop: '0.35rem' }}>
           Use a safe synthetic onboarding folder; sensitive paths are excluded.
         </span>
-        <textarea aria-label="Approved roots" value={roots} onChange={(event) => setRoots(event.target.value)} rows={3} />
+        <textarea
+          aria-label="Approved roots"
+          value={roots}
+          onChange={(event) => setRoots(event.target.value)}
+          rows={3}
+        />
       </label>
       <label>
         <strong>Scan type</strong>

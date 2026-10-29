@@ -736,22 +736,32 @@ export async function digitalEstateData(): Promise<
     ? createSupabaseAccessTokenClient(accessToken)
     : await createSupabaseServerClient();
   const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60_000).toISOString();
-  const [scans, devices, pairedCount, totalScanCount, last30Count, pendingCount] = await Promise.all([
-    client
-      .from('digital_scans')
-      .select('id,device_id,scan_kind,status,progress,result_verified_at,created_at,completed_at')
-      .order('created_at', { ascending: false })
-      .limit(25),
-    client
-      .from('worker_devices')
-      .select('id,label,state,public_key_b64,paired_at,revoked_at,last_heartbeat_at')
-      .order('created_at', { ascending: false })
-      .limit(25),
-    client.from('worker_devices').select('id', { count: 'exact', head: true }).neq('state', 'revoked'),
-    client.from('digital_scans').select('id', { count: 'exact', head: true }),
-    client.from('digital_scans').select('id', { count: 'exact', head: true }).gte('created_at', cutoff),
-    client.from('digital_scans').select('id', { count: 'exact', head: true }).not('status', 'in', '(complete,cancelled)'),
-  ]);
+  const [scans, devices, pairedCount, totalScanCount, last30Count, pendingCount] =
+    await Promise.all([
+      client
+        .from('digital_scans')
+        .select('id,device_id,scan_kind,status,progress,result_verified_at,created_at,completed_at')
+        .order('created_at', { ascending: false })
+        .limit(25),
+      client
+        .from('worker_devices')
+        .select('id,label,state,public_key_b64,paired_at,revoked_at,last_heartbeat_at')
+        .order('created_at', { ascending: false })
+        .limit(25),
+      client
+        .from('worker_devices')
+        .select('id', { count: 'exact', head: true })
+        .neq('state', 'revoked'),
+      client.from('digital_scans').select('id', { count: 'exact', head: true }),
+      client
+        .from('digital_scans')
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', cutoff),
+      client
+        .from('digital_scans')
+        .select('id', { count: 'exact', head: true })
+        .not('status', 'in', '(complete,cancelled)'),
+    ]);
   const summary = {
     pairedDevices: pairedCount.count ?? 0,
     totalScans: totalScanCount.count ?? 0,
