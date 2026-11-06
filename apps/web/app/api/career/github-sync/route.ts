@@ -4,6 +4,7 @@ import { requireSameOrigin } from '../../../../lib/request-security';
 import { getAuthenticatedServerAccessToken } from '../../../../lib/supabase-server';
 
 const syncBodySchema = z.object({ mfaGateId: z.string().uuid() }).strict();
+const requestIdSchema = z.string().uuid();
 const ownerProbeBodySchema = z
   .object({
     mfaGateId: z.string().uuid().optional(),
@@ -51,7 +52,9 @@ function diagnostic(
 }
 
 export async function POST(request: Request) {
-  const requestId = request.headers.get('x-client-request-id') ?? crypto.randomUUID();
+  const suppliedRequestId = request.headers.get('x-client-request-id');
+  const parsedRequestId = requestIdSchema.safeParse(suppliedRequestId);
+  const requestId = parsedRequestId.success ? parsedRequestId.data : crypto.randomUUID();
   const rejected = requireSameOrigin(request);
   if (rejected) {
     rejected.headers.set('x-request-id', requestId);

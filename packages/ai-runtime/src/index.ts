@@ -4,13 +4,20 @@ export type Pricing = Readonly<{
   cachedInputPerMillion: number;
   outputPerMillion: number;
   webSearchPerCall: number;
+  cacheWriteMultiplier?: number;
 }>;
 export type CostEstimateInput = Readonly<{
+  /** Total prompt tokens, including the cached and cache-write subsets. */
   inputTokens: number;
+  /** Cached prompt tokens, included in inputTokens. */
   cachedInputTokens: number;
+  /** Cache-write prompt tokens, included in inputTokens and excluding cached tokens. */
+  cacheWriteTokens?: number;
+  /** Output tokens include reasoning tokens when the provider bills them as output. */
   outputTokens: number;
   searchCalls: number;
   retryAllowance: number;
+  serviceTierMultiplier?: number;
 }>;
 export type ForecastInput = Readonly<{
   actualCompleted: number;
@@ -21,13 +28,42 @@ export type ForecastInput = Readonly<{
 }>;
 
 export function estimateCost(pricing: Pricing, input: CostEstimateInput): number {
+  const cacheWriteTokens = input.cacheWriteTokens ?? 0;
+  const cacheWriteMultiplier = pricing.cacheWriteMultiplier ?? 1;
+  const serviceTierMultiplier = input.serviceTierMultiplier ?? 1;
+  const values = [
+    pricing.inputPerMillion,
+    pricing.cachedInputPerMillion,
+    pricing.outputPerMillion,
+    pricing.webSearchPerCall,
+    cacheWriteMultiplier,
+    serviceTierMultiplier,
+    input.inputTokens,
+    input.cachedInputTokens,
+    cacheWriteTokens,
+    input.outputTokens,
+    input.searchCalls,
+    input.retryAllowance,
+  ];
+  if (
+    values.some((value) => !Number.isFinite(value) || value < 0) ||
+    cacheWriteMultiplier < 1 ||
+    serviceTierMultiplier <= 0 ||
+    input.cachedInputTokens + cacheWriteTokens > input.inputTokens
+  ) {
+    throw new RangeError('invalid_cost_estimate_input');
+  }
+  const uncachedInputTokens = input.inputTokens - input.cachedInputTokens - cacheWriteTokens;
   const base =
-    (input.inputTokens * pricing.inputPerMillion +
+    (uncachedInputTokens * pricing.inputPerMillion +
       input.cachedInputTokens * pricing.cachedInputPerMillion +
+      cacheWriteTokens * pricing.inputPerMillion * cacheWriteMultiplier +
       input.outputTokens * pricing.outputPerMillion) /
       1_000_000 +
     input.searchCalls * pricing.webSearchPerCall;
-  return Math.ceil(base * (1 + input.retryAllowance) * 1_000_000) / 1_000_000;
+  return (
+    Math.ceil(base * serviceTierMultiplier * (1 + input.retryAllowance) * 1_000_000) / 1_000_000
+  );
 }
 export function canReserve(
   category: 'recurring' | 'on_demand',
@@ -77,6 +113,30 @@ export type RuntimeRequest = Readonly<{
   background: boolean;
   cacheKey: string;
 }>;
+
+export const modelPricingMaximumAgeDays = 90;
+
+export function isPricingFresh(
+  pricing: Readonly<{ sourceUrl: string; verifiedAt: string }>,
+  now: Date = new Date(),
+): boolean {
+  let source: URL;
+  try {
+    source = new URL(pricing.sourceUrl);
+  } catch {
+    return false;
+  }
+  const verifiedAt = Date.parse(pricing.verifiedAt);
+  const ageMs = now.getTime() - verifiedAt;
+  return (
+    source.protocol === 'https:' &&
+    (source.hostname === 'openai.com' || source.hostname.endsWith('.openai.com')) &&
+    Number.isFinite(verifiedAt) &&
+    ageMs >= 0 &&
+    ageMs <= modelPricingMaximumAgeDays * 24 * 60 * 60 * 1_000
+  );
+}
+
 export interface ResponsesTransport {
   create(request: RuntimeRequest): Promise<{ id: string; outputText: string }>;
   retrieve(id: string): Promise<{ id: string; outputText: string; complete: boolean }>;

@@ -12,10 +12,19 @@ import {
   validateReportOutputSchema,
 } from "../../../packages/ai-runtime/src/governance.ts";
 import {
+  estimateCost,
+  isPricingFresh,
+} from "../../../packages/ai-runtime/src/index.ts";
+import {
   type ExecuteWorkflowOutcome,
   loadTrustedWorkflowExecution,
   type WorkflowExecutionSource,
 } from "./orchestration-contract.ts";
+import {
+  isPlannerDelegationResume,
+  plannerDelegationTool,
+} from "../_shared/planner-delegation.ts";
+import { providerRequestId } from "./provider-request-id.ts";
 
 const service = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
@@ -87,6 +96,7 @@ function executionSource(): WorkflowExecutionSource {
         id: result.data.id,
         userId: result.data.user_id,
         workflowDefinitionId: result.data.workflow_definition_id,
+        costRootRunId: result.data.cost_root_run_id,
         managerCode: manager.code,
         status: result.data.status,
         trigger: result.data.trigger,
@@ -132,6 +142,8 @@ function executionSource(): WorkflowExecutionSource {
         .select("payload")
         .eq("run_id", runId)
         .eq("job_type", "workflow_execute")
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
       if (result.error || !result.data) return null;
       const payload: unknown = result.data.payload;
@@ -342,7 +354,7 @@ async function executeAiWorkflow(
     .select(
       "id,hard_cap,reserved_amount,model_ceiling,status,expires_at,search_ceiling",
     )
-    .eq("run_id", run.id)
+    .eq("run_id", run.costRootRunId ?? run.id)
     .maybeSingle();
   if (budgetResult.error) {
     return outcomeFor(run.id, "terminal_failure", "execution_budget_missing");
@@ -381,7 +393,10 @@ async function executeAiWorkflow(
     );
   }
   const definitionConfig = definitionResult.data;
-  const pendingReservation = await service.from("ai_calls")
+  const plannerWorkflow = run.managerCode === "personal" &&
+    definition.code === "personal-on-demand-plan";
+  const pendingReservation = await service
+    .from("ai_calls")
     .select("id,status,response_id,request_id,prompt_version_id,model_id")
     .eq("run_id", run.id)
     .eq("status", "reserved")
@@ -420,7 +435,10 @@ async function executeAiWorkflow(
     .from("prompt_templates")
     .select("id,active_version")
     .eq("manager_id", definitionConfig.manager_id)
-    .eq("code", "controlled-agent-report")
+    .eq(
+      "code",
+      plannerWorkflow ? "planner-agent-report" : "controlled-agent-report",
+    )
     .maybeSingle();
   if (promptResult.error || !promptResult.data?.active_version) {
     return outcomeFor(
@@ -524,7 +542,7 @@ async function executeAiWorkflow(
   const pricing = await service
     .from("model_pricing")
     .select(
-      "input_per_million,output_per_million,cached_input_per_million,web_search_per_call",
+      "id,input_per_million,output_per_million,cached_input_per_million,cache_write_multiplier,web_search_per_call,source_url,verified_at",
     )
     .eq("model_id", modelResult.data.id)
     .lte("effective_from", new Date().toISOString())
@@ -534,12 +552,64 @@ async function executeAiWorkflow(
   if (pricing.error || !pricing.data) {
     return outcomeFor(run.id, "terminal_failure", "model_pricing_unavailable");
   }
-  const estimatedCost = Math.ceil(
-    ((8_000 * pricing.data.input_per_million +
-      2_000 * pricing.data.output_per_million) /
-      1_000_000) *
-      1_000_000,
-  ) / 1_000_000;
+  if (
+    typeof pricing.data.source_url !== "string" ||
+    typeof pricing.data.verified_at !== "string" ||
+    !isPricingFresh({
+      sourceUrl: pricing.data.source_url,
+      verifiedAt: pricing.data.verified_at,
+    })
+  ) {
+    return outcomeFor(
+      run.id,
+      "terminal_failure",
+      "model_pricing_stale_or_unverified",
+    );
+  }
+  const searchCalls =
+    promptGovernance.toolPolicy.tools.filter((tool) =>
+      isRecord(tool) && tool.type === "web_search"
+    ).length;
+  if (searchCalls > 0) {
+    return outcomeFor(
+      run.id,
+      "terminal_failure",
+      "search_cost_ceiling_unavailable",
+    );
+  }
+  const instructions =
+    `${selectedPromptVersion.data.system_text}\n\n${selectedPromptVersion.data.developer_text}`;
+  const maximumOutputTokens = 2_000;
+  const maximumInputTokens = new TextEncoder().encode(
+    `${instructions}\n\n${workflowInput}\n\n${
+      JSON.stringify(selectedPromptVersion.data.json_schema)
+    }`,
+  ).byteLength + 128;
+  let estimatedCost: number;
+  try {
+    estimatedCost = estimateCost(
+      {
+        inputPerMillion: Number(pricing.data.input_per_million),
+        cachedInputPerMillion: Number(pricing.data.cached_input_per_million),
+        outputPerMillion: Number(pricing.data.output_per_million),
+        webSearchPerCall: Number(pricing.data.web_search_per_call),
+        cacheWriteMultiplier: Number(pricing.data.cache_write_multiplier),
+      },
+      {
+        inputTokens: maximumInputTokens,
+        cachedInputTokens: 0,
+        cacheWriteTokens: maximumInputTokens,
+        outputTokens: maximumOutputTokens,
+        searchCalls,
+        // Every retry is a distinct call with its own atomic reservation.
+        retryAllowance: 0,
+        // The request omits service_tier, so the provider's default rate applies.
+        serviceTierMultiplier: 1,
+      },
+    );
+  } catch {
+    return outcomeFor(run.id, "terminal_failure", "model_pricing_invalid");
+  }
   if (
     budget &&
     estimatedCost > Number(budget.hard_cap) - Number(budget.reserved_amount)
@@ -608,10 +678,13 @@ async function executeAiWorkflow(
       responseId: unresolvedCall.data.response_id,
     };
   }
-  const attemptResult = await service.from("job_queue")
-    .select("attempt_count")
+  const attemptResult = await service
+    .from("job_queue")
+    .select("id,attempt_count,created_at")
     .eq("run_id", run.id)
     .eq("job_type", "workflow_execute")
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
   if (
     attemptResult.error || typeof attemptResult.data?.attempt_count !== "number"
@@ -619,7 +692,11 @@ async function executeAiWorkflow(
     return outcomeFor(run.id, "retryable_failure", "queue_attempt_unavailable");
   }
   const requestId = pendingReservation.data?.request_id ??
-    `ai15:${run.id}:attempt:${Math.max(1, attemptResult.data.attempt_count)}`;
+    providerRequestId(
+      run.id,
+      attemptResult.data.id,
+      attemptResult.data.attempt_count,
+    );
   const priorCallResult = pendingReservation.data
     ? { data: pendingReservation.data, error: null }
     : await service.from("ai_calls").select("id,status,response_id,request_id")
@@ -650,6 +727,7 @@ async function executeAiWorkflow(
       p_prompt_version_id: selectedPromptVersion.data.id,
       p_estimated_cost: estimatedCost,
       p_request_id: requestId,
+      p_pricing_id: pricing.data.id,
       p_redacted_trace: {
         workflow: definition.code,
         prompt_version: promptResult.data.active_version,
@@ -691,13 +769,18 @@ async function executeAiWorkflow(
         body: JSON.stringify({
           model: selectedModel,
           reasoning: { effort: definitionConfig.default_reasoning },
-          instructions:
-            `${selectedPromptVersion.data.system_text}\n\n${selectedPromptVersion.data.developer_text}`,
+          instructions: instructions,
           input: workflowInput,
           background: true,
-          max_output_tokens: 2_000,
+          max_output_tokens: maximumOutputTokens,
+          service_tier: "default",
           store: false,
-          tools: promptGovernance.toolPolicy.tools,
+          tools: [
+            ...promptGovernance.toolPolicy.tools,
+            ...(plannerWorkflow && !isPlannerDelegationResume(input)
+              ? [plannerDelegationTool]
+              : []),
+          ],
           text: {
             format: {
               type: "json_schema",
@@ -731,7 +814,14 @@ async function executeAiWorkflow(
       p_cached_input_tokens: 0,
       p_reasoning_tokens: 0,
       p_search_calls: 0,
-      p_provider_usage: {},
+      p_provider_usage: {
+        input_tokens: 0,
+        output_tokens: 0,
+        cached_input_tokens: 0,
+        cache_write_tokens: 0,
+        reasoning_tokens: 0,
+        search_calls: 0,
+      },
       p_redacted_trace: {
         workflow: definition.code,
         provider_result: "failed_or_incomplete",

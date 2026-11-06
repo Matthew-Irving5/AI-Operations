@@ -1,4 +1,4 @@
-import { z } from "https://esm.sh/zod@4.1.5";
+import { z } from "https://esm.sh/zod@4.6.6";
 import { MOBILE_LIMITS } from "./mobile-snapshot.ts";
 
 export const mobileIdentifier = z.string().regex(/^[a-z][a-z0-9._-]{0,63}$/);

@@ -1,5 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
-import { z } from "https://esm.sh/zod@4.1.5";
+import { z } from "https://esm.sh/zod@4.6.6";
 import { consumeRateLimit } from "../_shared/rate-limit.ts";
 import { consumeMfaActionGate } from "../_shared/mfa-action-gate.ts";
 import {

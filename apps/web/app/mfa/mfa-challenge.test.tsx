@@ -15,4 +15,19 @@ describe('MFA challenge', () => {
     expect(html).not.toContain('Preparing secure authenticator enrolment');
     expect(html).toContain('Six-digit code');
   });
+
+  it('preselects the shared human factor while keeping multiple verified factors selectable', () => {
+    const html = renderToStaticMarkup(
+      <MfaChallenge
+        availableFactors={[
+          { id: 'legacy-e2e', friendlyName: 'AI Operations staging live E2E' },
+          { id: 'operator', friendlyName: 'AI Operations' },
+        ]}
+        defaultFactorId="operator"
+      />,
+    );
+
+    expect(html).toContain('<select aria-label="Authenticator factor"');
+    expect(html).toContain('<option value="operator" selected="">AI Operations</option>');
+  });
 });

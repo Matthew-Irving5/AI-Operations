@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  isInstalledNextVersionCurrent,
   isPinnedSupabaseCliVersion,
   isSupportedNodeVersion,
   pinnedSupabaseCliVersion,
@@ -28,4 +29,10 @@ test('qa doctor reads and enforces the lockfile-pinned Supabase CLI version', ()
 
 test('qa doctor fails closed when the lockfile does not pin Supabase', () => {
   assert.throws(() => pinnedSupabaseCliVersion('importers:\n  .:\n'), /does not pin/);
+});
+
+test('qa doctor rejects a stale installed Next.js version', () => {
+  assert.equal(isInstalledNextVersionCurrent('16.4.1', '16.4.1'), true);
+  assert.equal(isInstalledNextVersionCurrent('16.4.1', '16.3.8'), false);
+  assert.equal(isInstalledNextVersionCurrent('16.4.1', undefined), false);
 });

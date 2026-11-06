@@ -115,4 +115,28 @@ describe('workflow launch route', () => {
     expect(response.status).toBe(201);
     expect(globalThis.fetch).toHaveBeenCalledOnce();
   });
+
+  it('accepts only a bounded, no-search Planner launch', async () => {
+    const input = {
+      workflowCode: 'personal-on-demand-plan',
+      managerCode: 'personal',
+      hardCapUsd: 0.25,
+      modelCeiling: 'gpt-5.6-luna',
+      searchCeiling: 0,
+      idempotencyKey: '00000000-0000-4000-8000-000000000104',
+      request: { purpose: 'Plan a weekend trip', constraints: 'No bookings.' },
+    };
+    const response = await POST(sameOriginRequest(input));
+    expect(response.status).toBe(201);
+    const invalid = [
+      { ...input, hardCapUsd: 2.01 },
+      { ...input, searchCeiling: 1 },
+      { ...input, managerCode: 'travel' },
+      { ...input, request: { ...input.request, prompt: 'untrusted prompt' } },
+    ];
+    for (const body of invalid) {
+      expect((await POST(sameOriginRequest(body))).status).toBe(400);
+    }
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+  });
 });

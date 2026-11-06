@@ -1,9 +1,12 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { consumeRateLimit } from "../_shared/rate-limit.ts";
 import {
+  fetchGithubPullRequestFilesEvidence,
   githubAllowedOwner,
   type GithubEvidenceRecord,
+  githubOwnerDenialAuditEvent,
   type GithubRepository,
+  isGithubRequestId,
   parseGithubCommitEvidence,
   parseGithubDocumentationEvidence,
   parseGithubPullRequestEvidence,
@@ -126,7 +129,10 @@ function githubHeaders(token: string): HeadersInit {
 }
 
 Deno.serve(async (request) => {
-  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+  const suppliedRequestId = request.headers.get("x-request-id");
+  const requestId = isGithubRequestId(suppliedRequestId)
+    ? suppliedRequestId
+    : crypto.randomUUID();
   if (request.method !== "POST") {
     return failure(
       requestId,
@@ -178,18 +184,13 @@ Deno.serve(async (request) => {
   if ("error" in parsedRequest) {
     if (parsedRequest.error !== "invalid_request") {
       const deniedOwner = parsedRequest.error === "owner_hard_denied";
-      const audit = await service.from("audit_events").insert({
-        user_id: identity.user.id,
-        actor_type: "user",
-        action_type: "github_career_sync_owner_denied",
-        target_type: "github_owner",
-        target_id: deniedOwner ? "hard_denied" : "not_allowlisted",
-        result: "denied",
-        redacted_after: {
+      const audit = await service.from("audit_events").insert(
+        githubOwnerDenialAuditEvent({
+          userId: identity.user.id,
+          requestId,
           reason: parsedRequest.error,
-          provider_request_made: false,
-        },
-      });
+        }),
+      );
       if (audit.error) {
         return failure(
           requestId,
@@ -325,18 +326,13 @@ Deno.serve(async (request) => {
       );
     }
     const deniedOwner = repositoryRequest.error === "owner_hard_denied";
-    const audit = await service.from("audit_events").insert({
-      user_id: identity.user.id,
-      actor_type: "user",
-      action_type: "github_career_sync_owner_denied",
-      target_type: "github_owner",
-      target_id: deniedOwner ? "hard_denied" : "not_allowlisted",
-      result: "denied",
-      redacted_after: {
+    const audit = await service.from("audit_events").insert(
+      githubOwnerDenialAuditEvent({
+        userId: identity.user.id,
+        requestId,
         reason: repositoryRequest.error,
-        provider_request_made: false,
-      },
-    });
+      }),
+    );
     if (audit.error) {
       return failure(
         requestId,
@@ -493,9 +489,51 @@ Deno.serve(async (request) => {
         "Retry after verifying the provider response contract; no raw provider content was retained.",
       );
     }
+    let normalizedPullEvidence = pullEvidence;
+    const latestAuthoredPullRequest = pullEvidence[0];
+    if (latestAuthoredPullRequest) {
+      const fileEvidence = await fetchGithubPullRequestFilesEvidence(
+        repository,
+        latestAuthoredPullRequest,
+        (targetUrl) => githubJson(targetUrl, token),
+      );
+      if ("error" in fileEvidence) {
+        const isProviderFailure = fileEvidence.error === "provider_failed";
+        const rateLimited = fileEvidence.status === 429;
+        return failure(
+          requestId,
+          fileEvidence.error === "provider_unreachable"
+            ? "github_provider_unreachable"
+            : isProviderFailure
+            ? "github_provider_pull_request_files_failed"
+            : "github_sync_invalid_pull_request_files",
+          rateLimited ? 429 : 502,
+          fileEvidence.error === "invalid_response" ||
+            fileEvidence.error === "owner_not_allowlisted"
+            ? "provider.github.pull_request_files_validation"
+            : "provider.github.pull_request_files",
+          fileEvidence.error === "provider_unreachable"
+            ? "Authored pull request file evidence could not be retrieved; no Career evidence was changed."
+            : isProviderFailure
+            ? `GitHub rejected bounded authored pull request file retrieval with HTTP ${fileEvidence.status}; no Career evidence was changed.`
+            : "GitHub returned pull request file evidence outside the normalized provenance contract; no Career evidence was changed.",
+          rateLimited
+            ? "Wait for the GitHub rate limit to reset before retrying."
+            : fileEvidence.error === "owner_not_allowlisted"
+            ? "Confirm the configured token targets only Matthew-Irving5; no repository request was made."
+            : "Verify read-only pull request metadata access and retry once.",
+          fileEvidence.status === undefined
+            ? {}
+            : { providerStatus: fileEvidence.status },
+        );
+      }
+      normalizedPullEvidence = pullEvidence.map((record) =>
+        record === latestAuthoredPullRequest ? fileEvidence.evidence : record
+      );
+    }
     const repositoryEvidence = [
       ...commitEvidence,
-      ...pullEvidence,
+      ...normalizedPullEvidence,
       ...releaseEvidence,
     ];
     if (readme.response.ok) {

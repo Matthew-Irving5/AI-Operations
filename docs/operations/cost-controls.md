@@ -4,7 +4,9 @@ Every AI call must have a deterministic pre-call estimate and a persisted reserv
 
 On-demand work is separate: a user supplies a per-run hard cap, model ceiling, and search ceiling. It is excluded from recurring-cap enforcement but retained in combined actual and forecast reporting.
 
-Pricing is versioned in `model_pricing`, sourced from the official OpenAI model comparison page, and historical calculations use the stored call/price record. GPT-5.6 Luna, Terra, and Sol are seeded at standard API prices. Model output cannot alter target or hard-cap values.
+Pricing is append-only in `model_pricing`, sourced from an official OpenAI pricing page, and accepted only when verified within 90 days. Every reserved call stores its exact price-version ID; historical calculations use that record. Input, cached-input, cache-write, output, and search rates are calculated in decimal arithmetic and rounded up to the next microdollar. GPT-5.6 Luna, Terra, and Sol are seeded at standard API prices. Model output cannot alter target or hard-cap values.
+
+Nested manager calls keep their own run attribution while reserving and settling against the initiating run's on-demand budget. The root budget row serializes concurrent reservations; a child's actual usage remains visible on the child call and consumes the root hard cap.
 
 Forecast snapshots record actual completed spend, expected completed spend, original recurring estimate, bounded variance factor, adjusted month-end forecast, and confidence. The variance factor is limited to 0.5–3.0.
 

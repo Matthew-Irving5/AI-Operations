@@ -264,6 +264,36 @@ button:not([data-ui]) {
   cursor: pointer;
   padding: 8px 12px;
 }
+.button-danger {
+  border-color: var(--danger) !important;
+  color: var(--danger) !important;
+}
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+.worker-status,
+.scan-status {
+  margin: 8px 0 0;
+}
+.worker-status strong,
+.scan-status strong {
+  font-weight: 700;
+}
+.worker-status-active strong,
+.scan-status-complete strong {
+  color: var(--success);
+}
+.worker-status-online strong,
+.scan-status-queued strong {
+  color: var(--text-secondary);
+}
+.worker-status-offline strong,
+.scan-status-cancelled strong {
+  color: var(--danger);
+}
 .button-link:hover,
 button:not([data-ui]):hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 15%, transparent);
@@ -405,6 +435,22 @@ button:not([data-ui]):disabled {
 .stack {
   display: grid;
   gap: 12px;
+}
+.launch-scan-section,
+.scan-history-section {
+  margin-top: 24px;
+}
+.launch-scan-form {
+  display: grid;
+  gap: 16px;
+}
+.launch-scan-form label {
+  display: grid;
+  gap: 8px;
+}
+.field-label {
+  color: var(--text-primary);
+  font-weight: 700;
 }
 .onboarding-item-header {
   display: flex;

@@ -3,6 +3,7 @@
 import type { ChangeEvent, FormEvent } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import type { MfaFactorOption } from '../../../lib/mfa-factor-selection';
 import { MfaChallenge } from '../../mfa/mfa-challenge';
 
 type Account = {
@@ -49,12 +50,14 @@ export default function FinanceMappingForm({
   accounts,
   categories,
   adapters,
-  factorId,
+  availableFactors,
+  defaultFactorId,
 }: Readonly<{
   accounts: Account[];
   categories: Category[];
   adapters: Adapter[];
-  factorId?: string;
+  availableFactors: MfaFactorOption[];
+  defaultFactorId?: string;
 }>) {
   const router = useRouter();
   const existing = accounts.find((account) => account.active) ?? accounts[0];
@@ -254,7 +257,8 @@ export default function FinanceMappingForm({
           <MfaChallenge
             job={mfaAction === 'configure' ? 'finance_configure' : 'finance_import'}
             onVerified={completeMfa}
-            {...(factorId ? { factorId } : {})}
+            availableFactors={availableFactors}
+            {...(defaultFactorId ? { defaultFactorId } : {})}
           />
           <button type="button" onClick={() => setMfaAction(null)}>
             Cancel MFA and return to the form

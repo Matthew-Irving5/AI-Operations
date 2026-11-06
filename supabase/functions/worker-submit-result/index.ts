@@ -1,4 +1,5 @@
 import { authenticateWorker, workerService } from "../_shared/worker-auth.ts";
+import { completedWorkerScanResponse } from "../_shared/worker-result-replay.ts";
 
 const json = (
   body: unknown,
@@ -97,7 +98,7 @@ Deno.serve(async (request) => {
     );
   }
   const scan = await workerService.from("digital_scans").select(
-    "id,user_id,device_id,run_id,status",
+    "id,user_id,device_id,run_id,status,result_verified_at",
   ).eq("id", body.scanId).eq("device_id", auth.device.id).in("status", [
     "queued",
     "waiting_for_device",
@@ -110,6 +111,10 @@ Deno.serve(async (request) => {
       404,
       requestId,
     );
+  }
+  const replay = completedWorkerScanResponse(scan.data, requestId);
+  if (replay) {
+    return replay;
   }
   const rows = body.inventory.map((item) => ({
     scan_id: scan.data!.id,

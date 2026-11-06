@@ -1,7 +1,7 @@
 import { MfaChallenge } from './mfa-challenge';
 import { createSupabaseServerClient } from '../../lib/supabase-server';
-import { legacyStagingE2eFactorName } from '../../lib/live-e2e-safety';
 import { parseMfaPageJob } from '../../lib/mfa-page-job';
+import { selectMfaFactors } from '../../lib/mfa-factor-selection';
 
 export default async function MfaPage({
   searchParams,
@@ -10,16 +10,8 @@ export default async function MfaPage({
 }) {
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase.auth.mfa.listFactors();
-  const verifiedFactors = (data?.totp ?? [])
-    .filter((factor) => factor.status === 'verified')
-    .map((factor) => ({
-      id: factor.id,
-      friendlyName: factor.friendly_name || 'Authenticator',
-    }));
+  const { availableFactors, defaultFactorId } = selectMfaFactors(data?.totp);
   const params = await searchParams;
-  const defaultFactorId =
-    verifiedFactors.find((factor) => factor.friendlyName !== legacyStagingE2eFactorName)?.id ??
-    verifiedFactors[0]?.id;
   const job = parseMfaPageJob(params.job);
   const requestedReturnTo = params.returnTo;
   const workerReturnTo =
@@ -39,9 +31,9 @@ export default async function MfaPage({
       <p className="label">
         Enter the current code from Microsoft Authenticator to unlock AI Operations.
       </p>
-      {verifiedFactors.length > 0 ? (
+      {availableFactors.length > 0 ? (
         <MfaChallenge
-          availableFactors={verifiedFactors}
+          availableFactors={availableFactors}
           {...(defaultFactorId ? { defaultFactorId } : {})}
           returnTo={returnTo}
           {...(job ? { job } : {})}

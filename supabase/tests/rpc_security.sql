@@ -9,6 +9,7 @@ create temporary table rpc_security_expected (
 ) on commit drop;
 
 insert into rpc_security_expected values
+  ('public.prevent_model_pricing_version_mutation()', false, false, false),
   ('public.is_allowed_aal2()', false, true, false),
   ('public.claim_job_queue(text,integer)', false, false, true),
   ('public.claim_job_queue_internal(text,integer,uuid)', false, false, false),
@@ -40,10 +41,25 @@ insert into rpc_security_expected values
   ('public.create_on_demand_run_request(uuid,uuid,text,numeric,text,integer,text,jsonb)', false, false, true),
   ('public.consume_edge_request_quota(uuid,text,integer)', false, false, true),
   ('public.complete_deterministic_workflow_run(uuid)', false, false, true),
-  ('public.reserve_instrumented_ai_call(uuid,uuid,uuid,uuid,numeric,text,jsonb)', false, false, true),
+  ('public.sync_procurement_research_run_status()', false, false, false),
+  ('public.create_procurement_revision_request(uuid,uuid,text,numeric,text,integer,text,jsonb,uuid)', false, false, true),
+  ('public.commit_procurement_decision(uuid,uuid,integer,jsonb,jsonb)', false, false, true),
+  ('public.commit_instrumented_ai_procurement_report_with_queue(uuid,text,uuid,uuid,integer,jsonb,jsonb,text,text,text,text,text,jsonb,jsonb,jsonb,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)', false, false, true),
+  ('public.reserve_instrumented_ai_call(uuid,uuid,uuid,uuid,numeric,text,jsonb,uuid)', false, false, true),
   ('public.settle_instrumented_ai_call(uuid,numeric,bigint,bigint,bigint,bigint,integer,jsonb,jsonb,boolean)', false, false, true),
   ('public.mark_instrumented_ai_call_submitted(uuid,text)', false, false, true),
-  ('public.calculate_instrumented_ai_cost(uuid,bigint,bigint,bigint,integer)', false, false, true),
+  ('public.calculate_instrumented_ai_cost(uuid,bigint,bigint,bigint,integer,bigint,uuid)', false, false, true),
+  -- AI-17 delegation and handoff entry points are server-owned; lifecycle
+  -- helpers remain internal or are invoked only by PostgreSQL triggers/cron.
+  ('public.create_inter_agent_request_run(jsonb,integer,text[],uuid)', false, false, true),
+  ('public.resume_inter_agent_source_run(uuid)', false, false, false),
+  ('public.complete_inter_agent_request(uuid,jsonb,text,timestamptz)', false, false, true),
+  ('public.finalize_inter_agent_destination_run()', false, false, false),
+  ('public.resume_waiting_inter_agent_source()', false, false, false),
+  ('public.expire_inter_agent_requests(integer)', false, false, false),
+  ('public.create_conversation_handoff(jsonb)', false, false, true),
+  ('public.resolve_conversation_handoff(uuid,uuid,text,text,uuid,timestamptz)', false, false, true),
+  ('public.complete_inter_agent_plan_with_queue(uuid,text,uuid,uuid,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)', false, false, true),
   ('public.execute_digital_estate_workflow(uuid)', false, false, true),
   ('public.record_instrumented_ai_reconciliation_failure(uuid,text,jsonb)', false, false, true),
   ('public.commit_instrumented_ai_report(uuid,text,text,text,text,text,jsonb,jsonb,jsonb,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)', false, false, true),
@@ -71,7 +87,16 @@ insert into rpc_security_expected values
   ('public.revoke_apple_bridge_device(uuid,uuid)', false, true, false),
   ('public.update_google_source_selection(uuid,text[],text[],uuid)', false, true, false),
   ('public.create_worker_device_from_mfa_gate(uuid,text,text,text,timestamptz)', false, true, false),
-  ('public.revoke_worker_device_from_mfa_gate(uuid,uuid)', false, true, false);
+  ('public.revoke_worker_device_from_mfa_gate(uuid,uuid)', false, true, false),
+  ('public.set_worker_desired_state(uuid,text)', false, true, false),
+  -- AI-44 canonical action RPCs have explicit service-role or authenticated grants.
+  ('public.lookup_canonical_action_execution(uuid,uuid,text,text)', false, false, true),
+  ('public.record_canonical_action_policy_decision(uuid,uuid,text,text,jsonb)', false, false, true),
+  ('public.claim_canonical_action_execution(uuid,uuid,text,text)', false, false, true),
+  ('public.complete_canonical_action_execution(uuid,uuid,text,text,uuid,jsonb)', false, false, true),
+  ('public.load_canonical_action_execution_request(uuid)', false, false, true),
+  ('public.load_prompt_promotion_target(uuid,integer)', false, false, true),
+  ('public.request_canonical_action_reversal(uuid,text)', false, true, false);
 
 select ok(
   not exists (

@@ -62,4 +62,34 @@ describe('career GitHub sync route', () => {
     expect(getAuthenticatedServerAccessToken).not.toHaveBeenCalled();
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
+
+  it('replaces malformed client request IDs before forwarding to the Edge Function', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ code: 'github_owner_hard_denied', requestId: 'safe-request-id' }),
+        {
+          status: 403,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
+    );
+    const request = new Request('https://app.example.test/api/career/github-sync', {
+      method: 'POST',
+      headers: {
+        origin: 'https://app.example.test',
+        'content-type': 'application/json',
+        'x-client-request-id': 'not-a-uuid',
+      },
+      body: JSON.stringify({ owner: 'BrightSG' }),
+    });
+
+    const response = await POST(request);
+
+    const [, init] = vi.mocked(globalThis.fetch).mock.calls[0] ?? [];
+    const forwardedRequestId = new Headers(init?.headers).get('x-request-id');
+    expect(forwardedRequestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(response.headers.get('x-request-id')).toBe(forwardedRequestId);
+  });
 });

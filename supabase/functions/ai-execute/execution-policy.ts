@@ -1,6 +1,7 @@
 const workflowModes: Readonly<Record<string, "deterministic" | "ai">> = {
   "systems-daily-cost-capacity": "deterministic",
   "systems-weekly-quality-platform": "ai",
+  "personal-on-demand-plan": "ai",
   "systems-monthly-cost-report": "deterministic",
   "personal-morning-plan": "deterministic",
   "personal-midday-exception": "deterministic",
