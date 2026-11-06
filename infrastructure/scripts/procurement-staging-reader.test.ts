@@ -15,6 +15,23 @@ const fixture = () =>
     limit: '2',
   });
 test('protected research proof uses fixed read-only endpoint and accepts201', async () => {
+  const row = {
+    id: '00000000-0000-4000-8000-000000000002',
+    user_id: '00000000-0000-4000-8000-000000000001',
+    manager_code: 'procurement',
+    hard_cap_minor: 25,
+    reserved_minor: 0,
+    search_limit: 3,
+    searches_used: 0,
+    status: 'complete',
+    request: {},
+    decision_record: null,
+    workflow_run_id: null,
+    revises_research_run_id: null,
+    report_id: null,
+    created_at: '2026-11-06T12:27:45.570518Z',
+    completed_at: null,
+  };
   const rows = await readProcurementStagingRows(
     fixture(),
     {
@@ -25,10 +42,13 @@ test('protected research proof uses fixed read-only endpoint and accepts201', as
     async (url, options) => {
       assert.match(String(url), /jqtssfrfocnibffdkqch\/database\/query\/read-only$/);
       assert.match(String(options?.body), /public.on_demand_research_runs/);
-      return new Response('[]', { status: 201 });
+      const sql = String(options?.body);
+      assert.equal(sql.split('to_char(').length - 1, 2);
+      assert.ok(sql.includes("AT TIME ZONE 'UTC'"));
+      return new Response(JSON.stringify([row]), { status: 201 });
     },
   );
-  assert.deepEqual(rows, []);
+  assert.deepEqual(rows, [row]);
 });
 test('rejects unscoped, arbitrary columns, injections and unbounded reads', () => {
   for (const [key, value] of [

@@ -232,10 +232,60 @@ export const procurementDecisionRecordSchema = z
   })
   .strict();
 
-const generatedProcurementResearchOutputJsonSchema = z.toJSONSchema(
-  procurementResearchOutputSchema,
-);
+type JsonSchemaObject = Record<string, unknown>;
+type NullableJsonSchema = JsonSchemaObject & { anyOf: JsonSchemaObject[] };
+type ProcurementOutputJsonSchema = {
+  $schema?: string;
+  properties: {
+    candidates: {
+      items: {
+        properties: {
+          offer: { properties: Record<string, JsonSchemaObject> };
+          reviews: { items: { properties: Record<string, JsonSchemaObject> } };
+        };
+      };
+    };
+  };
+};
+
+const generatedProcurementResearchOutputJsonSchema = JSON.parse(
+  JSON.stringify(z.toJSONSchema(procurementResearchOutputSchema)),
+) as ProcurementOutputJsonSchema;
 delete generatedProcurementResearchOutputJsonSchema.$schema;
+
+// Keep the approved v1 model schema stable; the Zod parser remains stricter at runtime.
+const offerProperties =
+  generatedProcurementResearchOutputJsonSchema.properties.candidates.items.properties.offer
+    .properties;
+const reviewProperties =
+  generatedProcurementResearchOutputJsonSchema.properties.candidates.items.properties.reviews.items
+    .properties;
+for (const field of [
+  'itemPriceMinor',
+  'deliveryMinor',
+  'requiredAccessoriesMinor',
+  'mandatoryFeesMinor',
+] as const) {
+  (offerProperties[field] as NullableJsonSchema).anyOf[0]!.minimum = -Number.MAX_SAFE_INTEGER;
+}
+const reviewCountSchema = reviewProperties.reviewCount as NullableJsonSchema;
+reviewCountSchema.anyOf[0]!.minimum = -Number.MAX_SAFE_INTEGER;
+const observedAtSchema = (offerProperties.observedAt as NullableJsonSchema).anyOf[0]!;
+const retrievedAtSchema = reviewProperties.retrievedAt!;
+if (
+  typeof observedAtSchema.pattern !== 'string' ||
+  retrievedAtSchema.pattern !== observedAtSchema.pattern
+)
+  throw new Error('procurement_output_schema_datetime_changed');
+const legacyDateTimePattern = observedAtSchema.pattern.replace(
+  ':[0-5]\\d:[0-5]\\d(?:\\.\\d+)?',
+  ':[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?',
+);
+if (legacyDateTimePattern === observedAtSchema.pattern)
+  throw new Error('procurement_output_schema_datetime_changed');
+observedAtSchema.pattern = legacyDateTimePattern;
+retrievedAtSchema.pattern = legacyDateTimePattern;
+
 export const procurementResearchOutputJsonSchema = generatedProcurementResearchOutputJsonSchema;
 
 export type ProcurementRequirement = z.infer<typeof procurementRequirementSchema>;

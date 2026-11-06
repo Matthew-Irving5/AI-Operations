@@ -55,7 +55,11 @@ export function buildProcurementStagingSql(query: URLSearchParams): string {
     (query.has('order') && query.get('order') !== 'created_at.desc')
   )
     throw new Error('Procurement read requires bounded ordering.');
-  return `select ${procurementEvidenceColumns} from public.on_demand_research_runs where ${clauses.join(' and ')} order by created_at desc limit ${query.get('limit')}`;
+  const sqlColumns = procurementEvidenceColumns.replace(
+    'created_at,completed_at',
+    `to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as created_at,case when completed_at is null then null else to_char(completed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') end as completed_at`,
+  );
+  return `select ${sqlColumns} from public.on_demand_research_runs where ${clauses.join(' and ')} order by created_at desc limit ${query.get('limit')}`;
 }
 
 export async function readProcurementStagingRows<T>(
