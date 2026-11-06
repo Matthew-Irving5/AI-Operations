@@ -20,4 +20,4 @@ jobs:
       - run: deno fmt --check supabase/functions
       - run: deno lint --rules-exclude=no-import-prefix supabase/functions
       - run: deno check --config supabase/functions/deno.json supabase/functions/*/index.ts
-      - run: deno test --no-config supabase/functions/_shared/*_test.ts
+      - run: deno test --no-config --allow-read=docs/onboarding supabase/functions/_shared/*_test.ts

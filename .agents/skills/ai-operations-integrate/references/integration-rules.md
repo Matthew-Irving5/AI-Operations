@@ -39,6 +39,8 @@ Read only rows touching the current ticket. The IDs are stable; update a rule wh
 
 ## Mobile / device integration
 
+- **MOBILE-01 — Pairing token and ingestion endpoint must share a Supabase project.** A mobile token is issued by the app's environment-configured Supabase project and is only valid at that project's `mobile-snapshot-ingest` endpoint. Never hardcode the production project URL into a staging Shortcut or setup guide. Keep the endpoint scoped to the paired environment and add a contract check that parses and compares the exact Supabase hostname and function path. (AI-28 PR #180, commits `d612f4c` and `91fb4d4`)
+
 ## Authentication / MFA
 
 - **AUTH-01 — Select verified MFA factors consistently.** Supabase can return multiple verified TOTP factors for one account, and list order does not mean the first factor is the operator's factor. Reuse the login page's default-selection policy on sensitive inline actions: prefer a verified non-test factor when present, and leave all verified factors available for explicit selection. Never bypass MFA or delete a factor to make selection pass. Regress with the test factor first and the operator factor second. (AI-35 staging run 39997647382, `mfa-factor-selection.ts`)
