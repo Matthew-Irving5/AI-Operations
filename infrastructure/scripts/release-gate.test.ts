@@ -11,6 +11,7 @@ import {
 } from './live-acceptance-evidence.js';
 import { execFileSync } from 'node:child_process';
 import {
+  ArchiveRestoreChecksSchema,
   Ai17PlannerSpecialistEvidenceSchema,
   Ai16PromptGovernanceProofSchema,
   acceptStagingCandidate,
@@ -425,6 +426,161 @@ test('AI41 worker protocol requires attended full journey before canonical accep
       hostedSuite: producer,
     }),
   );
+});
+
+test('AI-45 selector keeps its archive MFA paths inside the archive-restore profile', () => {
+  const candidateFiles = [
+    '.agents/skills/ai-operations-integrate/references/failure-ledger.md',
+    '.agents/skills/ai-operations-integrate/references/integration-rules.md',
+    '.github/workflows/deploy-staging.yml',
+    'apps/web/app/(app)/ai-traces-audit/page.tsx',
+    'apps/web/app/(app)/ai-traces-audit/archived-payload.tsx',
+    'apps/web/app/api/archive/[...key]/route.test.ts',
+    'apps/web/app/api/internal/finance-archive/route.ts',
+    'apps/web/app/api/internal/finance-archive/route.test.ts',
+    'apps/web/lib/archive-gateway.ts',
+    'apps/web/lib/archive-gateway.test.ts',
+    'docs/build/ticket-readbacks/AI-45.md',
+    'docs/operations/backup-restore.md',
+    'apps/web/app/api/archive/[...key]/route.ts',
+    'apps/web/app/api/auth/mfa/verify/route.ts',
+    'apps/web/app/mfa/mfa-challenge.tsx',
+    'infrastructure/scripts/acceptance-profile.ts',
+    'infrastructure/scripts/backup-integrity.test.ts',
+    'infrastructure/scripts/backup-integrity.ts',
+    'infrastructure/scripts/backup-restore.test.ts',
+    'infrastructure/scripts/backup-restore.ts',
+    'infrastructure/scripts/cli-json-output.ts',
+    'infrastructure/scripts/environment-drift.ts',
+    'infrastructure/scripts/live-acceptance-evidence.ts',
+    'infrastructure/scripts/release-gate.test.ts',
+    'infrastructure/scripts/release-gate.ts',
+    'infrastructure/scripts/restore-target.ts',
+    'package.json',
+    'packages/db/src/database.types.ts',
+    'pnpm-lock.yaml',
+    'supabase/functions/finance-import/index.ts',
+    'supabase/functions/health-ingest/index.ts',
+    'supabase/migrations/20261021131411_ai45_durable_archive_restore.sql',
+    'supabase/tests/ai45_archive_restore.sql',
+    'tests/fixtures/ai45-linked-archive.sql',
+  ];
+  assert.equal(selectHostedAcceptanceProfile(candidateFiles), 'archive-restore');
+  assert.equal(selectHostedAcceptanceProfile(candidateFiles, 'archive-restore'), 'archive-restore');
+  assert.throws(
+    () => selectHostedAcceptanceProfile(candidateFiles, 'targeted'),
+    /does not match inferred/,
+  );
+  assert.throws(
+    () =>
+      selectHostedAcceptanceProfile([...candidateFiles, 'apps/web/app/api/auth/session/route.ts']),
+    /Archive restore requires its own staging candidate/,
+  );
+});
+
+test('AI-45 archive evidence passes producer, strict schema, status and promotion consumers for exact provenance', async () => {
+  const checks = {
+    stagingDatabaseAndR2Backup: 'passed',
+    encryptedPrivateBundle: 'passed',
+    isolatedLocalRestore: 'passed',
+    linkedTraceEvidenceRead: 'passed',
+    exactFileBytes: 'passed',
+    corruptionDetected: 'passed',
+    sourceUnchanged: 'passed',
+  } as const;
+  const input = {
+    acceptanceProfile: 'archive-restore',
+    candidateSha,
+    candidateTreeSha,
+    pullRequestNumber: 152,
+    deploymentRunId: '36474707377',
+    stagingOrigin: origin,
+    manualMfaChallengeObserved: true,
+    checks,
+    correlationIds: ['archive-restore-correlation'],
+    acceptedAt: '2026-11-06T10:00:00.000Z',
+  };
+  const directory = await mkdtemp(join(tmpdir(), 'ai45-archive-evidence-'));
+  const evidencePath = join(directory, 'acceptance.json');
+  try {
+    await writeLiveStagingAcceptanceEvidence(evidencePath, input);
+    const writtenEvidence = JSON.parse(await readFile(evidencePath, 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    const hostedSuite = createHostedStagingSuiteEvidence(writtenEvidence);
+    assert.equal(hostedSuite.state, 'ARCHIVE_RESTORE_STAGING_ACCEPTED');
+    assert.equal(hostedSuite.humanMfa, 'user-completed');
+    assert.deepEqual(ArchiveRestoreChecksSchema.parse(checks), checks);
+    assert.equal(writtenEvidence.candidateSha, candidateSha);
+    assert.equal(writtenEvidence.candidateTreeSha, candidateTreeSha);
+    assert.equal(writtenEvidence.pullRequestNumber, 152);
+
+    const result = createStagingAcceptanceStatus({
+      candidateSha,
+      currentPullRequestHeadSha: candidateSha,
+      currentPullRequestTreeSha: candidateTreeSha,
+      currentPullRequestNumber: 152,
+      state: 'success',
+      deployment: candidateDeploymentEvidence({ acceptanceProfile: 'archive-restore' }),
+      hostedSuite,
+    });
+    assert.equal(result.status.state, 'success');
+    assert.equal(result.acceptance?.acceptanceProfile, 'archive-restore');
+    assert.deepEqual(result.acceptance?.checks, checks);
+    assert.deepEqual(result.acceptance?.correlationIds, input.correlationIds);
+    assert.equal(
+      acceptStagingCandidate({
+        ready: ready(),
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        acceptance: result.acceptance!,
+      }).acceptanceProfile,
+      'archive-restore',
+    );
+
+    for (const key of Object.keys(checks)) {
+      const incomplete = { ...checks } as Record<string, string>;
+      delete incomplete[key];
+      const rejectedPath = join(directory, `rejected-${key}.json`);
+      await assert.rejects(
+        writeLiveStagingAcceptanceEvidence(rejectedPath, { ...input, checks: incomplete }),
+        `writer must reject missing ${key}`,
+      );
+      await assert.rejects(stat(rejectedPath));
+      assert.throws(
+        () => createHostedStagingSuiteEvidence({ ...writtenEvidence, checks: incomplete }),
+        /invalid_evidence/,
+        `missing ${key} must fail closed at the hosted schema`,
+      );
+    }
+    await assert.rejects(
+      writeLiveStagingAcceptanceEvidence(join(directory, 'no-mfa.json'), {
+        ...input,
+        manualMfaChallengeObserved: false,
+      }),
+    );
+    assert.throws(
+      () => createHostedStagingSuiteEvidence({ ...writtenEvidence, humanMfa: 'not-required' }),
+      /invalid_evidence/,
+    );
+    assert.throws(
+      () =>
+        createStagingAcceptanceStatus({
+          candidateSha,
+          currentPullRequestHeadSha: candidateSha,
+          currentPullRequestTreeSha: candidateTreeSha,
+          currentPullRequestNumber: 152,
+          state: 'success',
+          deployment: candidateDeploymentEvidence({ acceptanceProfile: 'archive-restore' }),
+          hostedSuite: { ...writtenEvidence, deploymentRunId: '36474707378' },
+        }),
+      /deployment_run_mismatch/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 const candidateWorkflowNames = ['CI', 'Security', 'CodeQL Advanced', 'Dependency review'] as const;
@@ -1293,6 +1449,14 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(
     deployWorkflow,
+    /Set candidate status while hosted acceptance is pending[\s\S]*acceptance_profile == 'archive-restore'/,
+  );
+  assert.match(
+    deployWorkflow,
+    /if \[\[ "\$ACCEPTANCE_PROFILE" == "archive-restore" \]\]; then[\s\S]*isolated archive-restore acceptance/,
+  );
+  assert.match(
+    deployWorkflow,
     /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \|\| 'auto' \}\}[\s\S]*acceptance-profile\.ts candidate-files\.txt "\$ACCEPTANCE_PROFILE"/,
   );
   assert.match(deployWorkflow, /deployment_run_id:/);
@@ -1340,6 +1504,9 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   const targetedAutoAccept = deployWorkflow.indexOf('name: Auto-accept targeted staging candidate');
   const authBrowserPending = deployWorkflow.indexOf(
     'Staging is deployed; waiting for auth-browser acceptance.',
+  );
+  const archiveRestorePending = deployWorkflow.indexOf(
+    'Staging is deployed; waiting for isolated archive-restore acceptance.',
   );
   const manualRequiredGate = deployWorkflow.indexOf(
     'name: Validate manual candidate required workflows',
@@ -1407,6 +1574,10 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.ok(
     stagingSmoke < authBrowserPending,
     'auth-browser acceptance can become pending only after staging deploy/smoke succeeds',
+  );
+  assert.ok(
+    stagingSmoke < archiveRestorePending,
+    'archive-restore acceptance can become pending only after staging deploy/smoke succeeds',
   );
   assert.match(deployWorkflow, /current_sha=.*pulls\/\$PULL_REQUEST_NUMBER/);
   assert.match(deployWorkflow, /staging-slot-check < staging-slot-input\.json/);

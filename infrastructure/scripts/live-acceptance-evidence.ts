@@ -6,6 +6,7 @@ import { z } from 'zod';
 import {
   Ai15WorkflowProofsSchema,
   Ai16PromptGovernanceProofSchema,
+  ArchiveRestoreChecksSchema,
   createHostedStagingSuiteEvidence,
 } from './release-gate.js';
 
@@ -60,7 +61,26 @@ const TargetedEvidenceWriteInputSchema = EvidenceWriteCommonSchema.extend({
   promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
 }).strict();
 
+const ArchiveRestoreEvidenceWriteInputSchema = z
+  .object({
+    candidateSha: z.string().regex(/^[a-f0-9]{40}$/i),
+    candidateTreeSha: z.string().regex(/^[a-f0-9]{40}$/i),
+    pullRequestNumber: z.number().int().positive(),
+    deploymentRunId: z.string().regex(/^[1-9][0-9]{0,19}$/),
+    stagingOrigin: z.literal('https://ai-operations-staging.ai-operations.workers.dev'),
+    acceptanceProfile: z.literal('archive-restore'),
+    manualMfaChallengeObserved: z.literal(true),
+    checks: ArchiveRestoreChecksSchema,
+    correlationIds: z
+      .array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9:-]{0,127}$/))
+      .min(1)
+      .max(20),
+    acceptedAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
 const EvidenceWriteInputSchema = z.discriminatedUnion('acceptanceProfile', [
+  ArchiveRestoreEvidenceWriteInputSchema,
   AuthBrowserEvidenceWriteInputSchema,
   TargetedEvidenceWriteInputSchema,
 ]);
@@ -79,36 +99,43 @@ export async function writeLiveStagingAcceptanceEvidence(
     stagingOrigin: input.stagingOrigin,
     humanMfa: 'user-completed',
     correlationIds: input.correlationIds,
-    workflowRuns: input.workflowRuns,
+    ...('workflowRuns' in input && input.workflowRuns ? { workflowRuns: input.workflowRuns } : {}),
     acceptedAt: input.acceptedAt,
   } as const;
   const evidence =
-    input.acceptanceProfile === 'auth-browser'
+    input.acceptanceProfile === 'archive-restore'
       ? createHostedStagingSuiteEvidence({
           ...commonEvidence,
-          state: 'LIVE_STAGING_E2E_ACCEPTED',
-          acceptanceProfile: 'auth-browser',
+          state: 'ARCHIVE_RESTORE_STAGING_ACCEPTED',
+          acceptanceProfile: 'archive-restore',
           checks: input.checks,
-          freshMfaAction: input.freshMfaAction,
-          promptGovernanceProof: input.promptGovernanceProof,
         })
-      : createHostedStagingSuiteEvidence({
-          ...commonEvidence,
-          state: 'TARGETED_STAGING_ACCEPTED',
-          acceptanceProfile: 'targeted',
-          checks: [
-            { name: 'complete-suite', result: input.completeSuite },
-            { name: 'auth-aal2', result: input.checks.authAal2 },
-            { name: 'safe-read', result: input.checks.safeRead },
-            { name: 'safe-write', result: input.checks.safeWrite },
-            { name: 'ui', result: input.checks.ui },
-            { name: 'edge-functions', result: input.checks.edgeFunctions },
-            { name: 'release-version', result: input.checks.releaseVersion },
-            { name: 'chromium', result: input.browserChecks.chromium },
-            { name: 'webkit', result: input.browserChecks.webkit },
-          ],
-          promptGovernanceProof: input.promptGovernanceProof,
-        });
+      : input.acceptanceProfile === 'auth-browser'
+        ? createHostedStagingSuiteEvidence({
+            ...commonEvidence,
+            state: 'LIVE_STAGING_E2E_ACCEPTED',
+            acceptanceProfile: 'auth-browser',
+            checks: input.checks,
+            freshMfaAction: input.freshMfaAction,
+            promptGovernanceProof: input.promptGovernanceProof,
+          })
+        : createHostedStagingSuiteEvidence({
+            ...commonEvidence,
+            state: 'TARGETED_STAGING_ACCEPTED',
+            acceptanceProfile: 'targeted',
+            checks: [
+              { name: 'complete-suite', result: input.completeSuite },
+              { name: 'auth-aal2', result: input.checks.authAal2 },
+              { name: 'safe-read', result: input.checks.safeRead },
+              { name: 'safe-write', result: input.checks.safeWrite },
+              { name: 'ui', result: input.checks.ui },
+              { name: 'edge-functions', result: input.checks.edgeFunctions },
+              { name: 'release-version', result: input.checks.releaseVersion },
+              { name: 'chromium', result: input.browserChecks.chromium },
+              { name: 'webkit', result: input.browserChecks.webkit },
+            ],
+            promptGovernanceProof: input.promptGovernanceProof,
+          });
   const temporaryPath = `${path}.tmp-${randomUUID()}`;
   await mkdir(dirname(path), { recursive: true });
   try {

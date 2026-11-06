@@ -361,7 +361,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - name: Set candidate status while hosted acceptance is pending
-        if: inputs.candidate_sha != '' && (steps.acceptance-profile.outputs.acceptance_profile == 'auth-browser' || steps.acceptance-profile.outputs.acceptance_profile == 'cost-runtime' || steps.acceptance-profile.outputs.acceptance_profile == 'planner-specialist' || steps.acceptance-profile.outputs.acceptance_profile == 'worker-protocol')
+        if: inputs.candidate_sha != '' && (steps.acceptance-profile.outputs.acceptance_profile == 'auth-browser' || steps.acceptance-profile.outputs.acceptance_profile == 'cost-runtime' || steps.acceptance-profile.outputs.acceptance_profile == 'planner-specialist' || steps.acceptance-profile.outputs.acceptance_profile == 'worker-protocol' || steps.acceptance-profile.outputs.acceptance_profile == 'archive-restore')
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
@@ -369,7 +369,9 @@ jobs:
           ACCEPTANCE_PROFILE: ${{ steps.acceptance-profile.outputs.acceptance_profile }}
         run: |
           set -euo pipefail
-          if [[ "$ACCEPTANCE_PROFILE" == "cost-runtime" ]]; then
+          if [[ "$ACCEPTANCE_PROFILE" == "archive-restore" ]]; then
+            description="Staging is deployed; waiting for isolated archive-restore acceptance."
+          elif [[ "$ACCEPTANCE_PROFILE" == "cost-runtime" ]]; then
             description="Staging is deployed; waiting for one-call cost-runtime evidence."
           elif [[ "$ACCEPTANCE_PROFILE" == "planner-specialist" ]]; then
             description="Staging is deployed; waiting for the candidate-bound Planner-to-Travel journey."

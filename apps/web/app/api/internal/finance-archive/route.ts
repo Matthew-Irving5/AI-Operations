@@ -5,6 +5,7 @@ import {
   constantTimeEqual,
   MAX_ARCHIVE_BYTES,
   sha256Hex,
+  verifyArchiveReadback,
 } from '../../../../lib/archive-gateway';
 
 export const dynamic = 'force-dynamic';
@@ -180,7 +181,7 @@ export async function POST(request: Request) {
     crypto.randomUUID(),
   );
   try {
-    await bucket.put(objectKey, content, {
+    const stored = await bucket.put(objectKey, content, {
       httpMetadata: { contentType: 'text/csv' },
       customMetadata: {
         sha256: computedDigest,
@@ -188,19 +189,61 @@ export async function POST(request: Request) {
         requestId,
         source: 'finance_upload',
       },
+      sha256: computedDigest,
     });
+    if (!stored || stored.size !== content.byteLength) {
+      return failure(
+        requestId,
+        'archive_write_metadata_mismatch',
+        502,
+        'archive.integrity',
+        `The R2 write reported ${stored?.size ?? 'no'} bytes; expected ${content.byteLength}.`,
+        'Keep the request ID and do not index or retry this object until its stored bytes are verified.',
+      );
+    }
+    const readback = await bucket.get(objectKey);
+    if (!readback) {
+      return failure(
+        requestId,
+        'archive_readback_missing',
+        502,
+        'archive.integrity',
+        `The private R2 object was written as ${content.byteLength} bytes but could not be read back.`,
+        'Keep the request ID and do not index or retry this object until the archive read path is healthy.',
+      );
+    }
+    const actual = new Uint8Array(await readback.arrayBuffer());
+    const verification = await verifyArchiveReadback(
+      { sizeBytes: content.byteLength, contentType: 'text/csv', sha256: computedDigest },
+      {
+        sizeBytes: readback.size,
+        contentType: readback.httpMetadata?.contentType,
+        sha256: readback.customMetadata?.sha256,
+        bytes: actual,
+      },
+    );
+    if (verification.mismatches.length > 0) {
+      return failure(
+        requestId,
+        'archive_readback_mismatch',
+        502,
+        'archive.integrity',
+        `The stored R2 object failed read-back verification: ${verification.mismatches.join('; ')}.`,
+        'Do not create database references to this object; preserve the request ID and retry only after storage integrity is restored.',
+      );
+    }
   } catch {
     return failure(
       requestId,
-      'archive_storage_write_failed',
+      'archive_storage_verification_failed',
       502,
-      'archive.storage_write',
-      'The private Cloudflare R2 archive rejected the statement object write.',
-      'Retry once; if it repeats, provide the request ID for R2 investigation. No database statement was created.',
+      'archive.integrity',
+      'The private R2 write or read-back verification failed before archive metadata could be returned.',
+      'Do not create database references to this object; preserve the request ID and investigate the storage boundary before retrying.',
     );
   }
   return NextResponse.json(
-    { key: objectKey, bytes: content.length },
+    { key: objectKey, bytes: content.length, sha256: computedDigest, verified: true },
     { status: 201, headers: { 'x-request-id': requestId } },
   );
 }
