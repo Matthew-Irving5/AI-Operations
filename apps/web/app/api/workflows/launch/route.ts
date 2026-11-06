@@ -2,27 +2,40 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireSameOrigin } from '../../../../lib/request-security';
 import { getAuthenticatedServerAccessToken } from '../../../../lib/supabase-server';
+import { procurementLaunchRequestSchema } from '@ai-operations/contracts';
 
 const onDemandRequestFields = {
   hardCapUsd: z.number().positive().max(1000),
   modelCeiling: z.enum(['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol']),
-  searchCeiling: z.number().int().min(0).max(20),
   idempotencyKey: z.string().uuid(),
-  request: z
-    .object({
-      purpose: z.string().trim().min(3).max(2000),
-      constraints: z.string().trim().max(4000),
-    })
-    .strict(),
 };
-
-const onDemandSchema = z
+const travelRequestSchema = z
   .object({
-    workflowCode: z.enum(['travel-on-demand-plan', 'procurement-on-demand-research']),
-    managerCode: z.enum(['travel', 'procurement']),
-    ...onDemandRequestFields,
+    purpose: z.string().trim().min(3).max(2000),
+    constraints: z.string().trim().max(4000),
   })
   .strict();
+const onDemandSchema = z.union([
+  z
+    .object({
+      ...onDemandRequestFields,
+      workflowCode: z.literal('travel-on-demand-plan'),
+      managerCode: z.literal('travel'),
+      searchCeiling: z.number().int().min(0).max(20),
+      request: travelRequestSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...onDemandRequestFields,
+      workflowCode: z.literal('procurement-on-demand-research'),
+      managerCode: z.literal('procurement'),
+      searchCeiling: z.number().int().min(1).max(20),
+      revisionOfResearchRunId: z.string().uuid().optional(),
+      request: procurementLaunchRequestSchema,
+    })
+    .strict(),
+]);
 
 const plannerLaunchSchema = z
   .object({
@@ -32,7 +45,7 @@ const plannerLaunchSchema = z
     modelCeiling: z.enum(['gpt-5.6-luna', 'gpt-5.6-terra']),
     searchCeiling: z.literal(0),
     idempotencyKey: z.string().uuid(),
-    request: onDemandSchema.shape.request,
+    request: travelRequestSchema,
   })
   .strict();
 

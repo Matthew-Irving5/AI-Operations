@@ -24,6 +24,7 @@ export function parseLiveE2eEnvironment(
     | 'suite'
     | 'auth-acceptance'
     | 'cost-acceptance'
+    | 'procurement-acceptance'
     | 'planner-specialist'
     | 'fixtures'
     | 'fixture-mismatch'

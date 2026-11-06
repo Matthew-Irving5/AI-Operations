@@ -183,6 +183,34 @@ main {
   margin: 0;
   line-height: 1.5;
 }
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.table-scroll table {
+  border-collapse: collapse;
+  min-width: 760px;
+  width: 100%;
+}
+.table-scroll th,
+.table-scroll td {
+  border-bottom: 1px solid var(--line);
+  padding: 12px;
+  text-align: left;
+  vertical-align: top;
+}
+.table-scroll th {
+  color: var(--muted);
+  font-size: 13px;
+}
+.table-scroll td p:first-child,
+.table-scroll td ul:first-child {
+  margin-top: 0;
+}
+.table-scroll td p:last-child,
+.table-scroll td ul:last-child {
+  margin-bottom: 0;
+}
 .source-heading {
   display: flex;
   align-items: flex-start;

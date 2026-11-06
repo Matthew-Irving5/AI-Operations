@@ -67,6 +67,7 @@ WITH grants AS (
       to_regprocedure('public.load_canonical_action_execution_request(uuid)'),
       to_regprocedure('public.load_prompt_promotion_target(uuid,integer)'),
       to_regprocedure('public.request_canonical_action_reversal(uuid,text)'),
+      -- AI-39 Procurement write RPCs have their exact grants checked in rpc_security.sql.
       to_regprocedure('public.sync_procurement_research_run_status()'),
       to_regprocedure('public.create_procurement_revision_request(uuid,uuid,text,numeric,text,integer,text,jsonb,uuid)'),
       to_regprocedure('public.commit_procurement_decision(uuid,uuid,integer,jsonb,jsonb)'),
@@ -81,8 +82,8 @@ WITH grants AS (
       to_regprocedure('public.create_conversation_handoff(jsonb)'),
       to_regprocedure('public.resolve_conversation_handoff(uuid,uuid,text,text,uuid,timestamptz)'),
       -- AI-17 Planner provider settlement is checked against its exact service_role grant.
-      to_regprocedure('public.complete_inter_agent_plan_with_queue(uuid,text,uuid,uuid,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)')
-      ,to_regprocedure('public.set_worker_desired_state(uuid,text)')
+      to_regprocedure('public.complete_inter_agent_plan_with_queue(uuid,text,uuid,uuid,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)'),
+      to_regprocedure('public.set_worker_desired_state(uuid,text)')
     )
 )
 SELECT is(

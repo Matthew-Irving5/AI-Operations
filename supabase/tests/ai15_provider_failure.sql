@@ -108,7 +108,7 @@ select is(public.calculate_instrumented_ai_cost(
   (select id from public.ai_model_catalog where model_id = 'gpt-5.6-luna'),
   10, 0, 0, 0, 10,
   (select model_pricing_id from public.ai_calls where run_id = '00000000-0000-4000-8000-000000000320')
-), 0.000013::numeric, 'cache-write tokens use their versioned premium rate with conservative microdollar rounding');
+), 0.000003::numeric, 'cache-write tokens use their versioned premium rate with conservative microdollar rounding');
 select throws_ok($$update public.model_pricing set input_per_million = input_per_million + 1 where id = (select model_pricing_id from public.ai_calls where run_id = '00000000-0000-4000-8000-000000000320')$$, 'P0001', 'model_pricing_version_immutable', 'pricing history cannot be edited after a call references it');
 select throws_ok($$select public.reserve_instrumented_ai_call(
   (select user_id from ai15_fixture_owner),

@@ -33,7 +33,7 @@ insert into rpc_security_expected values
   ('public.claim_notification_delivery(text,integer)', false, false, true),
   ('public.complete_notification_delivery(uuid,text,text,text)', false, false, true),
   ('public.record_provider_usage_reconciliation(uuid,timestamptz,timestamptz,numeric,text)', false, false, false),
-  ('public.add_model_pricing(uuid,uuid,timestamptz,numeric,numeric,numeric,text)', false, false, false),
+  ('public.add_model_pricing(uuid,uuid,timestamptz,numeric,numeric,numeric,numeric,text)', false, false, false),
   ('public.execute_personal_workflow(uuid)', false, false, true),
   ('public.execute_health_finance_workflow(uuid)', false, false, true),
   ('public.execute_career_travel_procurement_workflow(uuid)', false, false, true),
@@ -41,6 +41,7 @@ insert into rpc_security_expected values
   ('public.create_on_demand_run_request(uuid,uuid,text,numeric,text,integer,text,jsonb)', false, false, true),
   ('public.consume_edge_request_quota(uuid,text,integer)', false, false, true),
   ('public.complete_deterministic_workflow_run(uuid)', false, false, true),
+  -- AI-39 Procurement lifecycle RPCs are server-only; the trigger helper is never directly callable.
   ('public.sync_procurement_research_run_status()', false, false, false),
   ('public.create_procurement_revision_request(uuid,uuid,text,numeric,text,integer,text,jsonb,uuid)', false, false, true),
   ('public.commit_procurement_decision(uuid,uuid,integer,jsonb,jsonb)', false, false, true),
@@ -161,7 +162,9 @@ select ok(
   has_function_privilege('anon', 'public.ingest_mobile_snapshot(text,integer,uuid,uuid,text,text,timestamptz,text,jsonb,jsonb)', 'EXECUTE')
   and has_function_privilege('anon', 'public.adapt_mobile_snapshot(text,uuid)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.consume_mfa_action_gate(uuid,text)', 'EXECUTE')
-  and has_function_privilege('service_role', 'public.complete_deterministic_workflow_run(uuid)', 'EXECUTE'),
+  and has_function_privilege('service_role', 'public.complete_deterministic_workflow_run(uuid)', 'EXECUTE')
+  and has_function_privilege('service_role', 'public.commit_procurement_decision(uuid,uuid,integer,jsonb,jsonb)', 'EXECUTE')
+  and has_function_privilege('service_role', 'public.commit_instrumented_ai_procurement_report_with_queue(uuid,text,uuid,uuid,integer,jsonb,jsonb,text,text,text,text,text,jsonb,jsonb,jsonb,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)', 'EXECUTE'),
   'token ingestion, user MFA gating, and server workflow completion retain their intended roles'
 );
 
