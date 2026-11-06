@@ -1,7 +1,9 @@
+import { readAi17StagingReports } from '../../infrastructure/scripts/ai17-staging-reader.js';
 import { writeFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { parseLiveE2eEnvironment, stagingTarget } from '../../apps/web/lib/live-e2e-safety';
 import { resolveGitTreeSha } from '../../infrastructure/scripts/live-acceptance-evidence.js';
+import { Ai17PlannerSpecialistEvidenceSchema } from '../../infrastructure/scripts/release-gate.js';
 
 const env = parseLiveE2eEnvironment(process.env, 'planner-specialist');
 const candidateSha = process.env.LIVE_E2E_CANDIDATE_SHA?.toLowerCase();
@@ -75,7 +77,7 @@ async function waitForJourney(runId: string): Promise<{
         },
         'id,status,destination_run_id,result_reference,correlation_id',
       ),
-      serviceRows<PersistedReport>('reports', { run_id: `eq.${runId}` }, 'id,run_id'),
+      readAi17StagingReports(runId),
     ]);
     const sourceRun = sourceRuns[0];
     const specialistRequest = requests[0];
@@ -102,13 +104,7 @@ async function waitForJourney(runId: string): Promise<{
           },
           'id,request_id,kind,result_reference,correlation_id',
         ),
-        serviceRows<PersistedReport>(
-          'reports',
-          {
-            run_id: `eq.${specialistRequest.destination_run_id}`,
-          },
-          'id,run_id',
-        ),
+        readAi17StagingReports(specialistRequest.destination_run_id),
       ]);
       const specialistRun = specialistRuns[0];
       const specialistReply = replies[0];
@@ -250,26 +246,34 @@ test('AI-17 completes one candidate-bound Planner-to-Travel journey @ai17-planne
   const evidence = {
     schemaVersion: 1,
     state: 'PLANNER_SPECIALIST_STAGING_ACCEPTED',
-    ticket: 'AI-17',
+    acceptanceProfile: 'planner-specialist',
     candidateSha,
     candidateTreeSha,
     pullRequestNumber,
     deploymentRunId,
     stagingOrigin: stagingTarget.origin,
-    acceptanceProfile: 'planner-specialist',
-    manualMfaChallengeObserved,
+    humanMfa: 'user-completed',
+    checks: { plannerToTravelJourney: 'passed' },
+    correlationIds: [journey.sourceRun.correlation_id],
     journey: {
       sourceRunId: journey.sourceRun.id,
       sourceCorrelationId: journey.sourceRun.correlation_id,
       specialistRequestId: journey.specialistRequest.id,
+      specialistRequestCorrelationId: journey.specialistRequest.correlation_id,
       specialistRunId: journey.specialistRun.id,
       specialistReplyId: journey.specialistReply.id,
+      specialistReplyCorrelationId: journey.specialistReply.correlation_id,
       specialistReportId: journey.specialistReport.id,
+      specialistRequestResultReference: journey.specialistRequest.result_reference!,
+      specialistReplyResultReference: journey.specialistReply.result_reference!,
       consolidatedReportId: journey.consolidatedReport.id,
+      consolidatedReportRunId: journey.consolidatedReport.run_id,
       result: 'passed',
     },
+    manualMfaChallengeObserved,
     acceptedAt: new Date().toISOString(),
   };
+  Ai17PlannerSpecialistEvidenceSchema.parse(evidence);
   await writeFile(outputPath, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
   await testInfo.attach('ai17-planner-specialist-acceptance.json', {
     path: outputPath,

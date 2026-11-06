@@ -1,5 +1,9 @@
 import { createClient } from "npm:@supabase/supabase-js@2.57.0";
 import { consumeRateLimit } from "../_shared/rate-limit.ts";
+import {
+  hasCompatibleWorkerHeartbeat,
+  hasFreshWorkerHeartbeat,
+} from "../_shared/worker-liveness.ts";
 const url = Deno.env.get("SUPABASE_URL") ?? "";
 const service = createClient(
   url,
@@ -17,6 +21,12 @@ const remediationByCode: Record<string, string> = {
     "Start the scan again from Digital Estate with the synthetic safe folder and the displayed device.",
   device_unavailable:
     "Refresh Devices and wait for a recent worker heartbeat before scanning.",
+  worker_offline:
+    "Run the AI Operations Windows Worker on your PC, then refresh Devices and retry.",
+  worker_incompatible:
+    "Update or restart the AI Operations Windows Worker, then refresh Devices and retry.",
+  worker_health_unavailable:
+    "Refresh Devices and retry the connection check before requesting a scan.",
   rate_limited:
     "Wait briefly before requesting another scan; no scan was created.",
   scan_budget_rejected:
@@ -40,20 +50,21 @@ const json = (
   const stage = typeof payload.stage === "string"
     ? payload.stage
     : "scan_create";
-  const diagnostic = payload.diagnostic ?? (code
-    ? {
-      code,
-      stage,
-      httpStatus: status,
-      requestId,
-      route: "/functions/v1/digital-scan-create",
-      method: "POST",
-      detail:
-        "The digital-scan-create control-plane boundary rejected the request.",
-      remediation: remediationByCode[code] ??
-        "Use the request ID to inspect the digital-scan-create control-plane logs.",
-    }
-    : undefined);
+  const diagnostic = payload.diagnostic ??
+    (code
+      ? {
+        code,
+        stage,
+        httpStatus: status,
+        requestId,
+        route: "/functions/v1/digital-scan-create",
+        method: "POST",
+        detail:
+          "The digital-scan-create control-plane boundary rejected the request.",
+        remediation: remediationByCode[code] ??
+          "Use the request ID to inspect the digital-scan-create control-plane logs.",
+      }
+      : undefined);
   return new Response(
     JSON.stringify({
       ...payload,
@@ -110,7 +121,7 @@ Deno.serve(async (request) => {
       requestId,
     );
   }
-  const body = await request.json().catch(() => null) as {
+  const body = (await request.json().catch(() => null)) as {
     deviceId?: string;
     roots?: string[];
     scanKind?: string;
@@ -120,14 +131,17 @@ Deno.serve(async (request) => {
     mfaGateId?: string;
   } | null;
   if (
-    !body?.deviceId || !Array.isArray(body.roots) || !body.roots.length ||
+    !body?.deviceId ||
+    !Array.isArray(body.roots) ||
+    !body.roots.length ||
     body.roots.some((root) =>
       typeof root !== "string" || root.includes("..")
     ) ||
     !["lightweight", "deep"].includes(body.scanKind ?? "") ||
     !Number.isFinite(body.hardCapUsd) ||
     !Number.isInteger(body.searchCeiling) ||
-    !body.idempotencyKey || !/^[0-9a-f-]{36}$/i.test(body.mfaGateId ?? "")
+    !body.idempotencyKey ||
+    !/^[0-9a-f-]{36}$/i.test(body.mfaGateId ?? "")
   ) {
     return json(
       {
@@ -140,13 +154,12 @@ Deno.serve(async (request) => {
       requestId,
     );
   }
-  if (!await consumeRateLimit(identity.user.id, "digital_scan_create", 10)) {
-    return json({ code: "rate_limited", stage: "scan_create" }, 429, requestId);
-  }
-  const device = await service.from("worker_devices").select("id,state").eq(
-    "id",
-    body.deviceId,
-  ).eq("user_id", identity.user.id).maybeSingle();
+  const device = await service
+    .from("worker_devices")
+    .select("id,state,last_heartbeat_at")
+    .eq("id", body.deviceId)
+    .eq("user_id", identity.user.id)
+    .maybeSingle();
   if (device.error) {
     return json(
       { code: "device_lookup_failed", stage: "device_lookup" },
@@ -161,13 +174,55 @@ Deno.serve(async (request) => {
       requestId,
     );
   }
+  if (!hasFreshWorkerHeartbeat(device.data.last_heartbeat_at)) {
+    return json(
+      {
+        code: "worker_offline",
+        stage: "worker_liveness",
+        detail:
+          "The paired worker has not sent a heartbeat within the connection window.",
+      },
+      409,
+      requestId,
+    );
+  }
+  const health = await service
+    .from("worker_heartbeats")
+    .select("status")
+    .eq("device_id", body.deviceId)
+    .order("received_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (health.error) {
+    return json(
+      { code: "worker_health_unavailable", stage: "worker_liveness" },
+      503,
+      requestId,
+    );
+  }
+  if (!health.data || !hasCompatibleWorkerHeartbeat(health.data.status)) {
+    return json(
+      {
+        code: "worker_incompatible",
+        stage: "worker_compatibility",
+        detail:
+          "The latest worker heartbeat is not compatible with scan polling.",
+      },
+      409,
+      requestId,
+    );
+  }
+  if (!(await consumeRateLimit(identity.user.id, "digital_scan_create", 10))) {
+    return json({ code: "rate_limited", stage: "scan_create" }, 429, requestId);
+  }
   const workflowCode = body.scanKind === "deep"
     ? "digital-estate-deep-scan"
     : "digital-estate-lightweight";
-  const workflow = await service.from("workflow_definitions").select("id").eq(
-    "code",
-    workflowCode,
-  ).single();
+  const workflow = await service
+    .from("workflow_definitions")
+    .select("id")
+    .eq("code", workflowCode)
+    .single();
   if (workflow.error || !workflow.data?.id) {
     return json(
       {
@@ -185,7 +240,10 @@ Deno.serve(async (request) => {
   }
   const { data: gateConsumed, error: gateError } = await caller.rpc(
     "consume_mfa_action_gate",
-    { p_gate_id: body.mfaGateId, p_action_key: "digital_scan_create" },
+    {
+      p_gate_id: body.mfaGateId,
+      p_action_key: "digital_scan_create",
+    },
   );
   if (gateError || gateConsumed !== true) {
     return json(
@@ -219,19 +277,24 @@ Deno.serve(async (request) => {
       requestId,
     );
   }
-  const existing = await service.from("digital_scans").select("id,status").eq(
-    "run_id",
-    runId,
-  ).maybeSingle();
+  const existing = await service
+    .from("digital_scans")
+    .select("id,status")
+    .eq("run_id", runId)
+    .maybeSingle();
   if (existing.data) {
     return json({ scan: existing.data, runId, replay: true }, 200, requestId);
   }
   // Device workers own these workflow runs. Prevent the generic job worker from
   // treating a local scan as an AI/synthetic job while retaining the run ledger.
-  const { error: queueError } = await service.from("job_queue").update({
-    status: "cancelled",
-    completed_at: new Date().toISOString(),
-  }).eq("run_id", runId).eq("status", "queued");
+  const { error: queueError } = await service
+    .from("job_queue")
+    .update({
+      status: "cancelled",
+      completed_at: new Date().toISOString(),
+    })
+    .eq("run_id", runId)
+    .eq("status", "queued");
   if (queueError) {
     return json(
       {
@@ -245,14 +308,18 @@ Deno.serve(async (request) => {
       requestId,
     );
   }
-  const { data: scan, error } = await service.from("digital_scans").insert({
-    user_id: identity.user.id,
-    device_id: body.deviceId,
-    run_id: runId,
-    scan_kind: body.scanKind,
-    approved_roots: body.roots,
-    status: device.data.state === "online" ? "queued" : "waiting_for_device",
-  }).select("id,status").single();
+  const { data: scan, error } = await service
+    .from("digital_scans")
+    .insert({
+      user_id: identity.user.id,
+      device_id: body.deviceId,
+      run_id: runId,
+      scan_kind: body.scanKind,
+      approved_roots: body.roots,
+      status: device.data.state === "online" ? "queued" : "waiting_for_device",
+    })
+    .select("id,status")
+    .single();
   return error
     ? json({ code: "scan_create_failed", stage: "persistence" }, 500, requestId)
     : json({ scan, runId, stage: "scan_create" }, 201, requestId);

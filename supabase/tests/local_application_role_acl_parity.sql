@@ -25,13 +25,13 @@ WITH grants AS (
 )
 SELECT is(
   (SELECT md5(string_agg(object_name||'|'||grantee||'|'||privilege_type||'|'||is_grantable::text, E'\n' ORDER BY object_name,grantee,privilege_type,is_grantable)) FROM grants WHERE kind='table'),
-  '5defa04e0edff85fb074e040ab3259fc',
+  'eb8d3ca3518397c3a137037fd49f6e0d',
   'local table ACL tuples match staging plus the reviewed run-step read grant and model-pricing SELECT-only contract'
 );
 
 SELECT is(
   (SELECT md5(coalesce(string_agg(c.relname||'.'||a.attname||'|'||CASE WHEN x.grantee=0 THEN 'PUBLIC' ELSE r.rolname END||'|'||x.privilege_type||'|'||x.is_grantable::text, E'\n' ORDER BY c.relname,a.attname,CASE WHEN x.grantee=0 THEN 'PUBLIC' ELSE r.rolname END,x.privilege_type,x.is_grantable),'')) FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(a.attacl) x LEFT JOIN pg_roles r ON r.oid=x.grantee WHERE n.nspname='public' AND a.attnum>0 AND NOT a.attisdropped AND a.attacl IS NOT NULL AND (x.grantee=0 OR r.rolname IN ('anon','authenticated','service_role'))),
-  '0a34f443ce60f3ab686be46daaeefa36',
+  'ee804668ba01c2706229dac649e0fade',
   'local column ACL tuples match the captured staging baseline plus the reviewed AI-13 schedule update grant'
 );
 
@@ -59,6 +59,18 @@ WITH grants AS (
       to_regprocedure('public.record_prompt_evaluation(uuid,jsonb)'),
       to_regprocedure('public.transition_prompt_version(uuid,integer,integer,uuid,text,text)'),
       to_regprocedure('public.create_prompt_candidate(uuid,text,text,jsonb,text,integer,integer,jsonb)'),
+      -- AI-44 canonical action RPCs are checked against their exact grants.
+      to_regprocedure('public.lookup_canonical_action_execution(uuid,uuid,text,text)'),
+      to_regprocedure('public.record_canonical_action_policy_decision(uuid,uuid,text,text,jsonb)'),
+      to_regprocedure('public.claim_canonical_action_execution(uuid,uuid,text,text)'),
+      to_regprocedure('public.complete_canonical_action_execution(uuid,uuid,text,text,uuid,jsonb)'),
+      to_regprocedure('public.load_canonical_action_execution_request(uuid)'),
+      to_regprocedure('public.load_prompt_promotion_target(uuid,integer)'),
+      to_regprocedure('public.request_canonical_action_reversal(uuid,text)'),
+      to_regprocedure('public.sync_procurement_research_run_status()'),
+      to_regprocedure('public.create_procurement_revision_request(uuid,uuid,text,numeric,text,integer,text,jsonb,uuid)'),
+      to_regprocedure('public.commit_procurement_decision(uuid,uuid,integer,jsonb,jsonb)'),
+      to_regprocedure('public.commit_instrumented_ai_procurement_report_with_queue(uuid,text,uuid,uuid,integer,jsonb,jsonb,text,text,text,text,text,jsonb,jsonb,jsonb,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)'),
       -- AI-17 delegation and handoff ACLs are checked exactly by rpc_security.sql.
       to_regprocedure('public.create_inter_agent_request_run(jsonb,integer,text[],uuid)'),
       to_regprocedure('public.resume_inter_agent_source_run(uuid)'),
@@ -69,15 +81,8 @@ WITH grants AS (
       to_regprocedure('public.create_conversation_handoff(jsonb)'),
       to_regprocedure('public.resolve_conversation_handoff(uuid,uuid,text,text,uuid,timestamptz)'),
       -- AI-17 Planner provider settlement is checked against its exact service_role grant.
-      to_regprocedure('public.complete_inter_agent_plan_with_queue(uuid,text,uuid,uuid,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)'),
-      -- Preserve existing AI-44 exclusions; these RPCs have exact assertions below.
-      to_regprocedure('public.lookup_canonical_action_execution(uuid,uuid,text,text)'),
-      to_regprocedure('public.record_canonical_action_policy_decision(uuid,uuid,text,text,jsonb)'),
-      to_regprocedure('public.claim_canonical_action_execution(uuid,uuid,text,text)'),
-      to_regprocedure('public.complete_canonical_action_execution(uuid,uuid,text,text,uuid,jsonb)'),
-      to_regprocedure('public.load_canonical_action_execution_request(uuid)'),
-      to_regprocedure('public.load_prompt_promotion_target(uuid,integer)'),
-      to_regprocedure('public.request_canonical_action_reversal(uuid,text)')
+      to_regprocedure('public.complete_inter_agent_plan_with_queue(uuid,text,uuid,uuid,numeric,bigint,bigint,bigint,bigint,jsonb,jsonb)')
+      ,to_regprocedure('public.set_worker_desired_state(uuid,text)')
     )
 )
 SELECT is(
@@ -85,8 +90,8 @@ SELECT is(
   -- AI-19 revokes the historical PUBLIC EXECUTE grant on
   -- record_conversation_handoff_event(); rpc_security.sql enforces its exact
   -- anon/authenticated/service_role false/false/false matrix.
-  'ffaef55c0e51180628d1c8eceb878126',
-  'local routine ACL tuples include the reviewed AI20 reservation and pricing RPC signatures'
+  '3b93736e65c5dc3c06cf9df0d6a996ae',
+  'local routine ACL tuples include AI20 reservation/pricing RPCs; canonical action RPCs are checked separately'
 );
 
 SELECT is(

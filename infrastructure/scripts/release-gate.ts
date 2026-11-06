@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { Ai20CostRuntimeProofSchema } from './ai20-cost-runtime-proof.js';
+import {
+  CareerStagingAcceptanceChecksSchema,
+  CareerStagingAcceptanceEvidenceSchema,
+} from './career-staging-acceptance-evidence.js';
 
 const ShaSchema = z
   .string()
@@ -203,8 +207,25 @@ const AcceptanceProfileSchema = z.enum([
   'targeted',
   'auth-browser',
   'cost-runtime',
+  'career',
+  'career-auth-browser',
   'planner-specialist',
+  'worker-protocol',
 ]);
+
+export const WorkerProtocolChecksSchema = z
+  .object({
+    realWindowsArtifact: z.literal('passed'),
+    freshMfaPairing: z.literal('passed'),
+    identityVersionCapabilities: z.literal('passed'),
+    harmlessScanReceipt: z.literal('passed'),
+    replayImpersonationDenied: z.literal('passed'),
+    revocationRecovery: z.literal('passed'),
+    repairOldCredentialsDenied: z.literal('passed'),
+    outboundOnly: z.literal('passed'),
+    incompatibleWorkerBlocked: z.literal('passed'),
+  })
+  .strict();
 
 const CapabilityResultsSchema = z
   .object({
@@ -325,11 +346,15 @@ const AcceptanceEvidenceSchema = z
       CapabilityResultsSchema,
       TargetedCapabilityResultsSchema,
       CostRuntimeChecksSchema,
+      CareerStagingAcceptanceChecksSchema,
       Ai17PlannerSpecialistChecksSchema,
+      WorkerProtocolChecksSchema,
     ]),
     freshMfaAction: FreshMfaActionEvidenceSchema.optional(),
     promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
     costRuntimeProof: Ai20CostRuntimeProofSchema.optional(),
+    careerEvidence: CareerStagingAcceptanceEvidenceSchema.optional(),
+    authBrowserEvidence: z.lazy(() => AuthBrowserStagingSuiteEvidenceSchema).optional(),
     plannerSpecialistEvidence: Ai17PlannerSpecialistEvidenceSchema.optional(),
     correlationIds: z.array(SafeIdSchema).max(20),
     workflowRuns: Ai15WorkflowProofsSchema.optional(),
@@ -340,7 +365,11 @@ const AcceptanceEvidenceSchema = z
   .superRefine((value, context) => {
     const targeted = value.acceptanceProfile === 'targeted';
     const costRuntime = value.acceptanceProfile === 'cost-runtime';
+    const career =
+      value.acceptanceProfile === 'career' || value.acceptanceProfile === 'career-auth-browser';
+    const combinedCareer = value.acceptanceProfile === 'career-auth-browser';
     const plannerSpecialist = value.acceptanceProfile === 'planner-specialist';
+    const workerProtocol = value.acceptanceProfile === 'worker-protocol';
     const validMfa = targeted || costRuntime || value.humanMfa === 'user-completed';
     const validChecks = targeted
       ? Array.isArray(value.checks)
@@ -349,9 +378,13 @@ const AcceptanceEvidenceSchema = z
           ? 'localCostMatrix' in value.checks
           : plannerSpecialist
             ? 'plannerToTravelJourney' in value.checks
-            : 'authAal2' in value.checks);
+            : workerProtocol
+              ? 'realWindowsArtifact' in value.checks
+              : career
+                ? 'authenticatedCareerSync' in value.checks
+                : 'authAal2' in value.checks);
     const validFreshMfaAction =
-      targeted || costRuntime || plannerSpecialist
+      targeted || costRuntime || plannerSpecialist || workerProtocol || (career && !combinedCareer)
         ? value.freshMfaAction === undefined
         : value.freshMfaAction !== undefined;
     const validCostRuntimeProof = costRuntime
@@ -375,12 +408,42 @@ const AcceptanceEvidenceSchema = z
         ) &&
         JSON.stringify(value.checks) === JSON.stringify(plannerSpecialistEvidence.checks)
       : plannerSpecialistEvidence === undefined;
+    const careerEvidence = value.careerEvidence;
+    const validCareerEvidence = career
+      ? careerEvidence !== undefined &&
+        careerEvidence.candidateSha === value.candidateSha &&
+        careerEvidence.candidateTreeSha === value.candidateTreeSha &&
+        careerEvidence.pullRequestNumber === value.pullRequestNumber &&
+        careerEvidence.deploymentRunId === value.deploymentRunId &&
+        careerEvidence.stagingOrigin === value.stagingOrigin &&
+        careerEvidence.humanMfa === value.humanMfa &&
+        careerEvidence.acceptedAt === value.acceptedAt &&
+        careerEvidence.correlationIds.length === value.correlationIds.length &&
+        careerEvidence.correlationIds.every((id, index) => id === value.correlationIds[index]) &&
+        JSON.stringify(value.checks) === JSON.stringify(careerEvidence.checks)
+      : careerEvidence === undefined;
+    const validAuthBrowserEvidence = combinedCareer
+      ? value.authBrowserEvidence !== undefined &&
+        [
+          'candidateSha',
+          'candidateTreeSha',
+          'pullRequestNumber',
+          'deploymentRunId',
+          'stagingOrigin',
+        ].every(
+          (key) => Reflect.get(value.authBrowserEvidence!, key) === Reflect.get(value, key),
+        ) &&
+        JSON.stringify(value.freshMfaAction) ===
+          JSON.stringify(value.authBrowserEvidence.freshMfaAction)
+      : value.authBrowserEvidence === undefined;
     if (
+      !validAuthBrowserEvidence ||
       !validMfa ||
       !validChecks ||
       !validFreshMfaAction ||
       !validCostRuntimeProof ||
-      !validPlannerSpecialistEvidence
+      !validPlannerSpecialistEvidence ||
+      !validCareerEvidence
     ) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -442,6 +505,18 @@ const StagingAcceptanceInputSchema = z.discriminatedUnion('acceptanceProfile', [
       candidateSha: ShaSchema,
       deploymentRunId: RunIdSchema,
       stagingOrigin: StageOrigin,
+      acceptanceProfile: z.literal('worker-protocol'),
+      humanMfa: z.literal('user-completed'),
+      checks: WorkerProtocolChecksSchema,
+      correlationIds: z.array(SafeIdSchema).min(1).max(20),
+      acceptedAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+  z
+    .object({
+      candidateSha: ShaSchema,
+      deploymentRunId: RunIdSchema,
+      stagingOrigin: StageOrigin,
       acceptanceProfile: z.literal('auth-browser'),
       humanMfa: z.literal('user-completed'),
       checks: CapabilityResultsSchema,
@@ -461,6 +536,34 @@ const StagingAcceptanceInputSchema = z.discriminatedUnion('acceptanceProfile', [
       humanMfa: z.enum(['user-completed', 'not-required']),
       checks: CostRuntimeChecksSchema,
       costRuntimeProof: Ai20CostRuntimeProofSchema,
+      correlationIds: z.array(SafeIdSchema).min(1).max(20),
+      acceptedAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+  z
+    .object({
+      candidateSha: ShaSchema,
+      deploymentRunId: RunIdSchema,
+      stagingOrigin: StageOrigin,
+      acceptanceProfile: z.literal('career'),
+      humanMfa: z.literal('user-completed'),
+      checks: CareerStagingAcceptanceChecksSchema,
+      careerEvidence: CareerStagingAcceptanceEvidenceSchema,
+      correlationIds: z.array(SafeIdSchema).length(3),
+      acceptedAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+  z
+    .object({
+      candidateSha: ShaSchema,
+      deploymentRunId: RunIdSchema,
+      stagingOrigin: StageOrigin,
+      acceptanceProfile: z.literal('career-auth-browser'),
+      humanMfa: z.literal('user-completed'),
+      checks: CareerStagingAcceptanceChecksSchema,
+      careerEvidence: CareerStagingAcceptanceEvidenceSchema,
+      authBrowserEvidence: z.lazy(() => AuthBrowserStagingSuiteEvidenceSchema),
+      freshMfaAction: FreshMfaActionEvidenceSchema,
       correlationIds: z.array(SafeIdSchema).min(1).max(20),
       acceptedAt: z.string().datetime({ offset: true }),
     })
@@ -525,6 +628,53 @@ const AuthBrowserStagingSuiteEvidenceSchema = z
   })
   .strict();
 
+export const CareerAuthBrowserStagingEvidenceSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    state: z.literal('CAREER_AUTH_BROWSER_STAGING_ACCEPTED'),
+    acceptanceProfile: z.literal('career-auth-browser'),
+    candidateSha: ShaSchema,
+    candidateTreeSha: ShaSchema,
+    pullRequestNumber: z.number().int().positive(),
+    deploymentRunId: RunIdSchema,
+    stagingOrigin: StageOrigin,
+    humanMfa: z.literal('user-completed'),
+    checks: CareerStagingAcceptanceChecksSchema,
+    correlationIds: z.array(SafeIdSchema).min(1).max(20),
+    acceptedAt: z.string().datetime({ offset: true }),
+    careerEvidence: CareerStagingAcceptanceEvidenceSchema,
+    authBrowserEvidence: z.lazy(() => AuthBrowserStagingSuiteEvidenceSchema),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    for (const proof of [value.careerEvidence, value.authBrowserEvidence]) {
+      for (const key of [
+        'candidateSha',
+        'candidateTreeSha',
+        'pullRequestNumber',
+        'deploymentRunId',
+        'stagingOrigin',
+      ] as const) {
+        if (proof[key] !== value[key])
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message:
+              'Both Career and auth-browser proof must match the exact candidate deployment.',
+          });
+      }
+    }
+    if (
+      JSON.stringify(value.checks) !== JSON.stringify(value.careerEvidence.checks) ||
+      JSON.stringify(value.correlationIds) !==
+        JSON.stringify(value.careerEvidence.correlationIds) ||
+      value.acceptedAt !== value.careerEvidence.acceptedAt
+    )
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Combined Career metadata must preserve the actual Career result.',
+      });
+  });
+
 const TargetedStagingSuiteEvidenceSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -573,10 +723,30 @@ const CostRuntimeStagingSuiteEvidenceSchema = z
     }
   });
 
+const WorkerProtocolStagingSuiteEvidenceSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    state: z.literal('WORKER_PROTOCOL_STAGING_ACCEPTED'),
+    candidateTreeSha: ShaSchema,
+    pullRequestNumber: z.number().int().positive(),
+    candidateSha: ShaSchema,
+    deploymentRunId: RunIdSchema,
+    stagingOrigin: StageOrigin,
+    acceptanceProfile: z.literal('worker-protocol'),
+    humanMfa: z.literal('user-completed'),
+    checks: WorkerProtocolChecksSchema,
+    correlationIds: z.array(SafeIdSchema).min(1).max(20),
+    acceptedAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
 const HostedStagingSuiteEvidenceSchema = z.discriminatedUnion('acceptanceProfile', [
+  WorkerProtocolStagingSuiteEvidenceSchema,
   AuthBrowserStagingSuiteEvidenceSchema,
   TargetedStagingSuiteEvidenceSchema,
   CostRuntimeStagingSuiteEvidenceSchema,
+  CareerStagingAcceptanceEvidenceSchema,
+  CareerAuthBrowserStagingEvidenceSchema,
   Ai17PlannerSpecialistEvidenceSchema,
 ]);
 
@@ -748,8 +918,28 @@ export function selectHostedAcceptanceProfile(
   const plannerSpecialist =
     normalizedFiles.includes('docs/build/ticket-readbacks/AI-17.md') ||
     normalizedFiles.includes('tests/e2e-live/ai17-planner-specialist.spec.ts');
+  const workerProtocol = normalizedFiles.includes('docs/build/ticket-readbacks/AI-41.md');
   const costRuntime = normalizedFiles.includes('docs/build/ticket-readbacks/AI-20.md');
+  const career = normalizedFiles.some(
+    (file) =>
+      file === 'docs/build/ticket-readbacks/AI-35.md' ||
+      file === 'tests/e2e-live/career-acceptance.spec.ts',
+  );
+  const careerSurfacePath = (file: string) =>
+    file.startsWith('apps/web/app/(app)/career/') ||
+    file.startsWith('supabase/functions/github-career-sync/');
+  const workerProtocolSurfacePath = (file: string) =>
+    file === 'supabase/config.toml' ||
+    file.startsWith('supabase/functions/inter-agent-delegation/') ||
+    file.startsWith('supabase/functions/inter-agent-handoff/') ||
+    file.startsWith('packages/manager-core/src/delegation') ||
+    file.startsWith('packages/manager-core/src/handoff') ||
+    file === 'packages/contracts/src/execution.ts' ||
+    file === 'packages/contracts/src/execution.test.ts' ||
+    file === 'infrastructure/scripts/qa-workspace-dependencies.ts';
   const authBrowser = normalizedFiles.some((file) => {
+    if (workerProtocol && workerProtocolSurfacePath(file)) return false;
+    if (careerSurfacePath(file)) return false;
     if (
       plannerSpecialist &&
       (file === 'apps/web/app/api/workflows/launch/route.ts' || file === 'supabase/config.toml')
@@ -772,18 +962,29 @@ export function selectHostedAcceptanceProfile(
       file === 'tests/e2e/platform-authenticated.spec.ts'
     );
   });
-  if ((costRuntime && plannerSpecialist) || ((costRuntime || plannerSpecialist) && authBrowser)) {
+  if (
+    (costRuntime && (plannerSpecialist || career)) ||
+    ((costRuntime || plannerSpecialist) && authBrowser)
+  ) {
     throw new Error(
       'AI-20 cost-runtime and auth-browser proof cannot share one acceptance profile.',
     );
   }
-  const inferred = costRuntime
-    ? 'cost-runtime'
-    : plannerSpecialist
-      ? 'planner-specialist'
-      : authBrowser
-        ? 'auth-browser'
-        : 'targeted';
+  if (workerProtocol && (costRuntime || authBrowser || career))
+    throw new Error('Worker protocol requires its own staging candidate.');
+  const inferred = workerProtocol
+    ? 'worker-protocol'
+    : costRuntime
+      ? 'cost-runtime'
+      : career
+        ? authBrowser
+          ? 'career-auth-browser'
+          : 'career'
+        : plannerSpecialist
+          ? 'planner-specialist'
+          : authBrowser
+            ? 'auth-browser'
+            : 'targeted';
   if (override !== 'auto' && override !== inferred) {
     throw new Error(
       `Requested staging profile '${override}' does not match inferred '${inferred}'.`,
@@ -970,8 +1171,10 @@ export function createStagingAcceptanceStatus(input: unknown): StagingAcceptance
       ? { plannerSpecialistEvidence: parsed.hostedSuite }
       : {}),
     correlationIds: parsed.hostedSuite.correlationIds,
-    ...(parsed.hostedSuite.workflowRuns ? { workflowRuns: parsed.hostedSuite.workflowRuns } : {}),
-    ...(parsed.hostedSuite.promptGovernanceProof
+    ...('workflowRuns' in parsed.hostedSuite && parsed.hostedSuite.workflowRuns
+      ? { workflowRuns: parsed.hostedSuite.workflowRuns }
+      : {}),
+    ...('promptGovernanceProof' in parsed.hostedSuite && parsed.hostedSuite.promptGovernanceProof
       ? { promptGovernanceProof: parsed.hostedSuite.promptGovernanceProof }
       : {}),
     acceptedAt: parsed.hostedSuite.acceptedAt,

@@ -395,7 +395,8 @@ async function executeAiWorkflow(
   const definitionConfig = definitionResult.data;
   const plannerWorkflow = run.managerCode === "personal" &&
     definition.code === "personal-on-demand-plan";
-  const pendingReservation = await service.from("ai_calls")
+  const pendingReservation = await service
+    .from("ai_calls")
     .select("id,status,response_id,request_id,prompt_version_id,model_id")
     .eq("run_id", run.id)
     .eq("status", "reserved")
@@ -677,7 +678,8 @@ async function executeAiWorkflow(
       responseId: unresolvedCall.data.response_id,
     };
   }
-  const attemptResult = await service.from("job_queue")
+  const attemptResult = await service
+    .from("job_queue")
     .select("id,attempt_count,created_at")
     .eq("run_id", run.id)
     .eq("job_type", "workflow_execute")

@@ -363,6 +363,70 @@ test('local or hosted CI failure cannot produce staging-ready evidence', () => {
   assert.throws(() => ready({ ci: 'failed' }), /ci_not_passed/);
 });
 
+test('AI41 worker protocol requires attended full journey before canonical acceptance', () => {
+  const checks = {
+    realWindowsArtifact: 'passed',
+    freshMfaPairing: 'passed',
+    identityVersionCapabilities: 'passed',
+    harmlessScanReceipt: 'passed',
+    replayImpersonationDenied: 'passed',
+    revocationRecovery: 'passed',
+    repairOldCredentialsDenied: 'passed',
+    outboundOnly: 'passed',
+    incompatibleWorkerBlocked: 'passed',
+  };
+  assert.equal(
+    selectHostedAcceptanceProfile(['docs/build/ticket-readbacks/AI-41.md']),
+    'worker-protocol',
+  );
+  assert.throws(() =>
+    selectHostedAcceptanceProfile(['docs/build/ticket-readbacks/AI-41.md'], 'targeted'),
+  );
+  const suite = {
+    schemaVersion: 1,
+    state: 'WORKER_PROTOCOL_STAGING_ACCEPTED',
+    acceptanceProfile: 'worker-protocol',
+    candidateSha,
+    candidateTreeSha,
+    pullRequestNumber: 152,
+    deploymentRunId: '36474707377',
+    stagingOrigin: origin,
+    humanMfa: 'user-completed',
+    checks,
+    correlationIds: ['worker-scan-trace'],
+    acceptedAt: '2026-10-24T00:00:00Z',
+  };
+  const producer = createHostedStagingSuiteEvidence(suite);
+  const result = createStagingAcceptanceStatus({
+    candidateSha,
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    state: 'success',
+    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'worker-protocol' }),
+    hostedSuite: producer,
+  });
+  assert.equal(result.status.state, 'success');
+  assert.equal(result.acceptance?.acceptanceProfile, 'worker-protocol');
+  for (const key of Object.keys(checks)) {
+    const incomplete = { ...checks };
+    delete incomplete[key as keyof typeof checks];
+    assert.throws(() => createHostedStagingSuiteEvidence({ ...suite, checks: incomplete }), key);
+  }
+  assert.throws(() => createHostedStagingSuiteEvidence({ ...suite, humanMfa: 'not-required' }));
+  assert.throws(() =>
+    createStagingAcceptanceStatus({
+      candidateSha,
+      currentPullRequestHeadSha: nextSha,
+      currentPullRequestTreeSha: candidateTreeSha,
+      currentPullRequestNumber: 152,
+      state: 'success',
+      deployment: candidateDeploymentEvidence({ acceptanceProfile: 'worker-protocol' }),
+      hostedSuite: producer,
+    }),
+  );
+});
+
 const candidateWorkflowNames = ['CI', 'Security', 'CodeQL Advanced', 'Dependency review'] as const;
 function candidateInput(overrides: Record<string, unknown> = {}) {
   return {
@@ -1225,7 +1289,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /candidate_sha:/);
   assert.match(
     deployWorkflow,
-    /acceptance_profile:[\s\S]*options:\s*\[\s*auto,\s*targeted,\s*auth-browser,\s*cost-runtime,[\s\S]*?planner-specialist[\s\S]*?\]/,
+    /acceptance_profile:[\s\S]*options:\s*\[\s*auto,\s*targeted,\s*auth-browser,\s*cost-runtime,\s*planner-specialist,\s*worker-protocol,\s*procurement,\s*career,\s*career-auth-browser,\s*mobile-shortcuts,\s*mobile-shortcuts-action,\s*archive-restore,?\s*\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1430,7 +1494,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(
     deployWorkflow,
-    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser"[\s\S]*"\$ACCEPTANCE_PROFILE" == "planner-specialist"[\s\S]*\]\]/,
+    /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \}\}[\s\S]*\[\[ "\$ACCEPTANCE_PROFILE" == "auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "cost-runtime" \|\| "\$ACCEPTANCE_PROFILE" == "planner-specialist" \|\| "\$ACCEPTANCE_PROFILE" == "worker-protocol" \|\| "\$ACCEPTANCE_PROFILE" == "procurement" \|\| "\$ACCEPTANCE_PROFILE" == "career" \|\| "\$ACCEPTANCE_PROFILE" == "career-auth-browser" \|\| "\$ACCEPTANCE_PROFILE" == "mobile-shortcuts" \|\| "\$ACCEPTANCE_PROFILE" == "mobile-shortcuts-action" \|\| "\$ACCEPTANCE_PROFILE" == "archive-restore" \]\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1452,6 +1516,11 @@ test('production deploy requires status-bound staging acceptance and squash PR p
   assert.match(
     workflow,
     /if: github\.ref == 'refs\/heads\/main'[\s\S]*workflow_run\.conclusion == 'success'[\s\S]*workflow_run\.head_branch == 'main'/,
+  );
+  assert.match(
+    workflow,
+    /supabase db push --linked --include-all --password "\$DB_PASSWORD" --yes/,
+    'production migration push must preserve the complete approved migration history',
   );
   assert.match(
     workflow,
@@ -1769,7 +1838,7 @@ test('AI-17 Planner-to-specialist selection routes its launch boundary to the de
   );
   assert.throws(
     () => selectHostedAcceptanceProfile(ai17CandidateFiles, 'auth-browser'),
-    /does not match inferred|combined acceptance profile is required/,
+    /does not match inferred/,
   );
 });
 
