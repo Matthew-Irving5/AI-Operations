@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import { parseLiveE2eEnvironment, stagingTarget } from '../../apps/web/lib/live-e2e-safety';
 import { resolveGitTreeSha } from '../../infrastructure/scripts/live-acceptance-evidence.js';
+import { Ai17PlannerSpecialistEvidenceSchema } from '../../infrastructure/scripts/release-gate.js';
 
 const env = parseLiveE2eEnvironment(process.env, 'planner-specialist');
 const candidateSha = process.env.LIVE_E2E_CANDIDATE_SHA?.toLowerCase();
@@ -272,6 +273,7 @@ test('AI-17 completes one candidate-bound Planner-to-Travel journey @ai17-planne
     manualMfaChallengeObserved,
     acceptedAt: new Date().toISOString(),
   };
+  Ai17PlannerSpecialistEvidenceSchema.parse(evidence);
   await writeFile(outputPath, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
   await testInfo.attach('ai17-planner-specialist-acceptance.json', {
     path: outputPath,

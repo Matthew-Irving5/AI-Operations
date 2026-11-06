@@ -98,6 +98,24 @@ describe('live auth acceptance harness', () => {
     assert.match(journey, /parseLiveE2eEnvironment\(process\.env, 'planner-specialist'\)/);
     assert.match(journey, /state: 'PLANNER_SPECIALIST_STAGING_ACCEPTED'/);
     assert.match(journey, /acceptanceProfile: 'planner-specialist'/);
+    assert.match(journey, /Ai17PlannerSpecialistEvidenceSchema\.parse\(evidence\)/);
+    assert.match(journey, /humanMfa: 'user-completed'/);
+    assert.match(journey, /checks: \{ plannerToTravelJourney: 'passed' \}/);
+    assert.match(journey, /correlationIds: \[journey\.sourceRun\.correlation_id\]/);
+    assert.match(
+      journey,
+      /specialistRequestCorrelationId: journey\.specialistRequest\.correlation_id/,
+    );
+    assert.match(journey, /specialistReplyCorrelationId: journey\.specialistReply\.correlation_id/);
+    assert.match(
+      journey,
+      /specialistRequestResultReference: journey\.specialistRequest\.result_reference!/,
+    );
+    assert.match(
+      journey,
+      /specialistReplyResultReference: journey\.specialistReply\.result_reference!/,
+    );
+    assert.match(journey, /consolidatedReportRunId: journey\.consolidatedReport\.run_id/);
     assert.match(releaseGate, /plannerSpecialistEvidence: Ai17PlannerSpecialistEvidenceSchema/);
     assert.match(
       releaseGate,
