@@ -452,6 +452,7 @@ test('AI-45 selector keeps its archive MFA paths inside the archive-restore prof
     'infrastructure/scripts/backup-restore.ts',
     'infrastructure/scripts/cli-json-output.ts',
     'infrastructure/scripts/environment-drift.ts',
+    'infrastructure/scripts/live-acceptance-evidence.ts',
     'infrastructure/scripts/release-gate.test.ts',
     'infrastructure/scripts/release-gate.ts',
     'infrastructure/scripts/restore-target.ts',
@@ -477,7 +478,7 @@ test('AI-45 selector keeps its archive MFA paths inside the archive-restore prof
   );
 });
 
-test('AI-45 archive evidence passes producer, strict schema, status and promotion consumers for exact provenance', () => {
+test('AI-45 archive evidence passes producer, strict schema, status and promotion consumers for exact provenance', async () => {
   const checks = {
     stagingDatabaseAndR2Backup: 'passed',
     encryptedPrivateBundle: 'passed',
@@ -487,73 +488,99 @@ test('AI-45 archive evidence passes producer, strict schema, status and promotio
     corruptionDetected: 'passed',
     sourceUnchanged: 'passed',
   } as const;
-  const hostedSuite = {
-    schemaVersion: 1,
-    state: 'ARCHIVE_RESTORE_STAGING_ACCEPTED',
+  const input = {
     acceptanceProfile: 'archive-restore',
     candidateSha,
     candidateTreeSha,
     pullRequestNumber: 152,
     deploymentRunId: '36474707377',
     stagingOrigin: origin,
-    humanMfa: 'user-completed',
+    manualMfaChallengeObserved: true,
     checks,
     correlationIds: ['archive-restore-correlation'],
     acceptedAt: '2026-11-06T10:00:00.000Z',
   };
-  assert.deepEqual(ArchiveRestoreChecksSchema.parse(checks), checks);
-  const produced = createHostedStagingSuiteEvidence(hostedSuite);
-  assert.deepEqual(produced, hostedSuite);
-  const result = createStagingAcceptanceStatus({
-    candidateSha,
-    currentPullRequestHeadSha: candidateSha,
-    currentPullRequestTreeSha: candidateTreeSha,
-    currentPullRequestNumber: 152,
-    state: 'success',
-    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'archive-restore' }),
-    hostedSuite: produced,
-  });
-  assert.equal(result.status.state, 'success');
-  assert.equal(result.acceptance?.acceptanceProfile, 'archive-restore');
-  assert.deepEqual(result.acceptance?.checks, checks);
-  assert.deepEqual(result.acceptance?.correlationIds, hostedSuite.correlationIds);
-  assert.equal(
-    acceptStagingCandidate({
-      ready: ready(),
+  const directory = await mkdtemp(join(tmpdir(), 'ai45-archive-evidence-'));
+  const evidencePath = join(directory, 'acceptance.json');
+  try {
+    await writeLiveStagingAcceptanceEvidence(evidencePath, input);
+    const writtenEvidence = JSON.parse(await readFile(evidencePath, 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    const hostedSuite = createHostedStagingSuiteEvidence(writtenEvidence);
+    assert.equal(hostedSuite.state, 'ARCHIVE_RESTORE_STAGING_ACCEPTED');
+    assert.equal(hostedSuite.humanMfa, 'user-completed');
+    assert.deepEqual(ArchiveRestoreChecksSchema.parse(checks), checks);
+    assert.equal(writtenEvidence.candidateSha, candidateSha);
+    assert.equal(writtenEvidence.candidateTreeSha, candidateTreeSha);
+    assert.equal(writtenEvidence.pullRequestNumber, 152);
+
+    const result = createStagingAcceptanceStatus({
+      candidateSha,
       currentPullRequestHeadSha: candidateSha,
       currentPullRequestTreeSha: candidateTreeSha,
       currentPullRequestNumber: 152,
-      acceptance: result.acceptance!,
-    }).acceptanceProfile,
-    'archive-restore',
-  );
-
-  for (const key of Object.keys(checks)) {
-    const incomplete = { ...checks } as Record<string, string>;
-    delete incomplete[key];
-    assert.throws(
-      () => createHostedStagingSuiteEvidence({ ...hostedSuite, checks: incomplete }),
-      /invalid_evidence/,
-      `missing ${key} must fail closed`,
-    );
-  }
-  assert.throws(
-    () => createHostedStagingSuiteEvidence({ ...hostedSuite, humanMfa: 'not-required' }),
-    /invalid_evidence/,
-  );
-  assert.throws(
-    () =>
-      createStagingAcceptanceStatus({
-        candidateSha,
+      state: 'success',
+      deployment: candidateDeploymentEvidence({ acceptanceProfile: 'archive-restore' }),
+      hostedSuite,
+    });
+    assert.equal(result.status.state, 'success');
+    assert.equal(result.acceptance?.acceptanceProfile, 'archive-restore');
+    assert.deepEqual(result.acceptance?.checks, checks);
+    assert.deepEqual(result.acceptance?.correlationIds, input.correlationIds);
+    assert.equal(
+      acceptStagingCandidate({
+        ready: ready(),
         currentPullRequestHeadSha: candidateSha,
         currentPullRequestTreeSha: candidateTreeSha,
         currentPullRequestNumber: 152,
-        state: 'success',
-        deployment: candidateDeploymentEvidence({ acceptanceProfile: 'archive-restore' }),
-        hostedSuite: { ...hostedSuite, deploymentRunId: '36474707378' },
+        acceptance: result.acceptance!,
+      }).acceptanceProfile,
+      'archive-restore',
+    );
+
+    for (const key of Object.keys(checks)) {
+      const incomplete = { ...checks } as Record<string, string>;
+      delete incomplete[key];
+      const rejectedPath = join(directory, `rejected-${key}.json`);
+      await assert.rejects(
+        writeLiveStagingAcceptanceEvidence(rejectedPath, { ...input, checks: incomplete }),
+        `writer must reject missing ${key}`,
+      );
+      await assert.rejects(stat(rejectedPath));
+      assert.throws(
+        () => createHostedStagingSuiteEvidence({ ...writtenEvidence, checks: incomplete }),
+        /invalid_evidence/,
+        `missing ${key} must fail closed at the hosted schema`,
+      );
+    }
+    await assert.rejects(
+      writeLiveStagingAcceptanceEvidence(join(directory, 'no-mfa.json'), {
+        ...input,
+        manualMfaChallengeObserved: false,
       }),
-    /deployment_run_mismatch/,
-  );
+    );
+    assert.throws(
+      () => createHostedStagingSuiteEvidence({ ...writtenEvidence, humanMfa: 'not-required' }),
+      /invalid_evidence/,
+    );
+    assert.throws(
+      () =>
+        createStagingAcceptanceStatus({
+          candidateSha,
+          currentPullRequestHeadSha: candidateSha,
+          currentPullRequestTreeSha: candidateTreeSha,
+          currentPullRequestNumber: 152,
+          state: 'success',
+          deployment: candidateDeploymentEvidence({ acceptanceProfile: 'archive-restore' }),
+          hostedSuite: { ...writtenEvidence, deploymentRunId: '36474707378' },
+        }),
+      /deployment_run_mismatch/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 const candidateWorkflowNames = ['CI', 'Security', 'CodeQL Advanced', 'Dependency review'] as const;
