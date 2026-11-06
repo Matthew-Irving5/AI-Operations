@@ -24,6 +24,7 @@ on:
             targeted,
             auth-browser,
             cost-runtime,
+            google-oauth,
             planner-specialist,
             worker-protocol,
             procurement,
@@ -361,7 +362,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
       - name: Set candidate status while hosted acceptance is pending
-        if: inputs.candidate_sha != '' && (steps.acceptance-profile.outputs.acceptance_profile == 'auth-browser' || steps.acceptance-profile.outputs.acceptance_profile == 'cost-runtime' || steps.acceptance-profile.outputs.acceptance_profile == 'planner-specialist' || steps.acceptance-profile.outputs.acceptance_profile == 'worker-protocol')
+        if: inputs.candidate_sha != '' && (steps.acceptance-profile.outputs.acceptance_profile == 'auth-browser' || steps.acceptance-profile.outputs.acceptance_profile == 'cost-runtime' || steps.acceptance-profile.outputs.acceptance_profile == 'planner-specialist' || steps.acceptance-profile.outputs.acceptance_profile == 'worker-protocol' || steps.acceptance-profile.outputs.acceptance_profile == 'google-oauth')
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
@@ -375,6 +376,8 @@ jobs:
             description="Staging is deployed; waiting for the candidate-bound Planner-to-Travel journey."
           elif [[ "$ACCEPTANCE_PROFILE" == "worker-protocol" ]]; then
             description="Staging is deployed; waiting for attended Windows worker acceptance."
+          elif [[ "$ACCEPTANCE_PROFILE" == "google-oauth" ]]; then
+            description="Staging is deployed; waiting for selected Google OAuth and Picker acceptance."
           else
             description="Staging is deployed; waiting for auth-browser acceptance."
           fi
@@ -431,7 +434,7 @@ jobs:
           set -euo pipefail
           [[ "$CANDIDATE_SHA" =~ ^[a-f0-9]{40}$ && "$CANDIDATE_SHA" == "$DISPATCH_SHA" && "$DISPATCH_REF" == refs/heads/* && "$DISPATCH_REF" != "refs/heads/main" ]] || { echo "Acceptance dispatch must use the current non-main PR branch head."; exit 1; }
           [[ "$DEPLOYMENT_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]] || { echo "Deployment run ID is invalid."; exit 1; }
-          [[ "$ACCEPTANCE_PROFILE" == "auth-browser" || "$ACCEPTANCE_PROFILE" == "cost-runtime" || "$ACCEPTANCE_PROFILE" == "planner-specialist" || "$ACCEPTANCE_PROFILE" == "worker-protocol" || "$ACCEPTANCE_PROFILE" == "procurement" || "$ACCEPTANCE_PROFILE" == "career" || "$ACCEPTANCE_PROFILE" == "career-auth-browser" || "$ACCEPTANCE_PROFILE" == "mobile-shortcuts" || "$ACCEPTANCE_PROFILE" == "mobile-shortcuts-action" || "$ACCEPTANCE_PROFILE" == "archive-restore" ]] || { echo "Acceptance dispatch requires the exact attended acceptance profile."; exit 1; }
+          [[ "$ACCEPTANCE_PROFILE" == "auth-browser" || "$ACCEPTANCE_PROFILE" == "cost-runtime" || "$ACCEPTANCE_PROFILE" == "planner-specialist" || "$ACCEPTANCE_PROFILE" == "worker-protocol" || "$ACCEPTANCE_PROFILE" == "google-oauth" || "$ACCEPTANCE_PROFILE" == "procurement" || "$ACCEPTANCE_PROFILE" == "career" || "$ACCEPTANCE_PROFILE" == "career-auth-browser" || "$ACCEPTANCE_PROFILE" == "mobile-shortcuts" || "$ACCEPTANCE_PROFILE" == "mobile-shortcuts-action" || "$ACCEPTANCE_PROFILE" == "archive-restore" ]] || { echo "Acceptance dispatch requires the exact attended acceptance profile."; exit 1; }
           [[ "$OUTCOME" == "accepted" || "$OUTCOME" == "failed" ]] || { echo "Acceptance outcome is invalid."; exit 1; }
           gh api "repos/$GH_REPOSITORY/commits/$CANDIDATE_SHA/pulls" > candidate-pulls.json
           pr_count="$(jq --arg repo "$GH_REPOSITORY" --arg sha "$CANDIDATE_SHA" '[.[] | select(.state == "open" and .base.ref == "main" and .head.sha == $sha and .head.repo.full_name == $repo)] | length' candidate-pulls.json)"

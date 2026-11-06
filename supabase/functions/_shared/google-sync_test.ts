@@ -4,9 +4,11 @@ import {
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   APPROVED_GOOGLE_SCOPES,
+  fetchSelectedDriveFiles,
   GoogleSyncError,
   hasExactGoogleRoleScopes,
   hasExactGoogleScopes,
+  selectedDriveChanges,
   shouldRecoverGmailHistoryCursor,
   shouldSeedGmailCursor,
 } from "./google-sync.ts";
@@ -75,4 +77,52 @@ Deno.test("Google sync errors retain safe stage and provider diagnostics", () =>
   assertEquals(error.stage, "calendar_list");
   assertEquals(error.status, 403);
   assertEquals(error.providerError, "accessnotconfigured");
+});
+
+Deno.test("Drive metadata discovery fetches only the persisted selected file IDs", async () => {
+  const requestedUrls: string[] = [];
+  const files = await fetchSelectedDriveFiles(
+    ["selected-file-1", "selected/file-2"],
+    { authorization: "Bearer test-token" },
+    (input) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      const id = decodeURIComponent(url.split("/files/")[1].split("?")[0]);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id,
+            name: `Selected ${id}`,
+            mimeType: "text/plain",
+          }),
+          { status: 200 },
+        ),
+      );
+    },
+  );
+
+  assertEquals(requestedUrls, [
+    "https://www.googleapis.com/drive/v3/files/selected-file-1?fields=id%2Cname%2CmimeType%2CmodifiedTime%2Cmd5Checksum%2Ctrashed",
+    "https://www.googleapis.com/drive/v3/files/selected%2Ffile-2?fields=id%2Cname%2CmimeType%2CmodifiedTime%2Cmd5Checksum%2Ctrashed",
+  ]);
+  assertEquals(files.map((file) => file.id), [
+    "selected-file-1",
+    "selected/file-2",
+  ]);
+  assertEquals(requestedUrls.some((url) => url.includes("/files?")), false);
+});
+
+Deno.test("Drive change pages are filtered by persisted selection before metadata fetch", () => {
+  assertEquals(
+    selectedDriveChanges([
+      { fileId: "selected-file", removed: false },
+      { fileId: "unselected-file", removed: false },
+      { fileId: "selected-removed", removed: true },
+      { removed: true },
+    ], new Set(["selected-file", "selected-removed"])),
+    [
+      { fileId: "selected-file", removed: false },
+      { fileId: "selected-removed", removed: true },
+    ],
+  );
 });

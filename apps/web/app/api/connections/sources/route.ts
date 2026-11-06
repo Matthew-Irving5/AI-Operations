@@ -20,9 +20,14 @@ async function accessTokenOrResponse() {
 }
 
 export async function GET(request: Request) {
-  const connectionId = new URL(request.url).searchParams.get('connectionId');
+  const searchParams = new URL(request.url).searchParams;
+  const connectionId = searchParams.get('connectionId');
+  const operation = searchParams.get('operation');
   const parsed = connectionIdSchema.safeParse(connectionId);
   if (!parsed.success) return NextResponse.json({ code: 'invalid_request' }, { status: 400 });
+  if (operation !== null && operation !== 'picker_config') {
+    return NextResponse.json({ code: 'invalid_request' }, { status: 400 });
+  }
   const auth = await accessTokenOrResponse();
   if ('response' in auth) return auth.response;
   const upstream = new URL(
@@ -30,6 +35,7 @@ export async function GET(request: Request) {
     process.env.NEXT_PUBLIC_SUPABASE_URL,
   );
   upstream.searchParams.set('connectionId', parsed.data);
+  if (operation) upstream.searchParams.set('operation', operation);
   const response = await fetch(upstream, {
     headers: { authorization: `Bearer ${auth.accessToken}`, accept: 'application/json' },
     cache: 'no-store',
