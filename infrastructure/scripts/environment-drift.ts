@@ -22,7 +22,7 @@ const ManifestSchema = z.object({
   environments: z.object({ staging: EnvironmentSchema, production: EnvironmentSchema }),
   allowedDifferences: z.array(z.string()),
   edgeSecretNameException: z.object({
-    ownerIssue: z.literal('AI-15'),
+    ownerIssue: z.enum(['AI-15', 'AI-41']),
     stagingOnly: z.array(z.string()),
     productionOnly: z.array(z.string()),
     removalCondition: z.string().min(1),

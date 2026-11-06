@@ -11,7 +11,7 @@ export function OnDemandLaunchForm({
   initialModelCeiling,
   revisionOfResearchRunId,
 }: Readonly<{
-  manager: 'travel' | 'procurement';
+  manager: 'travel' | 'procurement' | 'personal';
   initialProcurementRequest?: ProcurementLaunchRequest;
   initialHardCapMinor?: number;
   initialSearchCeiling?: number;
@@ -24,7 +24,11 @@ export function OnDemandLaunchForm({
   async function submit(formData: FormData) {
     setIsSubmitting(true);
     setIsError(false);
-    setStatus('Submitting bounded research request...');
+    setStatus(
+      manager === 'personal'
+        ? 'Submitting bounded planning request...'
+        : 'Submitting bounded research request...',
+    );
     const request =
       manager === 'procurement'
         ? {
@@ -86,11 +90,16 @@ export function OnDemandLaunchForm({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           workflowCode:
-            manager === 'travel' ? 'travel-on-demand-plan' : 'procurement-on-demand-research',
+            manager === 'personal'
+              ? 'personal-on-demand-plan'
+              : manager === 'travel'
+                ? 'travel-on-demand-plan'
+                : 'procurement-on-demand-research',
           managerCode: manager,
           hardCapUsd: Number(formData.get('hardCapUsd')),
-          searchCeiling: Number(formData.get('searchCeiling')),
-          modelCeiling: initialModelCeiling ?? 'gpt-5.6-terra',
+          searchCeiling: manager === 'personal' ? 0 : Number(formData.get('searchCeiling')),
+          modelCeiling:
+            initialModelCeiling ?? (manager === 'personal' ? 'gpt-5.6-luna' : 'gpt-5.6-terra'),
           idempotencyKey: crypto.randomUUID(),
           ...(revisionOfResearchRunId ? { revisionOfResearchRunId } : {}),
           request,
@@ -100,7 +109,9 @@ export function OnDemandLaunchForm({
         setStatus(
           revisionOfResearchRunId
             ? 'Revised request queued. The previous decision remains available as history.'
-            : 'Request queued. Its approved cap and brief are retained with the run.',
+            : manager === 'personal'
+              ? 'Plan queued. Its approved cap and brief are retained with the run.'
+              : 'Request queued. Its approved cap and brief are retained with the run.',
         );
       } else {
         setIsError(true);
@@ -121,7 +132,13 @@ export function OnDemandLaunchForm({
   }
   return (
     <form className="stack card" action={submit}>
-      <h2>{revisionOfResearchRunId ? 'Revise saved request' : 'Launch bounded research'}</h2>
+      <h2>
+        {revisionOfResearchRunId
+          ? 'Revise saved request'
+          : manager === 'personal'
+            ? 'Launch a bounded plan'
+            : 'Launch bounded research'}
+      </h2>
       {manager === 'procurement' ? (
         <>
           <label>
@@ -229,30 +246,34 @@ export function OnDemandLaunchForm({
           name="hardCapUsd"
           type="number"
           min="0.01"
-          max="1000"
+          max={manager === 'personal' ? '2' : '1000'}
           step="0.01"
-          defaultValue={String((initialHardCapMinor ?? 200) / 100)}
+          defaultValue={String((initialHardCapMinor ?? (manager === 'personal' ? 25 : 200)) / 100)}
           required
         />
       </label>
-      <label>
-        Search ceiling{' '}
-        <input
-          name="searchCeiling"
-          type="number"
-          min={manager === 'procurement' ? 1 : 0}
-          max="20"
-          defaultValue={initialSearchCeiling ?? 10}
-          required
-        />
-      </label>
+      {manager === 'personal' ? null : (
+        <label>
+          Search ceiling{' '}
+          <input
+            name="searchCeiling"
+            type="number"
+            min={manager === 'procurement' ? 1 : 0}
+            max="20"
+            defaultValue={initialSearchCeiling ?? 10}
+            required
+          />
+        </label>
+      )}
       {initialModelCeiling ? <p>Model ceiling retained: {initialModelCeiling}.</p> : null}
       <button type="submit" disabled={isSubmitting}>
         {isSubmitting
           ? 'Submitting…'
           : revisionOfResearchRunId
             ? 'Re-run with revised requirements'
-            : 'Queue research'}
+            : manager === 'personal'
+              ? 'Queue plan'
+              : 'Queue research'}
       </button>
       {status ? (
         <p aria-live="polite" role={isError ? 'alert' : 'status'}>

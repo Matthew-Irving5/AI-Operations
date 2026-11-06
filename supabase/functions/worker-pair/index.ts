@@ -44,7 +44,7 @@ Deno.serve(async (request) => {
   }
   const secret = await createWorkerSecret();
   const { data, error } = await workerService.from("worker_devices").update({
-    state: "paired",
+    state: "offline",
     paired_at: new Date().toISOString(),
     pairing_hash: null,
     pairing_expires_at: null,

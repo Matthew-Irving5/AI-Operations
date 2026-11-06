@@ -25,6 +25,7 @@ $null = $AllowedRootsJson | ConvertFrom-Json
 $runnerDirectory = Join-Path $env:ProgramData 'AI-Operations'
 New-Item -ItemType Directory -Force -Path $runnerDirectory | Out-Null
 $runnerPath = Join-Path $runnerDirectory 'run-worker.ps1'
+$startWorkerPath = Join-Path $runnerDirectory 'start-worker.ps1'
 $runner = @"
 `$env:AI_OPERATIONS_CONTROL_PLANE_URL = '$ControlPlaneUrl'
 `$env:AI_OPERATIONS_DEVICE_ID = '$DeviceId'
@@ -37,6 +38,21 @@ $runner = @"
 & '$WorkerPath'
 "@
 Set-Content -LiteralPath $runnerPath -Value $runner -Encoding UTF8
+$startWorker = @'
+param(
+  [ValidateNotNullOrEmpty()] [string]$TaskName = 'AI Operations Windows Worker'
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+if (-not $task) {
+  throw "The worker task '$TaskName' is not installed. Install the worker for this environment first."
+}
+Start-ScheduledTask -TaskName $TaskName
+Write-Output "Started '$TaskName'. Refresh AI Operations after the next heartbeat."
+'@
+Set-Content -LiteralPath $startWorkerPath -Value $startWorker -Encoding UTF8
 
 $action = New-ScheduledTaskAction -Execute 'PowerShell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$runnerPath`""
 $trigger = New-ScheduledTaskTrigger -AtStartup

@@ -27,8 +27,12 @@ export function buildCurrentPromptResponse(
   if (
     typeof template.id !== "string" ||
     !/^[0-9a-f-]{36}$/i.test(template.id) ||
-    template.code !== "controlled-agent-report" ||
-    template.managerCode !== "systems" ||
+    !(
+      (template.code === "controlled-agent-report" &&
+        template.managerCode === "systems") ||
+      (template.code === "planner-agent-report" &&
+        template.managerCode === "personal")
+    ) ||
     !Number.isSafeInteger(template.active_version) ||
     template.active_version !== version.version ||
     template.id !== version.template_id ||

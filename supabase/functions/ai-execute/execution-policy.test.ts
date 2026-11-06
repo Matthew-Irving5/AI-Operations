@@ -11,6 +11,11 @@ Deno.test("workflow mode is allowlisted and manager-bound", () => {
     throw new Error("expected_approved_ai_workflow");
   }
   if (
+    resolveWorkflowMode("personal", "personal-on-demand-plan") !== "ai"
+  ) {
+    throw new Error("planner_on_demand_workflow_must_use_governed_ai");
+  }
+  if (
     resolveWorkflowMode("systems", "systems-daily-cost-capacity") !==
       "deterministic"
   ) {

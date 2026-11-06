@@ -22,6 +22,11 @@ import {
   loadTrustedWorkflowExecution,
   type WorkflowExecutionSource,
 } from "./orchestration-contract.ts";
+import {
+  isPlannerDelegationResume,
+  plannerDelegationTool,
+} from "../_shared/planner-delegation.ts";
+import { providerRequestId } from "./provider-request-id.ts";
 
 const service = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
@@ -93,6 +98,7 @@ function executionSource(): WorkflowExecutionSource {
         id: result.data.id,
         userId: result.data.user_id,
         workflowDefinitionId: result.data.workflow_definition_id,
+        costRootRunId: result.data.cost_root_run_id,
         managerCode: manager.code,
         status: result.data.status,
         trigger: result.data.trigger,
@@ -138,6 +144,8 @@ function executionSource(): WorkflowExecutionSource {
         .select("payload")
         .eq("run_id", runId)
         .eq("job_type", "workflow_execute")
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
       if (result.error || !result.data) return null;
       const payload: unknown = result.data.payload;
@@ -361,7 +369,7 @@ async function executeAiWorkflow(
     .select(
       "id,hard_cap,reserved_amount,model_ceiling,status,expires_at,search_ceiling",
     )
-    .eq("run_id", run.id)
+    .eq("run_id", run.costRootRunId ?? run.id)
     .maybeSingle();
   if (budgetResult.error) {
     return outcomeFor(run.id, "terminal_failure", "execution_budget_missing");
@@ -411,6 +419,8 @@ async function executeAiWorkflow(
     );
   }
   const definitionConfig = definitionResult.data;
+  const plannerWorkflow = run.managerCode === "personal" &&
+    definition.code === "personal-on-demand-plan";
   const pendingReservation = await service
     .from("ai_calls")
     .select("id,status,response_id,request_id,prompt_version_id,model_id")
@@ -458,6 +468,8 @@ async function executeAiWorkflow(
       "code",
       isProcurement
         ? "procurement-research-comparison"
+        : plannerWorkflow
+        ? "planner-agent-report"
         : "controlled-agent-report",
     )
     .maybeSingle();
@@ -715,9 +727,11 @@ async function executeAiWorkflow(
   }
   const attemptResult = await service
     .from("job_queue")
-    .select("attempt_count")
+    .select("id,attempt_count,created_at")
     .eq("run_id", run.id)
     .eq("job_type", "workflow_execute")
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
   if (
     attemptResult.error || typeof attemptResult.data?.attempt_count !== "number"
@@ -725,7 +739,11 @@ async function executeAiWorkflow(
     return outcomeFor(run.id, "retryable_failure", "queue_attempt_unavailable");
   }
   const requestId = pendingReservation.data?.request_id ??
-    `ai15:${run.id}:attempt:${Math.max(1, attemptResult.data.attempt_count)}`;
+    providerRequestId(
+      run.id,
+      attemptResult.data.id,
+      attemptResult.data.attempt_count,
+    );
   const priorCallResult = pendingReservation.data
     ? { data: pendingReservation.data, error: null }
     : await service
@@ -808,9 +826,14 @@ async function executeAiWorkflow(
           max_output_tokens: maximumOutputTokens,
           service_tier: "default",
           store: false,
-          tools: promptGovernance.toolPolicy.tools.map((tool) =>
-            tool.type === "web_search" ? { type: "web_search" } : tool
-          ),
+          tools: [
+            ...promptGovernance.toolPolicy.tools.map((tool) =>
+              tool.type === "web_search" ? { type: "web_search" } : tool
+            ),
+            ...(plannerWorkflow && !isPlannerDelegationResume(input)
+              ? [plannerDelegationTool]
+              : []),
+          ],
           ...(isProcurement
             ? { tool_choice: "required", max_tool_calls: searchCeiling }
             : {}),

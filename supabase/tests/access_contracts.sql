@@ -102,9 +102,10 @@ insert into expected_authenticated_access(table_name, select_grant, policy_name)
   ('personal_profiles', true, 'own_profiles'),
   ('personal_locations', true, 'own_personal_locations'),
   ('time_preferences', true, 'own_time_preferences'),
-  ('worker_devices', false, 'own_worker_devices');
+  ('worker_devices', false, 'own_worker_devices'),
+  ('worker_heartbeats', true, 'own_worker_heartbeats');
 
-select plan(26);
+select plan(27);
 
 select ok(
   not exists (
@@ -291,6 +292,8 @@ select ok(
         and column_info.attname = any(array[
           'id', 'user_id', 'label', 'public_key_b64', 'pairing_expires_at',
           'paired_at', 'revoked_at', 'last_heartbeat_at', 'state', 'created_at'
+          , 'desired_state', 'control_generation', 'acknowledged_generation',
+          'last_poll_at', 'observed_mode'
         ])
       )
   ),
@@ -331,6 +334,11 @@ select ok(
     and not has_column_privilege('authenticated', 'public.worker_devices', 'pairing_hash', 'SELECT')
     and not has_column_privilege('authenticated', 'public.worker_devices', 'worker_secret_hash', 'SELECT'),
   'worker UI reads only its approved projection and cannot read secret hashes'
+);
+
+select ok(
+  has_table_privilege('authenticated', 'public.worker_heartbeats', 'SELECT'),
+  'worker UI can read owner-scoped heartbeat health under RLS'
 );
 
 select ok(

@@ -170,6 +170,22 @@
       "rationale": "The health export integration authenticates with a server-only secret and never a browser credential."
     },
     {
+      "slug": "inter-agent-delegation",
+      "authMode": "worker_secret",
+      "verifyJwt": false,
+      "principal": "internal job worker",
+      "identitySource": "configured WORKER_SECRET in the x-worker-secret header",
+      "rationale": "Planner delegation is accepted only from the authenticated internal worker before persisted run and manager capabilities are checked."
+    },
+    {
+      "slug": "inter-agent-handoff",
+      "authMode": "worker_secret",
+      "verifyJwt": false,
+      "principal": "internal job worker",
+      "identitySource": "configured WORKER_SECRET in the x-worker-secret header",
+      "rationale": "Conversation handoffs are accepted only from the authenticated internal worker before owner-scoped persistence and manager capabilities are checked."
+    },
+    {
       "slug": "job-complete",
       "authMode": "worker_secret",
       "verifyJwt": false,

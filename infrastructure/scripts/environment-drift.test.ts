@@ -462,15 +462,29 @@ test('accepts same release bundle attestations while ignoring deployment version
   assert.deepEqual(compareInventory(inventory, production, ['staging', 'production']), []);
 });
 
-test('permits only the documented AI-15 staging-only WORKER_SECRET exception', () => {
+test('permits only the documented staging-only secret exceptions', () => {
   const withoutWorkerSecret = {
     ...inventory,
-    secrets: inventory.secrets.filter((name) => name !== 'WORKER_SECRET'),
+    secrets: inventory.secrets.filter(
+      (name) =>
+        !['WORKER_SECRET', 'GOOGLE_CLOUD_PROJECT_NUMBER', 'GOOGLE_PICKER_API_KEY'].includes(name),
+    ),
   };
-  const approved = { stagingOnly: ['WORKER_SECRET'], productionOnly: [] };
+  const approved = {
+    stagingOnly: ['GOOGLE_CLOUD_PROJECT_NUMBER', 'GOOGLE_PICKER_API_KEY', 'WORKER_SECRET'],
+    productionOnly: [],
+  };
   assert.deepEqual(
     compareInventory(
-      { ...inventory, secrets: [...inventory.secrets, 'WORKER_SECRET'] },
+      {
+        ...inventory,
+        secrets: [
+          ...inventory.secrets,
+          'GOOGLE_CLOUD_PROJECT_NUMBER',
+          'GOOGLE_PICKER_API_KEY',
+          'WORKER_SECRET',
+        ],
+      },
       withoutWorkerSecret,
       ['staging', 'production'],
       approved,

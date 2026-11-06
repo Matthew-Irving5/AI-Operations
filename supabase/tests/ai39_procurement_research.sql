@@ -1,10 +1,22 @@
 begin;
-select plan(19);
+select plan(20);
 
 create temporary table ai39_fixture on commit drop as
 select
   '{"item":"Synthetic device","purpose":"Evaluate a synthetic device","market":"UK","currency":"GBP","maxTotalCostMinor":25000,"requiredBy":null,"requirements":[{"id":"repairable","label":"Must be repairable","kind":"hard"}],"existingProducts":[]}'::jsonb as request,
   'https://example.com/synthetic-device'::text as source_url;
+
+select is(
+  (select count(*)::integer
+   from public.model_pricing price
+   join public.ai_model_catalog model on model.id = price.model_id
+   where model.model_id in ('gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol')
+     and price.effective_from >= now() - interval '90 days'
+     and price.verified_at >= now() - interval '90 days'
+     and price.source_url = 'https://developers.openai.com/api/docs/models/compare'),
+  3,
+  'the local synthetic seed provides fresh verified pricing for every test model past the fixed-date boundary'
+);
 
 select lives_ok(
   $$select public.create_on_demand_run_request(

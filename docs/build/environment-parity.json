@@ -52,10 +52,10 @@
     "secret values (values are never read or compared)"
   ],
   "edgeSecretNameException": {
-    "ownerIssue": "AI-15",
-    "stagingOnly": ["WORKER_SECRET"],
+    "ownerIssue": "AI-41",
+    "stagingOnly": ["GOOGLE_CLOUD_PROJECT_NUMBER", "GOOGLE_PICKER_API_KEY", "WORKER_SECRET"],
     "productionOnly": [],
-    "removalCondition": "Remove this exception after a distinct production WORKER_SECRET is configured through the secure deployment handoff and production run-targeted dispatch smoke passes. Never copy the staging value."
+    "removalCondition": "Remove the Google names after their unused staging secrets are removed or their production integration is configured; remove WORKER_SECRET after a distinct production caller is configured through the AI-15 secure handoff. Never copy staging values."
   },
   "requiredEdgeSecrets": [
     "PUBLIC_APP_ORIGIN",

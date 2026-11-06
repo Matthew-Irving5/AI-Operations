@@ -13,6 +13,16 @@ on conflict (id) do update set email = excluded.email, is_allowed = true;
 
 insert into public.managers(code,name,description,risk_class) values ('finance','Finance Operations','Synthetic seed','high') on conflict(code) do nothing;
 
+-- Local-only fresh pricing versions keep synthetic reservation tests independent of the age of the immutable migration seed.
+insert into public.model_pricing(model_id, effective_from, input_per_million, cached_input_per_million, output_per_million, source_url, verified_at, cache_write_multiplier, web_search_per_call)
+select id, now(), case model_id when 'gpt-5.6-luna' then 1.00 when 'gpt-5.6-terra' then 2.50 else 5.00 end,
+       case model_id when 'gpt-5.6-luna' then 0.10 when 'gpt-5.6-terra' then 0.25 else 0.50 end,
+       case model_id when 'gpt-5.6-luna' then 6.00 when 'gpt-5.6-terra' then 15.00 else 30.00 end,
+       'https://developers.openai.com/api/docs/models/compare', now(), 1.25, 0
+from public.ai_model_catalog
+where model_id in ('gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol')
+on conflict (model_id, effective_from) do nothing;
+
 insert into public.workflow_runs(id, user_id, workflow_definition_id, status, trigger, correlation_id, idempotency_key, requested_at, completed_at)
 select '00000000-0000-4000-8000-000000000303', '00000000-0000-0000-0000-000000000101', id, 'succeeded', 'schedule', '00000000-0000-4000-8000-000000000404', 'e2e-synthetic-systems-run', now() - interval '1 hour', now() - interval '55 minutes'
 from public.workflow_definitions where code = 'systems-daily-cost-capacity'

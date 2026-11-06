@@ -30,7 +30,12 @@ const transitionSchema = z
   .strict();
 
 const requestSchema = z.discriminatedUnion('operation', [
-  z.object({ operation: z.literal('get_current') }).strict(),
+  z
+    .object({
+      operation: z.literal('get_current'),
+      templateCode: z.enum(['controlled-agent-report', 'planner-agent-report']).optional(),
+    })
+    .strict(),
   candidateSchema,
   z.object({ operation: z.literal('evaluate'), candidateId: z.string().uuid() }).strict(),
   transitionSchema,

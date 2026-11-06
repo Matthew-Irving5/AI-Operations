@@ -2,6 +2,11 @@ import type { ActionProposal, ManagerCode } from '@ai-operations/contracts';
 export * from './orchestrator';
 export * from './procurement';
 export * from './registry';
+export * from './delegation';
+export * from './delegation-runtime';
+export * from './delegation-persistence';
+export * from './handoff-runtime';
+export * from './handoff-persistence';
 
 export type { ActionProposal, ManagerCode } from '@ai-operations/contracts';
 

@@ -1,25 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import type { WorkerDevice } from '../../../lib/platform-data';
+import { titleCase, workerDisplayState } from '../../../lib/worker-state';
 
-type Device = {
-  id: string;
-  label: string;
-  state: string;
-  paired_at: string | null;
-  revoked_at: string | null;
-  last_heartbeat_at: string | null;
-};
-type Scan = {
-  id: string;
-  device_id: string;
-  scan_kind: string;
-  status: string;
-  progress: number;
-  result_verified_at: string | null;
-};
-
+type Device = WorkerDevice;
 type ApiResult = {
   code?: string;
   stage?: string;
@@ -104,13 +90,22 @@ function errorText(body: ApiResult | null, status: number, stage: string) {
 
 export function DeviceManager({
   devices,
-  scans,
   currentTimeMs,
-}: Readonly<{ devices: Device[]; scans: Scan[]; currentTimeMs: number }>) {
+  workerStartCommand,
+}: Readonly<{
+  devices: Device[];
+  currentTimeMs: number;
+  workerStartCommand: string;
+}>) {
   const router = useRouter();
+  const [isRefreshing, startRefresh] = useTransition();
   const [label, setLabel] = useState('Windows PC');
   const [publicKey, setPublicKey] = useState('');
   const [message, setMessage] = useState('');
+  const [controlState, setControlState] = useState<Record<string, string>>({});
+  const [controlTargets, setControlTargets] = useState<
+    Record<string, 'active' | 'online' | 'offline'>
+  >({});
   const [pairing, setPairing] = useState<{
     deviceId: string;
     code: string;
@@ -236,6 +231,96 @@ export function DeviceManager({
     );
   }
 
+  function checkConnection() {
+    startRefresh(() => router.refresh());
+  }
+
+  useEffect(() => {
+    const waitingForControl = Object.keys(controlTargets).length > 0;
+    if (!waitingForControl) return;
+    const interval = window.setInterval(() => {
+      startRefresh(() => router.refresh());
+    }, 10000);
+    return () => window.clearInterval(interval);
+  }, [controlTargets, router, startRefresh]);
+
+  useEffect(() => {
+    const confirmed = Object.entries(controlTargets).filter(([deviceId, target]) => {
+      const device = devices.find((candidate) => candidate.id === deviceId);
+      return device ? workerDisplayState(device, currentTimeMs) === target : false;
+    });
+    if (confirmed.length === 0) return;
+    const timer = window.setTimeout(() => {
+      setControlTargets((current) => {
+        const next = { ...current };
+        for (const [deviceId] of confirmed) delete next[deviceId];
+        return next;
+      });
+      setControlState((current) => {
+        const next = { ...current };
+        for (const [deviceId] of confirmed) delete next[deviceId];
+        return next;
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [controlTargets, currentTimeMs, devices]);
+
+  async function controlWorker(deviceId: string, action: 'online' | 'active' | 'offline') {
+    const pending =
+      action === 'active'
+        ? 'Resumed — queued…'
+        : action === 'online'
+          ? 'Paused — queued…'
+          : 'Stopped — queued…';
+    setControlTargets((current) => ({ ...current, [deviceId]: action }));
+    setControlState((current) => ({ ...current, [deviceId]: pending }));
+    try {
+      const response = await fetch('/api/devices/control', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ deviceId, desiredState: action }),
+      });
+      if (!response.ok) throw new Error('control_request_failed');
+      router.refresh();
+    } catch {
+      setControlTargets((current) => {
+        const next = { ...current };
+        delete next[deviceId];
+        return next;
+      });
+      setControlState((current) => ({ ...current, [deviceId]: 'Unable to update worker state.' }));
+    }
+  }
+
+  async function startWorker(deviceId: string) {
+    setControlTargets((current) => ({ ...current, [deviceId]: 'active' }));
+    setControlState((current) => ({ ...current, [deviceId]: 'Started — queued…' }));
+    try {
+      const response = await fetch('/api/devices/control', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ deviceId, desiredState: 'active' }),
+      });
+      if (!response.ok) throw new Error('control_request_failed');
+      await navigator.clipboard.writeText(workerStartCommand);
+      setControlState((current) => ({
+        ...current,
+        [deviceId]: 'Started — command copied; queued…',
+      }));
+      router.refresh();
+    } catch {
+      setControlTargets((current) => {
+        const next = { ...current };
+        delete next[deviceId];
+        return next;
+      });
+      setControlState((current) => ({
+        ...current,
+        [deviceId]: 'Could not copy the start command.',
+      }));
+    }
+  }
+
   return (
     <section className="stack" aria-label="Windows worker management">
       <article className="card">
@@ -290,51 +375,86 @@ export function DeviceManager({
         )}
         <p aria-live="polite">{message}</p>
       </article>
-      {devices.map((device) => (
-        <article className="card" key={device.id}>
-          <h2>{device.label}</h2>
-          <p>
-            {device.state !== 'revoked' &&
-            device.last_heartbeat_at &&
-            Date.parse(device.last_heartbeat_at) >= currentTimeMs - 30 * 60_000
-              ? 'online'
-              : device.state === 'revoked'
-                ? 'revoked'
-                : 'offline'}
-            ; last heartbeat{' '}
-            {device.last_heartbeat_at
-              ? new Date(device.last_heartbeat_at).toLocaleString('en-GB', {
-                  timeZone: 'Europe/London',
-                })
-              : 'not received'}
-            .
-          </p>
-          {device.last_heartbeat_at &&
-          Date.parse(device.last_heartbeat_at) >= currentTimeMs - 30 * 60_000 ? (
-            <p role="status">Heartbeat received within the last 30 minutes.</p>
-          ) : null}
-          {scans.some(
-            (scan) =>
-              scan.device_id === device.id &&
-              scan.scan_kind === 'lightweight' &&
-              scan.status === 'complete' &&
-              Boolean(scan.result_verified_at),
-          ) ? (
-            <p role="status">Verified smoke scan complete.</p>
-          ) : (
-            <p>
-              <a href="/digital-estate">Run smoke scan</a> after the heartbeat is received.
-            </p>
-          )}
-          {device.state !== 'revoked' && (
-            <button type="button" onClick={() => startRevoke(device.id)}>
-              Revoke after fresh MFA
-            </button>
-          )}
-        </article>
-      ))}
-      <button type="button" onClick={() => router.refresh()}>
-        Refresh worker status
+      {devices
+        .filter((device) => device.state !== 'revoked')
+        .map((device) => (
+          <article className="card" key={device.id}>
+            <h2>{device.label}</h2>
+            {(() => {
+              const mode = workerDisplayState(device, currentTimeMs);
+              const pending = Boolean(controlState[device.id]?.endsWith('…'));
+              return (
+                <>
+                  <p className={`worker-status worker-status-${mode}`}>
+                    <strong>{titleCase(mode)}</strong>; last heartbeat{' '}
+                    {device.last_heartbeat_at
+                      ? new Date(device.last_heartbeat_at).toLocaleString('en-GB', {
+                          timeZone: 'Europe/London',
+                        })
+                      : 'not received'}
+                    .
+                  </p>
+                  <div className="button-row" aria-label={`${mode} worker controls`}>
+                    {mode === 'offline' && (
+                      <button
+                        type="button"
+                        onClick={() => void startWorker(device.id)}
+                        disabled={pending}
+                      >
+                        Start
+                      </button>
+                    )}
+                    {mode === 'active' && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void controlWorker(device.id, 'online')}
+                          disabled={pending}
+                        >
+                          Pause
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void controlWorker(device.id, 'offline')}
+                          disabled={pending}
+                        >
+                          Stop
+                        </button>
+                      </>
+                    )}
+                    {mode === 'online' && (
+                      <button
+                        type="button"
+                        onClick={() => void controlWorker(device.id, 'active')}
+                        disabled={pending}
+                      >
+                        Resume
+                      </button>
+                    )}
+                    <button
+                      className="button-danger"
+                      type="button"
+                      onClick={() => startRevoke(device.id)}
+                      disabled={pending}
+                    >
+                      Revoke
+                    </button>
+                  </div>
+                  {controlState[device.id] ? (
+                    <p aria-live="polite">{controlState[device.id]}</p>
+                  ) : null}
+                </>
+              );
+            })()}
+          </article>
+        ))}
+      <button
+        type="button"
+        onClick={checkConnection}
+        disabled={isRefreshing}
+        aria-busy={isRefreshing}
+      >
+        {isRefreshing ? 'Checking…' : 'Refresh worker status'}
       </button>
     </section>
   );
