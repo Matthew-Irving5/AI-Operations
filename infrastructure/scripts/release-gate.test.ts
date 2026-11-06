@@ -11,6 +11,7 @@ import {
 } from './live-acceptance-evidence.js';
 import { execFileSync } from 'node:child_process';
 import {
+  ArchiveRestoreChecksSchema,
   Ai17PlannerSpecialistEvidenceSchema,
   Ai16PromptGovernanceProofSchema,
   acceptStagingCandidate,
@@ -424,6 +425,134 @@ test('AI41 worker protocol requires attended full journey before canonical accep
       deployment: candidateDeploymentEvidence({ acceptanceProfile: 'worker-protocol' }),
       hostedSuite: producer,
     }),
+  );
+});
+
+test('AI-45 selector keeps its archive MFA paths inside the archive-restore profile', () => {
+  const candidateFiles = [
+    '.agents/skills/ai-operations-integrate/references/failure-ledger.md',
+    '.agents/skills/ai-operations-integrate/references/integration-rules.md',
+    '.github/workflows/deploy-staging.yml',
+    'apps/web/app/(app)/ai-traces-audit/page.tsx',
+    'apps/web/app/(app)/ai-traces-audit/archived-payload.tsx',
+    'apps/web/app/api/archive/[...key]/route.test.ts',
+    'apps/web/app/api/internal/finance-archive/route.ts',
+    'apps/web/app/api/internal/finance-archive/route.test.ts',
+    'apps/web/lib/archive-gateway.ts',
+    'apps/web/lib/archive-gateway.test.ts',
+    'docs/build/ticket-readbacks/AI-45.md',
+    'docs/operations/backup-restore.md',
+    'apps/web/app/api/archive/[...key]/route.ts',
+    'apps/web/app/api/auth/mfa/verify/route.ts',
+    'apps/web/app/mfa/mfa-challenge.tsx',
+    'infrastructure/scripts/acceptance-profile.ts',
+    'infrastructure/scripts/backup-integrity.test.ts',
+    'infrastructure/scripts/backup-integrity.ts',
+    'infrastructure/scripts/backup-restore.test.ts',
+    'infrastructure/scripts/backup-restore.ts',
+    'infrastructure/scripts/cli-json-output.ts',
+    'infrastructure/scripts/environment-drift.ts',
+    'infrastructure/scripts/release-gate.test.ts',
+    'infrastructure/scripts/release-gate.ts',
+    'infrastructure/scripts/restore-target.ts',
+    'package.json',
+    'packages/db/src/database.types.ts',
+    'pnpm-lock.yaml',
+    'supabase/functions/finance-import/index.ts',
+    'supabase/functions/health-ingest/index.ts',
+    'supabase/migrations/20261021131411_ai45_durable_archive_restore.sql',
+    'supabase/tests/ai45_archive_restore.sql',
+    'tests/fixtures/ai45-linked-archive.sql',
+  ];
+  assert.equal(selectHostedAcceptanceProfile(candidateFiles), 'archive-restore');
+  assert.equal(selectHostedAcceptanceProfile(candidateFiles, 'archive-restore'), 'archive-restore');
+  assert.throws(
+    () => selectHostedAcceptanceProfile(candidateFiles, 'targeted'),
+    /does not match inferred/,
+  );
+  assert.throws(
+    () =>
+      selectHostedAcceptanceProfile([...candidateFiles, 'apps/web/app/api/auth/session/route.ts']),
+    /Archive restore requires its own staging candidate/,
+  );
+});
+
+test('AI-45 archive evidence passes producer, strict schema, status and promotion consumers for exact provenance', () => {
+  const checks = {
+    stagingDatabaseAndR2Backup: 'passed',
+    encryptedPrivateBundle: 'passed',
+    isolatedLocalRestore: 'passed',
+    linkedTraceEvidenceRead: 'passed',
+    exactFileBytes: 'passed',
+    corruptionDetected: 'passed',
+    sourceUnchanged: 'passed',
+  } as const;
+  const hostedSuite = {
+    schemaVersion: 1,
+    state: 'ARCHIVE_RESTORE_STAGING_ACCEPTED',
+    acceptanceProfile: 'archive-restore',
+    candidateSha,
+    candidateTreeSha,
+    pullRequestNumber: 152,
+    deploymentRunId: '36474707377',
+    stagingOrigin: origin,
+    humanMfa: 'user-completed',
+    checks,
+    correlationIds: ['archive-restore-correlation'],
+    acceptedAt: '2026-11-06T10:00:00.000Z',
+  };
+  assert.deepEqual(ArchiveRestoreChecksSchema.parse(checks), checks);
+  const produced = createHostedStagingSuiteEvidence(hostedSuite);
+  assert.deepEqual(produced, hostedSuite);
+  const result = createStagingAcceptanceStatus({
+    candidateSha,
+    currentPullRequestHeadSha: candidateSha,
+    currentPullRequestTreeSha: candidateTreeSha,
+    currentPullRequestNumber: 152,
+    state: 'success',
+    deployment: candidateDeploymentEvidence({ acceptanceProfile: 'archive-restore' }),
+    hostedSuite: produced,
+  });
+  assert.equal(result.status.state, 'success');
+  assert.equal(result.acceptance?.acceptanceProfile, 'archive-restore');
+  assert.deepEqual(result.acceptance?.checks, checks);
+  assert.deepEqual(result.acceptance?.correlationIds, hostedSuite.correlationIds);
+  assert.equal(
+    acceptStagingCandidate({
+      ready: ready(),
+      currentPullRequestHeadSha: candidateSha,
+      currentPullRequestTreeSha: candidateTreeSha,
+      currentPullRequestNumber: 152,
+      acceptance: result.acceptance!,
+    }).acceptanceProfile,
+    'archive-restore',
+  );
+
+  for (const key of Object.keys(checks)) {
+    const incomplete = { ...checks } as Record<string, string>;
+    delete incomplete[key];
+    assert.throws(
+      () => createHostedStagingSuiteEvidence({ ...hostedSuite, checks: incomplete }),
+      /invalid_evidence/,
+      `missing ${key} must fail closed`,
+    );
+  }
+  assert.throws(
+    () => createHostedStagingSuiteEvidence({ ...hostedSuite, humanMfa: 'not-required' }),
+    /invalid_evidence/,
+  );
+  assert.throws(
+    () =>
+      createStagingAcceptanceStatus({
+        candidateSha,
+        currentPullRequestHeadSha: candidateSha,
+        currentPullRequestTreeSha: candidateTreeSha,
+        currentPullRequestNumber: 152,
+        state: 'success',
+        deployment: candidateDeploymentEvidence({ acceptanceProfile: 'archive-restore' }),
+        hostedSuite: { ...hostedSuite, deploymentRunId: '36474707378' },
+      }),
+    /deployment_run_mismatch/,
   );
 });
 
@@ -1293,6 +1422,14 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   );
   assert.match(
     deployWorkflow,
+    /Set candidate status while hosted acceptance is pending[\s\S]*acceptance_profile == 'archive-restore'/,
+  );
+  assert.match(
+    deployWorkflow,
+    /if \[\[ "\$ACCEPTANCE_PROFILE" == "archive-restore" \]\]; then[\s\S]*isolated archive-restore acceptance/,
+  );
+  assert.match(
+    deployWorkflow,
     /ACCEPTANCE_PROFILE: \$\{\{ inputs\.acceptance_profile \|\| 'auto' \}\}[\s\S]*acceptance-profile\.ts candidate-files\.txt "\$ACCEPTANCE_PROFILE"/,
   );
   assert.match(deployWorkflow, /deployment_run_id:/);
@@ -1340,6 +1477,9 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   const targetedAutoAccept = deployWorkflow.indexOf('name: Auto-accept targeted staging candidate');
   const authBrowserPending = deployWorkflow.indexOf(
     'Staging is deployed; waiting for auth-browser acceptance.',
+  );
+  const archiveRestorePending = deployWorkflow.indexOf(
+    'Staging is deployed; waiting for isolated archive-restore acceptance.',
   );
   const manualRequiredGate = deployWorkflow.indexOf(
     'name: Validate manual candidate required workflows',
@@ -1407,6 +1547,10 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.ok(
     stagingSmoke < authBrowserPending,
     'auth-browser acceptance can become pending only after staging deploy/smoke succeeds',
+  );
+  assert.ok(
+    stagingSmoke < archiveRestorePending,
+    'archive-restore acceptance can become pending only after staging deploy/smoke succeeds',
   );
   assert.match(deployWorkflow, /current_sha=.*pulls\/\$PULL_REQUEST_NUMBER/);
   assert.match(deployWorkflow, /staging-slot-check < staging-slot-input\.json/);

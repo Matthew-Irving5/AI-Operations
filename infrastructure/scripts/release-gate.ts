@@ -211,6 +211,7 @@ const AcceptanceProfileSchema = z.enum([
   'career-auth-browser',
   'planner-specialist',
   'worker-protocol',
+  'archive-restore',
 ]);
 
 export const WorkerProtocolChecksSchema = z
@@ -224,6 +225,18 @@ export const WorkerProtocolChecksSchema = z
     repairOldCredentialsDenied: z.literal('passed'),
     outboundOnly: z.literal('passed'),
     incompatibleWorkerBlocked: z.literal('passed'),
+  })
+  .strict();
+
+export const ArchiveRestoreChecksSchema = z
+  .object({
+    stagingDatabaseAndR2Backup: z.literal('passed'),
+    encryptedPrivateBundle: z.literal('passed'),
+    isolatedLocalRestore: z.literal('passed'),
+    linkedTraceEvidenceRead: z.literal('passed'),
+    exactFileBytes: z.literal('passed'),
+    corruptionDetected: z.literal('passed'),
+    sourceUnchanged: z.literal('passed'),
   })
   .strict();
 
@@ -349,6 +362,7 @@ const AcceptanceEvidenceSchema = z
       CareerStagingAcceptanceChecksSchema,
       Ai17PlannerSpecialistChecksSchema,
       WorkerProtocolChecksSchema,
+      ArchiveRestoreChecksSchema,
     ]),
     freshMfaAction: FreshMfaActionEvidenceSchema.optional(),
     promptGovernanceProof: Ai16PromptGovernanceProofSchema.optional(),
@@ -370,6 +384,7 @@ const AcceptanceEvidenceSchema = z
     const combinedCareer = value.acceptanceProfile === 'career-auth-browser';
     const plannerSpecialist = value.acceptanceProfile === 'planner-specialist';
     const workerProtocol = value.acceptanceProfile === 'worker-protocol';
+    const archiveRestore = value.acceptanceProfile === 'archive-restore';
     const validMfa = targeted || costRuntime || value.humanMfa === 'user-completed';
     const validChecks = targeted
       ? Array.isArray(value.checks)
@@ -380,11 +395,18 @@ const AcceptanceEvidenceSchema = z
             ? 'plannerToTravelJourney' in value.checks
             : workerProtocol
               ? 'realWindowsArtifact' in value.checks
-              : career
-                ? 'authenticatedCareerSync' in value.checks
-                : 'authAal2' in value.checks);
+              : archiveRestore
+                ? 'isolatedLocalRestore' in value.checks
+                : career
+                  ? 'authenticatedCareerSync' in value.checks
+                  : 'authAal2' in value.checks);
     const validFreshMfaAction =
-      targeted || costRuntime || plannerSpecialist || workerProtocol || (career && !combinedCareer)
+      targeted ||
+      costRuntime ||
+      plannerSpecialist ||
+      workerProtocol ||
+      archiveRestore ||
+      (career && !combinedCareer)
         ? value.freshMfaAction === undefined
         : value.freshMfaAction !== undefined;
     const validCostRuntimeProof = costRuntime
@@ -500,6 +522,18 @@ const StagingReadyInputSchema = z
   .strict();
 
 const StagingAcceptanceInputSchema = z.discriminatedUnion('acceptanceProfile', [
+  z
+    .object({
+      candidateSha: ShaSchema,
+      deploymentRunId: RunIdSchema,
+      stagingOrigin: StageOrigin,
+      acceptanceProfile: z.literal('archive-restore'),
+      humanMfa: z.literal('user-completed'),
+      checks: ArchiveRestoreChecksSchema,
+      correlationIds: z.array(SafeIdSchema).min(1).max(20),
+      acceptedAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
   z
     .object({
       candidateSha: ShaSchema,
@@ -740,6 +774,23 @@ const WorkerProtocolStagingSuiteEvidenceSchema = z
   })
   .strict();
 
+const ArchiveRestoreStagingSuiteEvidenceSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    state: z.literal('ARCHIVE_RESTORE_STAGING_ACCEPTED'),
+    acceptanceProfile: z.literal('archive-restore'),
+    candidateSha: ShaSchema,
+    candidateTreeSha: ShaSchema,
+    pullRequestNumber: z.number().int().positive(),
+    deploymentRunId: RunIdSchema,
+    stagingOrigin: StageOrigin,
+    humanMfa: z.literal('user-completed'),
+    checks: ArchiveRestoreChecksSchema,
+    correlationIds: z.array(SafeIdSchema).min(1).max(20),
+    acceptedAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
 const HostedStagingSuiteEvidenceSchema = z.discriminatedUnion('acceptanceProfile', [
   WorkerProtocolStagingSuiteEvidenceSchema,
   AuthBrowserStagingSuiteEvidenceSchema,
@@ -748,6 +799,7 @@ const HostedStagingSuiteEvidenceSchema = z.discriminatedUnion('acceptanceProfile
   CareerStagingAcceptanceEvidenceSchema,
   CareerAuthBrowserStagingEvidenceSchema,
   Ai17PlannerSpecialistEvidenceSchema,
+  ArchiveRestoreStagingSuiteEvidenceSchema,
 ]);
 
 const StagingAcceptanceCommandSchema = z
@@ -919,6 +971,7 @@ export function selectHostedAcceptanceProfile(
     normalizedFiles.includes('docs/build/ticket-readbacks/AI-17.md') ||
     normalizedFiles.includes('tests/e2e-live/ai17-planner-specialist.spec.ts');
   const workerProtocol = normalizedFiles.includes('docs/build/ticket-readbacks/AI-41.md');
+  const archiveRestore = normalizedFiles.includes('docs/build/ticket-readbacks/AI-45.md');
   const costRuntime = normalizedFiles.includes('docs/build/ticket-readbacks/AI-20.md');
   const career = normalizedFiles.some(
     (file) =>
@@ -937,8 +990,13 @@ export function selectHostedAcceptanceProfile(
     file === 'packages/contracts/src/execution.ts' ||
     file === 'packages/contracts/src/execution.test.ts' ||
     file === 'infrastructure/scripts/qa-workspace-dependencies.ts';
+  const archiveRestoreOwnedAuthPaths = new Set([
+    'apps/web/app/api/auth/mfa/verify/route.ts',
+    'apps/web/app/mfa/mfa-challenge.tsx',
+  ]);
   const authBrowser = normalizedFiles.some((file) => {
     if (workerProtocol && workerProtocolSurfacePath(file)) return false;
+    if (archiveRestore && archiveRestoreOwnedAuthPaths.has(file)) return false;
     if (careerSurfacePath(file)) return false;
     if (
       plannerSpecialist &&
@@ -972,19 +1030,27 @@ export function selectHostedAcceptanceProfile(
   }
   if (workerProtocol && (costRuntime || authBrowser || career))
     throw new Error('Worker protocol requires its own staging candidate.');
-  const inferred = workerProtocol
-    ? 'worker-protocol'
-    : costRuntime
-      ? 'cost-runtime'
-      : career
-        ? authBrowser
-          ? 'career-auth-browser'
-          : 'career'
-        : plannerSpecialist
-          ? 'planner-specialist'
-          : authBrowser
-            ? 'auth-browser'
-            : 'targeted';
+  if (
+    archiveRestore &&
+    (costRuntime || authBrowser || career || plannerSpecialist || workerProtocol)
+  ) {
+    throw new Error('Archive restore requires its own staging candidate.');
+  }
+  const inferred = archiveRestore
+    ? 'archive-restore'
+    : workerProtocol
+      ? 'worker-protocol'
+      : costRuntime
+        ? 'cost-runtime'
+        : career
+          ? authBrowser
+            ? 'career-auth-browser'
+            : 'career'
+          : plannerSpecialist
+            ? 'planner-specialist'
+            : authBrowser
+              ? 'auth-browser'
+              : 'targeted';
   if (override !== 'auto' && override !== inferred) {
     throw new Error(
       `Requested staging profile '${override}' does not match inferred '${inferred}'.`,
