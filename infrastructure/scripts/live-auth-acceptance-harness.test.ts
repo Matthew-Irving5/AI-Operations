@@ -160,16 +160,24 @@ describe('live auth acceptance harness', () => {
   });
 
   it('preflights staging prices before browser launch and keeps the Management PAT in Node only', async () => {
-    const runner = await readFile(runnerPath, 'utf8');
+    const [runner, browserConfig] = await Promise.all([
+      readFile(runnerPath, 'utf8'),
+      readFile(resolve('playwright.live.config.ts'), 'utf8'),
+    ]);
     const preflight = runner.indexOf('await assertStagingPricingReadiness()');
     const browserLaunch = runner.indexOf("execFileSync('corepack', liveArgs");
     assert.ok(preflight >= 0 && preflight < browserLaunch);
     assert.match(
       runner,
-      /function createBrowserEnvironment[\s\S]*?delete browserEnvironment\.STAGING_PERSONAL_ACCESS_TOKEN/,
+      /function createPlaywrightEnvironment[\s\S]*?return \{ \.\.\.process\.env, \.\.\.liveEnvironment \}/,
     );
-    assert.equal((runner.match(/env: createBrowserEnvironment\(env\)/g) ?? []).length, 2);
+    assert.doesNotMatch(runner, /delete .*STAGING_PERSONAL_ACCESS_TOKEN/);
+    assert.equal((runner.match(/env: createPlaywrightEnvironment\(env\)/g) ?? []).length, 2);
     assert.doesNotMatch(runner, /env:\s*\{\s*\.\.\.process\.env,\s*\.\.\.env\s*\}/);
+    assert.match(
+      browserConfig,
+      /launchOptions:\s*\{[\s\S]*?env: liveE2eBrowserEnvironment\(process\.env\)/,
+    );
   });
 
   it('never uses the service role to read user-owned schedules', async () => {

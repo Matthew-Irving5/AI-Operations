@@ -30,10 +30,8 @@ async function containsFailureArtifacts(directory: string): Promise<boolean> {
   return false;
 }
 
-function createBrowserEnvironment(liveEnvironment: Record<string, string | undefined>) {
-  const browserEnvironment = { ...process.env, ...liveEnvironment };
-  delete browserEnvironment.STAGING_PERSONAL_ACCESS_TOKEN;
-  return browserEnvironment;
+function createPlaywrightEnvironment(liveEnvironment: Record<string, string | undefined>) {
+  return { ...process.env, ...liveEnvironment };
 }
 
 async function main(): Promise<void> {
@@ -338,7 +336,7 @@ async function main(): Promise<void> {
         {
           stdio: 'inherit',
           shell: process.platform === 'win32',
-          env: createBrowserEnvironment(env),
+          env: createPlaywrightEnvironment(env),
         },
       );
     } catch (error) {
@@ -380,7 +378,7 @@ async function main(): Promise<void> {
     execFileSync('corepack', liveArgs, {
       stdio: 'inherit',
       shell: process.platform === 'win32',
-      env: createBrowserEnvironment(env),
+      env: createPlaywrightEnvironment(env),
     });
     if (
       acceptanceOutputPath &&
