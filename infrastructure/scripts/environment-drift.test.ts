@@ -568,6 +568,21 @@ test('maps every local Edge Function to configured or default JWT verification',
   assert.equal(auth.get('personal-profile'), false);
 });
 
+test('inter-agent functions have one enabled TOML block with JWT verification disabled', () => {
+  const config = readFileSync('supabase/config.toml', 'utf8');
+  for (const slug of ['inter-agent-delegation', 'inter-agent-handoff']) {
+    const blocks = config
+      .split(/(?=^\[[^\]]+\])/m)
+      .filter((block) => block.startsWith(`[functions.${slug}]`));
+    assert.equal(blocks.length, 1, `${slug} must have exactly one TOML table`);
+    assert.match(blocks[0]!, /^\[functions\.[^\]]+\]\s*[\s\S]*^enabled = true\s*$/m);
+    assert.match(blocks[0]!, /^\[functions\.[^\]]+\]\s*[\s\S]*^verify_jwt = false\s*$/m);
+  }
+  const auth = parseFunctionAuth(config, localFunctionDirectories());
+  assert.equal(auth.get('inter-agent-delegation'), false);
+  assert.equal(auth.get('inter-agent-handoff'), false);
+});
+
 test('auth manifest covers every function and matches explicit platform JWT settings', () => {
   const directories = localFunctionDirectories();
   const config = readFileSync('supabase/config.toml', 'utf8');
