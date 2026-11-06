@@ -1,5 +1,5 @@
 begin;
-select plan(20);
+select plan(24);
 
 create temporary table ai39_fixture on commit drop as
 select
@@ -13,9 +13,59 @@ select is(
    where model.model_id in ('gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol')
      and price.effective_from >= now() - interval '90 days'
      and price.verified_at >= now() - interval '90 days'
-     and price.source_url = 'https://developers.openai.com/api/docs/models/compare'),
+     and price.source_url = 'https://developers.openai.com/api/docs/models/' || model.model_id
+     and price.input_per_million = case model.model_id when 'gpt-5.6-luna' then 0.20 when 'gpt-5.6-terra' then 2.00 else 4.00 end
+     and price.cached_input_per_million = case model.model_id when 'gpt-5.6-luna' then 0.02 when 'gpt-5.6-terra' then 0.20 else 0.40 end
+     and price.output_per_million = case model.model_id when 'gpt-5.6-luna' then 1.20 when 'gpt-5.6-terra' then 12.00 else 20.00 end
+     and price.web_search_per_call = 0.01),
   3,
-  'the local synthetic seed provides fresh verified pricing for every test model past the fixed-date boundary'
+  'the latest local versions match current official token and web-search rates for every test model'
+);
+
+insert into public.mfa_reauthentication_events(user_id, verified_at, method)
+values ('00000000-0000-0000-0000-000000000101', now(), 'totp');
+
+select throws_ok(
+  $$select public.add_model_pricing(
+    '00000000-0000-0000-0000-000000000101',
+    (select id from public.ai_model_catalog where model_id = 'gpt-5.6-luna'),
+    now(), 0.20, 0.02, 1.20, 0,
+    'https://developers.openai.com/api/docs/models/gpt-5.6-luna'
+  )$$,
+  'P0001', 'invalid_pricing_input',
+  'search-enabled models cannot store a zero per-call price'
+);
+
+select lives_ok(
+  $$select public.add_model_pricing(
+    '00000000-0000-0000-0000-000000000101',
+    (select id from public.ai_model_catalog where model_id = 'gpt-5.6-luna'),
+    now(), 0.20, 0.02, 1.20, 0.01,
+    'https://developers.openai.com/api/docs/models/gpt-5.6-luna'
+  )$$,
+  'the MFA-gated append-only pricing RPC records its web-search rate'
+);
+
+select is(
+  (select price.web_search_per_call from public.model_pricing price
+   join public.ai_model_catalog model on model.id = price.model_id
+   where model.model_id = 'gpt-5.6-luna'
+   order by price.effective_from desc, price.id desc limit 1),
+  0.01::numeric,
+  'the appended immutable price version preserves the per-search fee'
+);
+
+select is(
+  public.calculate_instrumented_ai_cost(
+    (select id from public.ai_model_catalog where model_id = 'gpt-5.6-luna'),
+    0, 0, 0, 2, 0,
+    (select price.id from public.model_pricing price
+     join public.ai_model_catalog model on model.id = price.model_id
+     where model.model_id = 'gpt-5.6-luna'
+     order by price.effective_from desc, price.id desc limit 1)
+  ),
+  0.02::numeric,
+  'actual usage calculation charges each web-search call from the immutable price version'
 );
 
 select lives_ok(

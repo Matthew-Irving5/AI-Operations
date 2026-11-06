@@ -7,6 +7,7 @@ import { assertAi20CostRuntimeReadiness } from './ai20-cost-runtime-staging.js';
 import { createHostedStagingSuiteEvidence } from './release-gate.js';
 import { resolveGitTreeSha } from './live-acceptance-evidence.js';
 import { ProcurementStagingAcceptanceEvidenceSchema } from './procurement-live-acceptance.js';
+import { assertStagingPricingReadiness } from './staging-pricing-preflight.js';
 import {
   procurementEvidenceColumns,
   readProcurementStagingRows,
@@ -27,6 +28,12 @@ async function containsFailureArtifacts(directory: string): Promise<boolean> {
     }
   }
   return false;
+}
+
+function createBrowserEnvironment(liveEnvironment: Record<string, string | undefined>) {
+  const browserEnvironment = { ...process.env, ...liveEnvironment };
+  delete browserEnvironment.STAGING_PERSONAL_ACCESS_TOKEN;
+  return browserEnvironment;
 }
 
 async function main(): Promise<void> {
@@ -90,6 +97,14 @@ async function main(): Promise<void> {
   }
   const env = parseLiveE2eEnvironment(process.env, mode);
   if (env.LIVE_E2E_BASE_URL !== stagingTarget.origin) throw new Error('Unexpected E2E origin.');
+  if (
+    mode === 'suite' ||
+    mode === 'cost-acceptance' ||
+    mode === 'procurement-acceptance' ||
+    mode === 'planner-specialist'
+  ) {
+    await assertStagingPricingReadiness();
+  }
   if (mode === 'cost-acceptance') await assertAi20CostRuntimeReadiness();
   if (mode === 'planner-specialist')
     await readAi17StagingReports('00000000-0000-4000-8000-000000000000');
@@ -323,7 +338,7 @@ async function main(): Promise<void> {
         {
           stdio: 'inherit',
           shell: process.platform === 'win32',
-          env: { ...process.env, ...env },
+          env: createBrowserEnvironment(env),
         },
       );
     } catch (error) {
@@ -365,7 +380,7 @@ async function main(): Promise<void> {
     execFileSync('corepack', liveArgs, {
       stdio: 'inherit',
       shell: process.platform === 'win32',
-      env: { ...process.env, ...env },
+      env: createBrowserEnvironment(env),
     });
     if (
       acceptanceOutputPath &&

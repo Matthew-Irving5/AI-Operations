@@ -13,12 +13,12 @@ on conflict (id) do update set email = excluded.email, is_allowed = true;
 
 insert into public.managers(code,name,description,risk_class) values ('finance','Finance Operations','Synthetic seed','high') on conflict(code) do nothing;
 
--- Local-only fresh pricing versions keep synthetic reservation tests independent of the age of the immutable migration seed.
+-- Local-only fresh versions use current official GPT-5.6 rates and keep synthetic reservations independent of the immutable migration seed.
 insert into public.model_pricing(model_id, effective_from, input_per_million, cached_input_per_million, output_per_million, source_url, verified_at, cache_write_multiplier, web_search_per_call)
-select id, now(), case model_id when 'gpt-5.6-luna' then 1.00 when 'gpt-5.6-terra' then 2.50 else 5.00 end,
-       case model_id when 'gpt-5.6-luna' then 0.10 when 'gpt-5.6-terra' then 0.25 else 0.50 end,
-       case model_id when 'gpt-5.6-luna' then 6.00 when 'gpt-5.6-terra' then 15.00 else 30.00 end,
-       'https://developers.openai.com/api/docs/models/compare', now(), 1.25, 0
+select id, now(), case model_id when 'gpt-5.6-luna' then 0.20 when 'gpt-5.6-terra' then 2.00 else 4.00 end,
+       case model_id when 'gpt-5.6-luna' then 0.02 when 'gpt-5.6-terra' then 0.20 else 0.40 end,
+       case model_id when 'gpt-5.6-luna' then 1.20 when 'gpt-5.6-terra' then 12.00 else 20.00 end,
+       'https://developers.openai.com/api/docs/models/' || model_id, now(), 1.25, 0.01
 from public.ai_model_catalog
 where model_id in ('gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol')
 on conflict (model_id, effective_from) do nothing;

@@ -159,6 +159,19 @@ describe('live auth acceptance harness', () => {
     assert.match(safety, /'procurement-acceptance'/);
   });
 
+  it('preflights staging prices before browser launch and keeps the Management PAT in Node only', async () => {
+    const runner = await readFile(runnerPath, 'utf8');
+    const preflight = runner.indexOf('await assertStagingPricingReadiness()');
+    const browserLaunch = runner.indexOf("execFileSync('corepack', liveArgs");
+    assert.ok(preflight >= 0 && preflight < browserLaunch);
+    assert.match(
+      runner,
+      /function createBrowserEnvironment[\s\S]*?delete browserEnvironment\.STAGING_PERSONAL_ACCESS_TOKEN/,
+    );
+    assert.equal((runner.match(/env: createBrowserEnvironment\(env\)/g) ?? []).length, 2);
+    assert.doesNotMatch(runner, /env:\s*\{\s*\.\.\.process\.env,\s*\.\.\.env\s*\}/);
+  });
+
   it('never uses the service role to read user-owned schedules', async () => {
     const runner = await readFile(runnerPath, 'utf8');
     const journey = await readFile(journeyPath, 'utf8');
