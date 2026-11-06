@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { Ai20CostRuntimeProofSchema } from './ai20-cost-runtime-proof.js';
-import { GoogleOAuthChecksSchema, GoogleOAuthStagingEvidenceSchema } from './google-oauth-staging-acceptance.js';
+import {
+  GoogleOAuthChecksSchema,
+  GoogleOAuthStagingEvidenceSchema,
+} from './google-oauth-staging-acceptance.js';
 import {
   CareerStagingAcceptanceChecksSchema,
   CareerStagingAcceptanceEvidenceSchema,
@@ -391,7 +394,12 @@ const AcceptanceEvidenceSchema = z
                   ? 'authenticatedCareerSync' in value.checks
                   : 'authAal2' in value.checks);
     const validFreshMfaAction =
-      targeted || costRuntime || plannerSpecialist || workerProtocol || googleOAuth || (career && !combinedCareer)
+      targeted ||
+      costRuntime ||
+      plannerSpecialist ||
+      workerProtocol ||
+      googleOAuth ||
+      (career && !combinedCareer)
         ? value.freshMfaAction === undefined
         : value.freshMfaAction !== undefined;
     const validCostRuntimeProof = costRuntime
@@ -1023,18 +1031,18 @@ export function selectHostedAcceptanceProfile(
   const inferred = googleOAuth
     ? 'google-oauth'
     : workerProtocol
-    ? 'worker-protocol'
-    : costRuntime
-      ? 'cost-runtime'
-      : career
-        ? authBrowser
-          ? 'career-auth-browser'
-          : 'career'
-        : plannerSpecialist
-          ? 'planner-specialist'
-          : authBrowser
-            ? 'auth-browser'
-            : 'targeted';
+      ? 'worker-protocol'
+      : costRuntime
+        ? 'cost-runtime'
+        : career
+          ? authBrowser
+            ? 'career-auth-browser'
+            : 'career'
+          : plannerSpecialist
+            ? 'planner-specialist'
+            : authBrowser
+              ? 'auth-browser'
+              : 'targeted';
   if (override !== 'auto' && override !== inferred) {
     throw new Error(
       `Requested staging profile '${override}' does not match inferred '${inferred}'.`,
