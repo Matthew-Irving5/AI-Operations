@@ -31,7 +31,7 @@ jobs:
         with: { node-version: 22.18.0, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - name: Run independent changed-surface core checks
-        run: pnpm verify:changed --lane=core
+        run: pnpm verify:changed --lane=pr
       - name: Verify local platform role lookup contract
         run: node --test infrastructure/scripts/platform-role-lookup.test.mjs
 

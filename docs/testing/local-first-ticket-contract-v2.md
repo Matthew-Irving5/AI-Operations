@@ -34,7 +34,7 @@ Use exactly six sections: title, Problem, Acceptance, Key files, Supporting info
 - Database parity: corepack pnpm environment:drift -- repo-local for schema changes.
 - Deno: deno test --no-config EXACT_TEST.
 - Cloudflare: existing pnpm qa:worker-preview with specific config and test; avoid Next-dev-only proof for Worker-specific changes.
-- CI changed-surface core: corepack pnpm verify:changed --lane=core.
+- PR CI lightweight lane: corepack pnpm verify:changed --lane=pr. This checks changed-file format and select integration/type contracts, never launches browsers or Docker. Broader core is available locally with --lane=core.
 - Keep GitHub CodeQL, dependency review and secret scanning. Avoid blind trust in unverified agent-written evidence.
 
 ## Parallel branch and release ownership

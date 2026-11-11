@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildImpactPlan, prettierFiles, runChecks, shellSafeArguments } from './verify-changed';
+import { buildImpactPlan, buildPrChecks, prettierFiles, runChecks, shellSafeArguments } from './verify-changed';
 
 test('browser prerequisite setup has its own bounded install and launch budget', () => {
   const source = readFileSync(new URL('./verify-changed.ts', import.meta.url), 'utf8');
@@ -121,4 +121,30 @@ test('checks with failed prerequisites are explicitly skipped while unrelated ch
     ],
   );
   assert.match(results[1]?.detail ?? '', /prerequisite "Supabase readiness" failed/);
+});
+
+test('fast PR lane never schedules Docker, browser or workspace-wide test commands', () => {
+  const plans = [
+    buildImpactPlan(['apps/web/app/(app)/overview/page.tsx']),
+    buildImpactPlan(['supabase/migrations/20261111_new.sql']),
+    buildImpactPlan(['supabase/functions/new-edge/index.ts']),
+    buildImpactPlan(['package.json', '.github/workflows/ci.yml']),
+  ];
+  for (const plan of plans) {
+    const commands = buildPrChecks(plan).map((check) => check.command).join('\n');
+    assert.doesNotMatch(commands, /supabase (?:start|status)|run-e2e|playwright|qa:local|pnpm -r|pnpm build|workspace/i);
+  }
+});
+
+test('fast PR lane checks critical affected integration and role contracts', () => {
+  const edge = buildPrChecks(buildImpactPlan(['supabase/functions/new-edge/index.ts']));
+  assert.ok(edge.some((check) => check.name === 'Edge import graph compatibility'));
+  const db = buildPrChecks(buildImpactPlan(['supabase/migrations/20261111_new.sql']));
+  assert.ok(db.some((check) => check.name === 'Database schema and role contract checks'));
+  const release = buildPrChecks(buildImpactPlan(['.github/workflows/deploy-production.yml']));
+  assert.ok(release.some((check) => check.name === 'Release provenance contract'));
+  const catalog = buildPrChecks(
+    buildImpactPlan(['docs/testing/platform-live-role-catalog-20261111.json']),
+  );
+  assert.ok(catalog.some((check) => check.name === 'Dated role catalog contract'));
 });

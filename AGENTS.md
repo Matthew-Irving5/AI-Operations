@@ -24,7 +24,7 @@ Apply authority by subject: the Agent Spec controls agent behavior and provider 
 - Current v2 source: docs/testing/local-first-ticket-contract-v2.md; ticket authoring: docs/testing/linear-ticket-template-v2.md. The six-section Linear ticket is the complete pre-engineered implementation specification.
 - One independent Codex conversation owns one focused ticket and PR. Do not produce a startup readback or separate implementation plan. If instructions are provably stale, contradictory or unsafe, flag the exact issue instead of silently rebuilding the design.
 - Test locally with the real caller role, focused functionality, negative cases and directly affected consumers. Boot Docker, Supabase and browsers ONLY for affected paths. Corepack pnpm remains pinned.
-- GitHub PR CI is the lightweight core lane, plus separate required security workflows. Scheduled/manual full regression does not block every PR.
+- GitHub PR CI is the lightweight \`verify:changed --lane=pr\` lane, plus separate required security workflows. Scheduled/manual full regression does not block every PR.
 - Linear Done means implementation merged to main and evidenced. Hosted-only proof and production promotion are owned by explicit release acceptance tickets; Done is not Released.
 - Transition safeguard: main ruleset 24213001 STILL requires strict per-PR staged acceptance. Production promotion still expects per-PR evidence. Do not bypass, fake or ignore those current gates until an authorised settings change and revised release workflow are tested.
 - Preserve all auth, RLS, MFA, approval, budget, private-data and environment protections. Distinct cross-boundary contracts have a single owner.
