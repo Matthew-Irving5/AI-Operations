@@ -21,7 +21,7 @@ Read-only snapshot: 11 November 2026. Production and staging use PostgreSQL 17.6
 ## Local verification
 
 - Rebuild an isolated local database using the actual approved migration chain.
-- Check direct role and RPC permissions with the relevant existing pgTAP tests.
+- Check direct role and RPC permissions with the relevant existing pgTAP tests. Run `corepack pnpm exec supabase test db supabase/tests/local_required_role_permissions.sql` for the reviewed eight-table allow/deny contract; `rpc_security.sql` covers RPC EXECUTE and caller identity.
 - Check generated database types and repo-local migration drift after schema changes.
 - Check Edge auth manifest, import maps and package dependency closure when affected.
 - Use the existing local Cloudflare Worker preview for Worker runtime changes.
