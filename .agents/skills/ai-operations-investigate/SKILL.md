@@ -1,13 +1,10 @@
 ---
 name: ai-operations-investigate
-description: Investigate unfamiliar AI Operations code, call paths, migrations, RPC grants and cross-service dependencies before changing them.
+description: Resolve the existing symbols and narrow interfaces needed for the complete Linear ticket without re-planning the feature.
 ---
-
-# Trace real interfaces
-
-1. Read the Linear issue, relevant specifications and AGENTS.md. Trace caller → handler → auth/validation → DB/queue → consumer → test; name actual symbols and grants.
-2. Use Serena symbols/references if connected; activate this checkout as its project in Codex Desktop. Fallback: rg, types, repository map, focused tests.
-3. For external APIs use Context7 for version-specific docs when authenticated; otherwise use official documentation and installed types. Never send confidential code or secrets to an external docs service.
-4. Identify blast radius, dependency readiness and one cheap invariant/test per changed boundary. Read back the actual path, goal, risks and smallest proof before editing.
-5. Make the smallest **complete** implementation; avoid duplicate abstractions and speculative cross-module rewrites.
-   Do not run multi-agent review panels or full architecture ceremonies for simple tasks. Existing release and security rules supersede tool-specific advice.
+# Execute a pre-engineered ticket
+1. Read the exact six-section ticket and named code. Confirm the required producer, consumer, runtime role and dependency have not changed since it was written.
+2. Prefer Serena for symbol/reference navigation, fallback rg/types. Read only matching specs/ADRs and the relevant integration contract. Do not recite unrelated history.
+3. If the ticket is accurate, implement directly. No separate readback, generic implementation plan or broad exploration.
+4. If a critical file, role or promised interface is absent or contradictory, report the concrete mismatch and cheapest correction, not an invented architecture.
+5. Keep changes scoped to one contract; use only ticket-selected tests and direct consumers.

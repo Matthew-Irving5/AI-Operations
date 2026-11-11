@@ -20,15 +20,16 @@ Before editing any production code or governance artifact, read the active Linea
 
 Apply authority by subject: the Agent Spec controls agent behavior and provider ownership; the Build Spec controls platform, security, data, integrations, and delivery; the Frontend Constitution controls visual and interaction quality. Current code and deployed infrastructure are evidence of implementation, not authority to change these contracts. Preserve each specification's authority within its subject; where a cross-domain conflict remains, identify it in the issue evidence and follow the explicit issue/project decision rather than silently changing a contract. Do not reduce scope, replace locked architecture, or create an MVP.
 
-## Linear issue execution and completion
+## Linear issue execution and completion — local-first transition
+- Current v2 source: docs/testing/local-first-ticket-contract-v2.md; ticket authoring: docs/testing/linear-ticket-template-v2.md. The six-section Linear ticket is the complete pre-engineered implementation specification.
+- One independent Codex conversation owns one focused ticket and PR. Do not produce a startup readback or separate implementation plan. If instructions are provably stale, contradictory or unsafe, flag the exact issue instead of silently rebuilding the design.
+- Test locally with the real caller role, focused functionality, negative cases and directly affected consumers. Boot Docker, Supabase and browsers ONLY for affected paths. Corepack pnpm remains pinned.
+- GitHub PR CI is the lightweight core lane, plus separate required security workflows. Scheduled/manual full regression does not block every PR.
+- Linear Done means implementation merged to main and evidenced. Hosted-only proof and production promotion are owned by explicit release acceptance tickets; Done is not Released.
+- Transition safeguard: main ruleset 24213001 STILL requires strict per-PR staged acceptance. Production promotion still expects per-PR evidence. Do not bypass, fake or ignore those current gates until an authorised settings change and revised release workflow are tested.
+- Preserve all auth, RLS, MFA, approval, budget, private-data and environment protections. Distinct cross-boundary contracts have a single owner.
+- Link precise dependencies in Linear. Never assume an unmerged branch feature exists on main.
 
-- Linear describes **feature intent**, not a duplicated engineering manual. A ready ticket should contain: objective, feature-specific constraints, 1–3 observable acceptance outcomes, one test profile, any genuinely live-only proof, and out-of-scope items.
-- The repository owns the execution method. Every ticket starts with `corepack pnpm qa:doctor --fix`; use Corepack for every pnpm command so the repository-pinned version is used. Do not copy Docker/browser/test recovery instructions into individual tickets.
-- Use **In Progress** only while a development lane actively owns the ticket. One coding agent owns implementation and remains accountable through merge; do not add reviewer/best-of-N agents by default.
-- Compatible tickets may develop in parallel. Do not let CI, staging, MFA, provider waits, or another ticket's release wait consume an otherwise-free development lane. Park external-human gates with an exact resume command.
-- A ticket is Done when its selected local/CI proofs pass, its explicitly required live-only proof (if any) passes, and a deployable change has the bounded production smoke required by the release pipeline. Full live E2E is **not** a universal per-ticket requirement.
-- Every deterministic defect first discovered at a higher layer must add a cheaper regression or invariant at the lowest layer capable of catching it before the ticket completes.
-- Keep dependency relationships truthful. Prefer issues that are independently developable/QA-complete and prioritize work that unlocks additional ready lanes.
 ## Codex configuration
 
 - Build model: `gpt-5.6-terra`
@@ -101,7 +102,7 @@ Never:
 Codex discovers repository-scoped skills in `.agents/skills/`; read `docs/testing/ai-native-codex.md` for the current supported plugin setup, fallbacks and next-session prompt. Tool and skill installations never override this file, the Linear issue, security requirements or existing test/release gates.
 
 - For unfamiliar cross-module functionality, start with `ai-operations-investigate`; prefer Serena symbol/reference queries when connected, otherwise `rg`, installed types and the repo map. For version-specific external libraries, use Context7 if authenticated; otherwise official docs.
-- For any DB/Edge/provider/Worker/orchestrator/auth/deployment change, **load `ai-operations-integrate` after the issue readback and before implementation**. Apply its existing architecture rules and failure ledger to the actual changed interfaces; do not add a second startup test suite.
+- For any DB/Edge/provider/Worker/orchestrator/auth/deployment change, load ai-operations-integrate AND ai-operations-local-parity before implementation; use ticket-named boundaries and local real-role checks. Do not introduce universal startup tests.
 - For a concrete failure, use `ai-operations-debug` to reproduce and localise it before edits.
 - For PR readiness/CI/staging/merge, use `ai-operations-ship` and **existing** GitHub workflows rather than a second release system.
 - For compaction, a parked human gate or delegation, use `ai-operations-handoff` to preserve exact current SHA, validated results, blockers and next command in the ticket.
@@ -120,51 +121,17 @@ Agent debugging optimizes **localisation time**, not the number of patches attem
 7. Every escaped deterministic bug leaves three artifacts: the fix, a regression test, and an earlier diagnostic/invariant so the same class cannot escape to that stage again. When the cause is integration/infrastructure, update the matching `ai-operations-integrate` prevention rule and evidence-linked incident **in the same fix commit**; do not wait until ticket closure.
 
 Errors must be actionable without secret/personal-data leakage: identify the failed invariant, boundary/subsystem, expected vs actual state, correlation ID when available, owning contract/source when known, and the exact reproduction command.
-## Mandatory ticket startup readback (execution contract v1)
+## Local-first engineering execution — transitional v2
+- The ticket has precisely six sections and its testing list is executable as written. No startup readback file and no parent-conversation readback.
+- First inspect named code and fixed contracts. If a prerequisite is missing or a command invalid, report that specific obstacle and its evidence.
+- Run the cheapest focused reproduction and direct consumer/permission checks. Use existing focused Vitest, Deno, pgTAP and Playwright tests as appropriate.
+- Run local platform checks only for affected boundaries. For DB: exact roles/ACLs, migration history and schema types. For Edge: auth manifest and import maps. For Cloudflare: local production-like Worker preview when relevant.
+- Stage only changes whose externally hosted runtime/provider behaviour cannot be proven locally, as a separately owned release acceptance ticket once the repository ruleset has been migrated.
+- Open one PR per ticket with exact SHA, tests/results, and any unverified requirement. The PR owner is accountable through merge.
+- Current ruleset still enforces staged acceptance; observe it until it is updated. Do not weaken repository protections through an implementation ticket.
+- Retain the integration failure ledger; whenever a known preventable defect escapes, add the narrowest future guard to the owning boundary.
+- Before Done, record merged commit and exact evidence. A project release is a distinct milestone from merged feature implementation.
 
-This repository uses `docs/testing/linear-ticket-execution-contract.md` as the compact execution contract echoed on open Linear tickets. Do not assume the parent Codex conversation or its subagents inherited repository instructions: load the applicable AGENTS.md and issue explicitly and pass relevant constraints into every subagent handoff.
-
-**Before modifying feature code**, publish a brief, concrete readback in the parent Codex conversation and create `docs/build/ticket-readbacks/AI-XX.md` with `node infrastructure/scripts/ticket-readback.mjs init AI-XX`. Replace the scaffold with:
-- the actual objective and 1–3 observable outcomes;
-- linked dependencies and the precise interfaces/permissions expected;
-- planned implementation and out-of-scope changes;
-- the cheapest focused reproduction/tests and final `verify:changed` proof;
-- whether hosted proof is genuinely required, plus safe fixture/auth/evidence readiness checks;
-- what each subagent must receive and return, or why none is used.
-- one succinct integration-contract sentence naming the existing path/permissions, and applicable `ai-operations-integrate` rule IDs (for affected cross-boundary tickets).
-
-Validate with `node infrastructure/scripts/ticket-readback.mjs check AI-XX`. No generic restatement of the issue, placeholder answers, passwords, tokens or personal operational data. The committed readback is a traceable record; the parent-conversation summary is the actual communication checkpoint. CI checks the readback's completeness on AI-numbered PRs, **not** factual correctness or whether it was written before editing. The owning agent remains responsible for both.
-
-Before requesting staging, prove relevant DB application-role/RPC/column grants and required fixtures locally, and dry-run the selected acceptance-evidence producer→validator→consumer contract without a hosted browser. For attended MFA, check that the user can actually access the headed browser before starting waits. Keep the existing exact-candidate staging, manual MFA and bounded live-proof rules intact.
-
-## Pass start protocol
-
-1. Verify `Matthew-Irving5/AI-Operations`, fetch/prune and start from current `origin/main` without disturbing another active worktree.
-2. Run `corepack pnpm qa:doctor --fix`. Do not investigate the feature until it is green. This verifies/recovers Docker, local Supabase/images, browsers and required developer runtimes.
-3. Read the active Linear issue and only the authoritative spec sections/repo-map entries relevant to its changed surface. Run `corepack pnpm repo:map` when the generated routing map is stale.
-4. Define 1–3 observable acceptance outcomes and identify the cheapest test layer capable of proving each. Add a live/staging proof only for a boundary localhost cannot faithfully prove.
-5. Run a narrow existing baseline only when it materially validates the starting assumption; do not pay the full-suite tax before editing.
-6. Create the issue branch and implement in one owning session.
-## Test protocol
-
-Use the cheapest proof capable of catching each defect class exactly once.
-
-- Inner loop: affected unit/contract/component tests only.
-- Boundary proof: exactly the real boundary changed (DB/API/queue/browser/provider), not unrelated product journeys.
-- Final local gate: `corepack pnpm verify:changed`. Its impact router selects affected static/package/DB/Edge/worker/browser/security checks and fails safe to the broader suite when central build/test routing changes. Independent selected checks continue after a failure; dependent checks are explicitly skipped, and the overall gate remains non-zero.
-- Chromium is the default PR browser proof when browser behaviour changed. WebKit/full cross-browser runs belong to explicit compatibility/auth/design-system acceptance or scheduled full regression, not every backend/release edit.
-- `corepack pnpm verify` / `corepack pnpm verify:ci` are fallback/full-regression commands, not the default feature inner loop.
-- Never repeat the same capability proof locally, in CI and on staging unless the higher layer exercises a boundary the lower layer physically cannot prove.
-- Long-running independent checks should run in parallel. Do not create many tiny jobs when runner/setup overhead exceeds the test value.
-- Never skip/loosen a required assertion to gain speed; reduce scope to the relevant proof instead.
-## PR protocol
-
-- Before opening the PR, run `corepack pnpm verify:changed`; do not reflexively run the full CI-equivalent suite.
-- Push one coherent branch/PR. The same ticket owner remains responsible for defects until merge, but waiting on CI/release does not block another compatible development lane.
-- PR CI consists of parallel changed-surface **core** and **boundary** lanes. Superseded runs are cancelled. Full browser/Edge regression is scheduled separately.
-- If CI fails, use its exact failing command as the narrow reproducer; use `qa:debug` where useful. Fix locally, prove the narrow failure green, then push once. Do not debug by speculative GitHub Actions commits.
-- Staging proves only ticket-specific boundaries that cannot be established locally. Promote the accepted immutable candidate/provenance through the existing release gates; production gets a bounded affected-capability smoke.
-- Merge only with required checks green. Record material defects and the new regression/diagnostic that prevents recurrence. Before marking a ticket Done, review every confirmed integration/infra defect: its rule and linked incident must be committed, or the Linear completion note must identify the existing rule that already prevented recurrence. Keep generic functional bugs in the normal regression suite, not in the integration ledger.
 ## Conversation completion
 
 When the pass is merged:

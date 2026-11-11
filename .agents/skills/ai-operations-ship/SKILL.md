@@ -1,14 +1,11 @@
 ---
 name: ai-operations-ship
-description: Ship an AI Operations Linear issue through its existing PR, CI, exact-candidate staging and production smoke requirements without bypassing gates.
+description: Complete a focused local-first AI Operations ticket through an independent PR and real required checks.
 ---
-
-# Own a ticket through proof and merge
-
-1. Identify the ticket-specific local, CI, genuinely hosted-only and production acceptance requirements; avoid universal live E2E.
-2. Run focused checks and corepack pnpm verify:changed; dry-run evidence producer/validator/consumer and fixtures before staging where relevant.
-3. Open one PR, inspect required GitHub Actions on exact head SHA, and fix failures by reproducing their narrow failing command. Do not forge statuses.
-4. Use existing deploy-staging.yml candidate/acceptance workflow and staging lease. Auth MFA remains human-owned; check headed browser availability before timers.
-5. Preserve branch protection. Enable auto-merge only where authorized; record exact resume action for external wait.
-6. Document actual merge SHA, tests, bounded production smoke and new regressions in Linear before Done. Review integration/infra fixes: commit updated `ai-operations-integrate` rule + incident for each novel root cause; for no new learning, say so and cite existing rule ID in the completion note.
-   Skip extra multi-agent reviews when existing local E2E and CI already prove the capability.
+# Ship one ticket
+1. Use exact acceptance and testing commands from the ticket; verify changed behaviour and direct consumers locally.
+2. Report actual commands and results on the PR with exact HEAD SHA. Never pretend that a test or hosted provider check ran.
+3. Open one independent PR based on main. Inspect required GitHub security/core checks. A PR with a code conflict or shared schema incompatibility must be fixed; unrelated merged PRs do not justify blanket rebasing.
+4. Preserve the existing strict staged-acceptance ruleset until formally migrated. Do not fake staging statuses or bypass production provenance.
+5. When v2 merge policy is active, mark Linear Done on verified merge; a dedicated release ticket owns hosted, MFA, and production checks when unavoidable.
+6. Report final merged SHA or blocker precisely; record prevention rules only when a real integration defect was discovered.

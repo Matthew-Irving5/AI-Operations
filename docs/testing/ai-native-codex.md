@@ -1,3 +1,6 @@
+# Transition notice (2026-11-11)
+For new tickets, use docs/testing/local-first-ticket-contract-v2.md and the six-section Linear ticket. Startup readback and routine full-stage PR acceptance are being retired. Current GitHub ruleset 24213001 remains effective until separately migrated and verified. Tool setup history below is retained.
+
 # Agent-native Codex workflow (AI Operations)
 
 Last checked: 15 October 2026. Codex default model was reset from an unsupported GPT-6 Sol override to the verified GPT-5.6 Terra for ChatGPT authentication. Linear remains the work queue, GitHub the PR/release authority, and this repository's tests the source of verification. External skills are tools, **not** authority to alter product scope, skip tests, disable security or change branch protection.
