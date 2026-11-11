@@ -394,7 +394,13 @@ export function buildPrChecks(plan: ImpactPlan): CheckTask[] {
 
   const infraTests = infrastructureTests(plan.files);
   if (infraTests.length) {
-    add('Affected infrastructure contracts', 'corepack', ['pnpm', 'exec', 'tsx', '--test', ...infraTests]);
+    add('Affected infrastructure contracts', 'corepack', [
+      'pnpm',
+      'exec',
+      'tsx',
+      '--test',
+      ...infraTests,
+    ]);
   }
 
   if (plan.edge) {
@@ -427,12 +433,20 @@ export function buildPrChecks(plan: ImpactPlan): CheckTask[] {
   }
 
   if (plan.files.some((file) => file.startsWith('packages/db/'))) {
-    add('Database client types', 'corepack', ['pnpm', '--filter', '@ai-operations/db', 'typecheck']);
+    add('Database client types', 'corepack', [
+      'pnpm',
+      '--filter',
+      '@ai-operations/db',
+      'typecheck',
+    ]);
   }
 
   if (
     plan.files.some((file) =>
-      ['.github/workflows/deploy-staging.yml', '.github/workflows/deploy-production.yml'].includes(file),
+      [
+        '.github/workflows/deploy-staging.yml',
+        '.github/workflows/deploy-production.yml',
+      ].includes(file),
     )
   ) {
     add('Release provenance contract', 'corepack', ['pnpm', 'test:release-gate']);
@@ -440,7 +454,10 @@ export function buildPrChecks(plan: ImpactPlan): CheckTask[] {
 
   if (
     plan.files.some((file) =>
-      ['docs/testing/platform-live-role-catalog-20261111.json', 'infrastructure/scripts/platform-role-lookup.mjs'].includes(file),
+      [
+        'docs/testing/platform-live-role-catalog-20261111.json',
+        'infrastructure/scripts/platform-role-lookup.mjs',
+      ].includes(file),
     )
   ) {
     add('Dated role catalog contract', 'node', [

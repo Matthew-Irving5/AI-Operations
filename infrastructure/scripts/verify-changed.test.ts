@@ -1,7 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildImpactPlan, buildPrChecks, prettierFiles, runChecks, shellSafeArguments } from './verify-changed';
+import {
+  buildImpactPlan,
+  buildPrChecks,
+  prettierFiles,
+  runChecks,
+  shellSafeArguments,
+} from './verify-changed';
 
 test('browser prerequisite setup has its own bounded install and launch budget', () => {
   const source = readFileSync(new URL('./verify-changed.ts', import.meta.url), 'utf8');
@@ -132,7 +138,10 @@ test('fast PR lane never schedules formatting, Docker, browser or workspace-wide
   ];
   for (const plan of plans) {
     const commands = buildPrChecks(plan).map((check) => check.command).join('\n');
-    assert.doesNotMatch(commands, /prettier|supabase (?:start|status)|run-e2e|playwright|qa:local|pnpm -r|pnpm build|workspace/i);
+    assert.doesNotMatch(
+      commands,
+      /prettier|supabase (?:start|status)|run-e2e|playwright|qa:local|pnpm -r|pnpm build|workspace/i,
+    );
   }
 });
 
