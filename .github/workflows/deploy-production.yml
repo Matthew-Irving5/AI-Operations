@@ -76,9 +76,9 @@ jobs:
           directory = Path(os.environ['PROMOTION_EVIDENCE_DIR'])
           directory.mkdir(parents=True, exist_ok=True)
           for name, value in [('staging-run', run), ('main-commit', tree), ('main-ref', main)]:
-              (directory / (name + '.json')).write_text(json.dumps(value) + '\\n')
+              (directory / (name + '.json')).write_text(json.dumps(value) + '\n')
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write(f'sha={expected}\\nrun_id={run_id}\\ntree_sha={tree_sha}\\n')
+              output.write(f'sha={expected}\nrun_id={run_id}\ntree_sha={tree_sha}\n')
           PY
       - uses: actions/checkout@v5
         with:
@@ -135,7 +135,7 @@ jobs:
             },
             evidence,
           };
-          writeFileSync('integrated-main-promotion-input.json', JSON.stringify(input) + '\\n');
+          writeFileSync('integrated-main-promotion-input.json', JSON.stringify(input) + '\n');
           NODE
           pnpm exec tsx infrastructure/scripts/integrated-main-gate.ts < integrated-main-promotion-input.json > production-promotion-evidence.json
       - name: Validate production environment identity
