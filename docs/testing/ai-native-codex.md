@@ -1,4 +1,5 @@
 # Transition notice (2026-11-11)
+
 For new tickets, use docs/testing/local-first-ticket-contract-v2.md and the six-section Linear ticket. Startup readback and routine full-stage PR acceptance are being retired. Current GitHub ruleset 24213001 remains effective until separately migrated and verified. Tool setup history below is retained.
 
 # Agent-native Codex workflow (AI Operations)

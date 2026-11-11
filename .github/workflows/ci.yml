@@ -33,7 +33,6 @@ jobs:
       - name: Run independent changed-surface core checks
         run: pnpm verify:changed --lane=core
 
-
   windows-worker:
     needs: core
     if: needs.core.outputs.worker_changed == 'true'
