@@ -2,7 +2,6 @@
 
 This document describes the **currently enforced v1** exact-PR hosted acceptance path, not the desired local-first policy. AI-70 must replace per-PR staging evidence with safely validated integrated-main release evidence, and AI-71 must update GitHub ruleset 24213001. Until both are verified, follow the real workflow and required statuses; never forge or bypass them.
 
-
 AI-8 stages an unmerged pull request head, proves it through the existing AI-7 hosted browser harness, and promotes only its verified squash merge. No staging or production workflow waits for MFA.
 
 ## Release identity
