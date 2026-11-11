@@ -392,11 +392,6 @@ export function buildPrChecks(plan: ImpactPlan): CheckTask[] {
     });
   };
 
-  const formatted = prettierFiles(plan.files);
-  if (formatted.length) {
-    add('Changed-file formatting', 'corepack', ['pnpm', 'exec', 'prettier', '--check', ...formatted]);
-  }
-
   const infraTests = infrastructureTests(plan.files);
   if (infraTests.length) {
     add('Affected infrastructure contracts', 'corepack', ['pnpm', 'exec', 'tsx', '--test', ...infraTests]);

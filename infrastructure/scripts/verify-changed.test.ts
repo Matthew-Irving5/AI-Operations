@@ -123,7 +123,7 @@ test('checks with failed prerequisites are explicitly skipped while unrelated ch
   assert.match(results[1]?.detail ?? '', /prerequisite "Supabase readiness" failed/);
 });
 
-test('fast PR lane never schedules Docker, browser or workspace-wide test commands', () => {
+test('fast PR lane never schedules formatting, Docker, browser or workspace-wide test commands', () => {
   const plans = [
     buildImpactPlan(['apps/web/app/(app)/overview/page.tsx']),
     buildImpactPlan(['supabase/migrations/20261111_new.sql']),
@@ -132,7 +132,7 @@ test('fast PR lane never schedules Docker, browser or workspace-wide test comman
   ];
   for (const plan of plans) {
     const commands = buildPrChecks(plan).map((check) => check.command).join('\n');
-    assert.doesNotMatch(commands, /supabase (?:start|status)|run-e2e|playwright|qa:local|pnpm -r|pnpm build|workspace/i);
+    assert.doesNotMatch(commands, /prettier|supabase (?:start|status)|run-e2e|playwright|qa:local|pnpm -r|pnpm build|workspace/i);
   }
 });
 
