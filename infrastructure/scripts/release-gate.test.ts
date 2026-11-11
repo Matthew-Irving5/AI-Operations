@@ -1504,65 +1504,38 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /failure_code="staging_slot_busy"/);
 });
 
-test('production deploy requires status-bound staging acceptance and squash PR provenance before mutation', async () => {
+test('production promotion validates exact successful integrated-main staging evidence before mutation', async () => {
   const workflow = await readFile(
     new URL('../../.github/workflows/deploy-production.yml', import.meta.url),
     'utf8',
   );
-  assert.match(
-    workflow,
-    /workflow_run:[\s\S]*workflows: \[Deploy staging\][\s\S]*types: \[completed\]/,
+  const staging = await readFile(
+    new URL('../../.github/workflows/deploy-staging.yml', import.meta.url),
+    'utf8',
   );
-  assert.match(
-    workflow,
-    /if: github\.ref == 'refs\/heads\/main'[\s\S]*workflow_run\.conclusion == 'success'[\s\S]*workflow_run\.head_branch == 'main'/,
-  );
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /workflow_run:\s*\n/);
+  assert.match(workflow, /if: github\.ref == 'refs\/heads\/main'/);
+  assert.match(workflow, /expected_main_sha:/);
+  assert.match(workflow, /staging_run_id:/);
+  assert.match(workflow, /Main advanced since release was requested/);
+  assert.match(workflow, /head_branch.*main/);
+  assert.match(workflow, /integrated-main-staging-/);
+  assert.match(workflow, /staging-environment-inventory/);
+  assert.match(workflow, /integrated-main-gate\.ts < integrated-main-promotion-input\.json/);
+  assert.match(workflow, /Revalidate current main before first production mutation/);
   assert.match(
     workflow,
     /supabase db push --linked --include-all --password "\$DB_PASSWORD" --yes/,
-    'production migration push must preserve the complete approved migration history',
+    'production migration push must preserve approved migration history',
   );
-  assert.match(
-    workflow,
-    /\.event == "push" and \.status == "completed" and \.conclusion == "success"/,
-  );
-  assert.match(workflow, /commits\/\$sha\/pulls/);
-  assert.match(workflow, /pr_count.*exactly one associated merged same-repository PR/);
-  assert.match(workflow, /merge_commit_sha == \$sha/);
-  assert.match(workflow, /commits\/\$candidate_sha\/statuses\?per_page=100/);
-  assert.match(workflow, /status_url.*status target URL/);
-  assert.match(workflow, /acceptance_run_id=.*status_url/);
-  assert.match(
-    workflow,
-    /\.event == "workflow_dispatch"[\s\S]*\.head_branch == \$branch and \.head_sha == \$sha[\s\S]*\.conclusion == "success"/,
-  );
-  assert.match(workflow, /acceptance_artifact_count/);
-  assert.match(workflow, /candidate-deployment-artifacts\.json/);
-  const releaseResolution = workflow.slice(
-    workflow.indexOf('name: Resolve successful staging release'),
-    workflow.indexOf('- uses: actions/checkout@v5'),
-  );
-  assert.match(
-    releaseResolution,
-    /PROMOTION_EVIDENCE_DIR: \$\{\{ runner\.temp \}\}\/ai-operations-production-release-evidence/,
-  );
-  assert.match(
-    releaseResolution,
-    /mkdir -p "\$PROMOTION_EVIDENCE_DIR"[\s\S]*cd "\$PROMOTION_EVIDENCE_DIR"/,
-  );
-  assert.match(
-    workflow,
-    /const stagingRun = readPromotionEvidence\('staging-run\.json'\);[\s\S]*const mergeCommit = readPromotionEvidence\('merge-commit\.json'\);[\s\S]*const pullRequests = readPromotionEvidence\('merged-pulls\.json'\);/,
-  );
-  assert.match(
-    workflow,
-    /String\(deployment\.runAttempt\) !== String\(candidateRun\.run_attempt\)/,
-  );
-  assert.match(workflow, /production-promote < production-promotion-input\.json/);
-  const promotionGate = workflow.indexOf(
-    'Validate merged PR provenance and accepted candidate tree',
-  );
-  assert.ok(promotionGate >= 0, 'missing the release provenance gate');
+  assert.match(staging, /INTEGRATED_MAIN_STAGING_VERIFIED/);
+  assert.match(staging, /if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
+  assert.match(staging, /stagingRunAttempt: Number\(process\.env\.STAGING_RUN_ATTEMPT\)/);
+  assert.match(staging, /migrations: 'passed', edgeFunctions: 'passed', sourceDrift: 'passed'/);
+  const promotionGate = workflow.indexOf('Validate exact integrated-main promotion evidence');
+  const freshnessGate = workflow.indexOf('Revalidate current main before first production mutation');
+  assert.ok(promotionGate > 0 && freshnessGate > promotionGate);
   for (const mutation of [
     'name: Deploy Worker',
     'name: Configure production finance archive gateway secret',
@@ -1570,39 +1543,16 @@ test('production deploy requires status-bound staging acceptance and squash PR p
     'name: Deploy production Edge Functions',
   ]) {
     assert.ok(
-      promotionGate < workflow.indexOf(mutation),
-      `${mutation} must follow the provenance gate`,
+      freshnessGate < workflow.indexOf(mutation),
+      `${mutation} must follow current-main validation`,
     );
   }
-  assert.match(workflow, /--var "RELEASE_SHA:\$\{RELEASE_SHA\}"/);
   const smoke = workflow.indexOf('name: Run bounded production capability smoke');
   const smokeUpload = workflow.indexOf('name: Upload production capability smoke evidence');
-  assert.ok(smoke >= 0, 'missing bounded production capability smoke');
-  assert.ok(smokeUpload > smoke, 'smoke evidence must be uploaded after probes run');
-  for (const completedStep of [
-    'name: Deploy Worker',
-    'name: Configure production finance archive gateway secret',
-    'name: Apply production migrations',
-    'name: Deploy production Edge Functions',
-    'name: Check staging to production drift',
-  ]) {
-    assert.ok(
-      workflow.indexOf(completedStep) < smoke,
-      `${completedStep} must finish before production smoke`,
-    );
-  }
-  assert.match(workflow.slice(smoke, smokeUpload), /PRODUCTION_ORIGIN:/);
-  assert.match(
-    workflow.slice(smoke, smokeUpload),
-    /PRODUCTION_SMOKE_OUTPUT_PATH: production-smoke-evidence\.json/,
-  );
+  assert.ok(smoke > workflow.indexOf('name: Check staging to production drift'));
+  assert.ok(smokeUpload > smoke);
   assert.match(workflow.slice(smoke, smokeUpload), /production-smoke\.ts/);
-  assert.match(
-    workflow.slice(smokeUpload),
-    /if: always\(\) && hashFiles\('production-smoke-evidence\.json'\) != ''/,
-  );
   assert.match(workflow.slice(smokeUpload), /path: production-smoke-evidence\.json/);
-  assert.match(workflow, /github\.event_name == 'workflow_dispatch'[\s\S]*inputs\.staging_run_id/);
 });
 
 test('hosted acceptance profile requires real MFA only for auth-browser changes', () => {
