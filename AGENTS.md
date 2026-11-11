@@ -34,7 +34,7 @@ Apply authority by subject: the Agent Spec controls agent behavior and provider 
 
 - Build model: `gpt-5.6-terra`
 - Reasoning effort: `medium`
-- Use Plan Mode to inspect a pass, then Goal Mode to complete it.
+- Implementation tickets are already planned in Linear; inspect named code and execute the ticket directly. Do not produce a separate planning/readback artifact.
 - Use Playwright MCP for frontend/browser testing.
 - Use OpenAI Docs MCP for OpenAI/Codex/API implementation details.
 - Use configured Supabase tooling for schema, RLS, functions, and migrations.
@@ -102,7 +102,7 @@ Never:
 Codex discovers repository-scoped skills in `.agents/skills/`; read `docs/testing/ai-native-codex.md` for the current supported plugin setup, fallbacks and next-session prompt. Tool and skill installations never override this file, the Linear issue, security requirements or existing test/release gates.
 
 - For unfamiliar cross-module functionality, start with `ai-operations-investigate`; prefer Serena symbol/reference queries when connected, otherwise `rg`, installed types and the repo map. For version-specific external libraries, use Context7 if authenticated; otherwise official docs.
-- For any DB/Edge/provider/Worker/orchestrator/auth/deployment change, load ai-operations-integrate AND ai-operations-local-parity before implementation; use ticket-named boundaries and local real-role checks. Do not introduce universal startup tests.
+- For any DB/Edge/provider/Worker/orchestrator/auth/deployment change, load ai-operations-integrate before implementation; its short boundary rules and single-object catalog lookup replace the two-skill startup. Use ticket-named boundaries and exact real-role checks. Do not introduce universal startup tests.
 - For a concrete failure, use `ai-operations-debug` to reproduce and localise it before edits.
 - For PR readiness/CI/staging/merge, use `ai-operations-ship` and **existing** GitHub workflows rather than a second release system.
 - For compaction, a parked human gate or delegation, use `ai-operations-handoff` to preserve exact current SHA, validated results, blockers and next command in the ticket.
@@ -117,7 +117,7 @@ Agent debugging optimizes **localisation time**, not the number of patches attem
 3. Search in this order: exact error evidence → failing test → current diff → direct producer/consumer/caller → correlated logs → git history → external documentation/web. Stop when evidence localizes the failing boundary.
 4. Make the smallest causal fix and rerun **only the narrow reproducer**. Do not run a broad suite while that reproducer is red.
 5. After two unsupported/failed fix hypotheses, stop patching. Revert speculative changes, restate the misunderstood invariant, reduce to a smaller reproduction, improve diagnostics if needed, and only then edit again.
-6. Once narrow green, run the changed-surface proof with `corepack pnpm verify:changed`. CI/staging are independent verification, not the primary debugger.
+6. Once narrow green, run only the ticket-selected affected contract checks; `corepack pnpm verify:changed --lane=core` is optional for shared-boundary impact. CI/staging are independent verification, not the primary debugger.
 7. Every escaped deterministic bug leaves three artifacts: the fix, a regression test, and an earlier diagnostic/invariant so the same class cannot escape to that stage again. When the cause is integration/infrastructure, update the matching `ai-operations-integrate` prevention rule and evidence-linked incident **in the same fix commit**; do not wait until ticket closure.
 
 Errors must be actionable without secret/personal-data leakage: identify the failed invariant, boundary/subsystem, expected vs actual state, correlation ID when available, owning contract/source when known, and the exact reproduction command.

@@ -1,6 +1,6 @@
 # Local-first engineering and ticket contract v2
 
-Status: TRANSITIONAL. Do not claim that PRs can bypass staging yet. GitHub ruleset 24213001 currently requires strict per-PR staged acceptance, and production promotion depends on it. Both must be safely migrated before this is operational.
+Status: TRANSITIONAL. The integrated-main staged release/promotion workflow is implemented on draft PR #194, but is NOT on main until merged and tested. GitHub ruleset 24213001 still requires strict per-PR staged acceptance. Change its requirements only after the release gate is independently verified.
 
 ## Completion and merge
 
@@ -49,7 +49,7 @@ Use exactly six sections: title, Problem, Acceptance, Key files, Supporting info
 
 ## Required release-system transition
 
-1. Update production deployment to validate and promote an integrated main release without requiring each feature PR to carry a hosted acceptance artifact. Preserve exact SHA/tree, migration/drift, credential/environment and production smoke checks.
+1. Use the new integrated-main staged artifact and manual-only production promotion from PR #194. Preserve exact SHA/tree/run attempt, migration/drift, credential/environment and production smoke checks. Execute and verify the entire producer/validator/consumer flow before activation.
 2. Dry-run a valid main release and invalid/no-proof release without production mutation. Reject incorrect provenance.
 3. In GitHub Rulesets, revise 24213001 to stop requiring the old per-PR staging status and strict base-update policy; retain appropriate fast, independent checks. The connected GitHub app lacks ruleset write access, so this requires an authorised repository-settings action.
 4. Test two consecutive independent PR merges under the revised policy. Do not declare this transition complete until verified.
