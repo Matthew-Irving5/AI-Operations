@@ -10,7 +10,7 @@
 
 ## Authoritative files
 
-Before editing any production code or governance artifact, read the active Linear issue, its linked dependencies and completion evidence, and all three root specifications:
+Before editing, read the complete six-section Linear ticket and its exact named interfaces. The ticket author must already have reconciled the applicable specifications and dependencies. Consult the relevant sections of the three authoritative root specifications when the ticket touches their domain or a contract mismatch is discovered; do not load all three entire documents for every small implementation:
 
 1. `AI_OPERATIONS_AGENT_SPEC.md` â€” authoritative for manager identities, responsibilities, ownership, communication, command authority, handoffs, and agent capabilities.
 2. `AI_OPERATIONS_BUILD_SPEC.md` â€” authoritative for platform/product architecture, infrastructure, security, data, integrations, testing, and delivery.
