@@ -6,16 +6,15 @@ Read-only verified 2026-11-11 against AI-Operations-Production and AI-Operations
 
 All sampled tables have RLS enabled. Values below are direct table privileges; column grants, effective RLS and RPC permissions also matter.
 
-| public table          | anon SELECT | authenticated SELECT | service_role SELECT | service_role INSERT | service_role UPDATE |
-| --------------------- | ----------- | -------------------- | ------------------- | ------------------- | ------------------- |
-| actions               | no          | yes                  | no                  | yes                 | no                  |
-| conversations         | no          | no                   | yes                 | yes                 | yes                 |
-| conversation_messages | no          | no                   | yes                 | yes                 | yes                 |
-| google_drive_files    | no          | no                   | yes                 | yes                 | yes                 |
-| inter_agent_requests  | no          | no                   | yes                 | yes                 | yes                 |
-| model_pricing         | no          | no                   | yes                 | no                  | no                  |
-| trace_events          | no          | yes                  | no                  | yes                 | no                  |
-| workflow_runs         | no          | yes                  | yes                 | no                  | yes                 |
+- actions: anon SELECT no; authenticated SELECT yes; service_role SELECT no, INSERT yes, UPDATE no.
+- conversations: anon/authenticated SELECT no; service_role SELECT/INSERT/UPDATE yes.
+- conversation_messages: anon/authenticated SELECT no; service_role SELECT/INSERT/UPDATE yes.
+- google_drive_files: anon/authenticated SELECT no; service_role SELECT/INSERT/UPDATE yes.
+- inter_agent_requests: anon/authenticated SELECT no; service_role SELECT/INSERT/UPDATE yes.
+- model_pricing: anon/authenticated SELECT no; service_role SELECT yes, INSERT/UPDATE no.
+- trace_events: anon SELECT no; authenticated SELECT yes; service_role SELECT no, INSERT yes, UPDATE no.
+- workflow_runs: anon SELECT no; authenticated SELECT yes; service_role SELECT yes, INSERT no, UPDATE yes.
+
 
 Consequences: service_role may insert actions but cannot directly SELECT them; it cannot directly INSERT workflow_runs, and cannot SELECT protected trace_events. Correct solution is an existing authorised RPC or safe reader, not a broad GRANT.
 
