@@ -2,7 +2,7 @@ name: Database full regression
 on:
   workflow_dispatch:
   schedule:
-    - cron: '11 4 * * *'
+    - cron: '11 4 * * 0,3'
 
 concurrency:
   group: database-full-regression
