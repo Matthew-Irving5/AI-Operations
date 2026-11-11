@@ -2,7 +2,7 @@ name: Windows worker full regression
 on:
   workflow_dispatch:
   schedule:
-    - cron: '29 4 * * *'
+    - cron: '29 4 * * 1,4'
 
 concurrency:
   group: windows-worker-full-regression
