@@ -18,7 +18,7 @@ Use exactly six sections: title, Problem, Acceptance, Key files, Supporting info
 
 - Pure logic: focused unit tests only. No Docker/browser/hosted service.
 - Backend API: route/schema tests and direct consumer contract, denied caller when relevant. No UI unless changed.
-- Postgres/RPC/RLS: isolated Supabase, real caller role, targeted pgTAP and expected denied operations, generated types/drift if schema changes. Never assume service_role bypasses explicit GRANTs.
+- Postgres/RPC/RLS: isolated Supabase, real caller role, targeted pgTAP and expected denied operations, generated types/drift if schema changes. Never assume service_role bypasses explicit GRANTs. Read only the required table/RPC rows from docs/testing/platform-live-role-catalog-20261111.json and prove the relevant permission through local pgTAP.
 - Edge: scoped Deno tests, exact auth manifest entry, function import map, and deployment dependency closure.
 - UI: component/route tests and changed viewport/layout only. Browser only for changed navigation/interaction, not backend-only work.
 - Cloudflare runtime: existing local OpenNext/Miniflare/workerd preview for middleware/cookie/routing compatibility; only use hosted acceptance for non-emulatable Cloudflare/network behaviour.
