@@ -14,7 +14,7 @@ Read-only snapshot: 11 November 2026. Production and staging use PostgreSQL 17.6
 ## Full read-only role catalog
 
 - `platform-live-role-catalog-20261111.json` records 121 public table/view ACL entries and 150 RPC signatures in each environment, with actual `anon`, `authenticated` and `service_role` privileges. It contains no secret values or business records.
-- Query only the relevant entry when implementing a ticket. Example: `jq '.environments.production.tables[] | select(.object == "workflow_runs")' docs/testing/platform-live-role-catalog-20261111.json`. Never load the entire catalog into an agent prompt.
+- Query only the relevant entry when implementing a ticket. Example: `node infrastructure/scripts/platform-role-lookup.mjs production table workflow_runs` or `node infrastructure/scripts/platform-role-lookup.mjs staging rpc add_model_pricing`. No jq dependency. Never load the entire catalog into an agent prompt.
 - The catalog found zero table-level privilege differences and **two differing `add_model_pricing` RPC signatures**: production lacks the staging-only `p_web_search_per_call numeric` argument. The staging migration `20261106134300` remains unmerged. Validate current live state before altering provider pricing or grants.
 
 ## Known environment differences
