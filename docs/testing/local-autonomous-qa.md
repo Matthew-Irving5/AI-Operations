@@ -1,10 +1,14 @@
+# Local-first transition notice
+
+The v2 source of truth is [local-first-ticket-contract-v2.md](local-first-ticket-contract-v2.md). Where historical text below conflicts, the six-section ticket and changed-boundary test selection supersede it. Protected GitHub staging checks still apply until migrated; do not fake them.
+
 # Local autonomous QA
 
 Every implementation session starts with `pnpm qa:doctor --fix`. The doctor verifies the repository and developer runtimes, starts Docker Desktop when possible, repairs/restarts a stale local Supabase stack, warms the required Supabase Docker images, and verifies Chromium/WebKit, Deno and Python before feature investigation begins. A warm healthy session is intentionally cheap; recovery work happens once at ticket start rather than during debugging.
 
 `pnpm qa:local` remains the **full isolated browser regression** command. It creates a private Supabase project with a unique project ID and ports, starts a loopback Next.js app on a free port, and runs the requested Playwright projects (Chromium and WebKit when no project filter is supplied). Use it when the impact router selects browser proof, for explicit full regression, or when debugging genuinely crosses the browser/application boundary. It is no longer a mandatory pre-PR tax for backend, release-script, DB-only or other unrelated changes.
 
-`pnpm verify:changed` is the normal final local gate. It combines the committed branch diff with staged, unstaged and untracked work, classifies the changed surface, and runs only the static/package/DB/Edge/worker/browser/security checks capable of detecting regressions in that surface. Changes to central build/test routing fail safe to broader verification. CI runs independent core and boundary lanes from the same impact plan; scheduled workflows retain the full Chromium/WebKit and Edge regression sweeps.
+`pnpm verify:changed` is the normal final local gate. It combines the committed branch diff with staged, unstaged and untracked work, classifies the changed surface, and runs only the static/package/DB/Edge/worker/browser/security checks capable of detecting regressions in that surface. Changes to central build/test routing fail safe to broader verification. Routine PR CI runs only the independent changed-surface core lane and security workflows. Boundary suites belong to ticket-directed local proof or scheduled/manual regression. The old strict staging ruleset still applies until AI-70/AI-71 transition is verified.
 
 `pnpm qa:debug -- <narrow reproduction command>` captures a sanitized failure bundle under ignored `.qa/debug/` with the failure class, changed files, diff summary, extracted source locations and the required next debugging action. Use it when a failure is not already obvious from the test output; do not use a broad suite as a search tool.
 The test runner creates a random local password for the locked application
