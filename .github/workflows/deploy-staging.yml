@@ -304,6 +304,43 @@ jobs:
           done
           echo "Staging Worker did not return HTTP 200 within 90 seconds."
           exit 1
+      - name: Record exact integrated-main release candidate
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          MAIN_SHA: ${{ github.sha }}
+          GH_REPOSITORY: ${{ github.repository }}
+          STAGING_RUN_ID: ${{ github.run_id }}
+          STAGING_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { writeFileSync } from 'node:fs';
+          const sha = process.env.MAIN_SHA;
+          if (!/^[a-f0-9]{40}$/.test(sha) || execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() !== sha) {
+            throw new Error('Staging checkout is not the expected main commit.');
+          }
+          const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim();
+          writeFileSync('integrated-main-staging.json', JSON.stringify({
+            schemaVersion: 2,
+            state: 'INTEGRATED_MAIN_STAGING_VERIFIED',
+            repositoryFullName: process.env.GH_REPOSITORY,
+            mainSha: sha,
+            mainTreeSha: tree,
+            stagingRunId: process.env.STAGING_RUN_ID,
+            stagingRunAttempt: Number(process.env.STAGING_RUN_ATTEMPT),
+            stagingOrigin: 'https://ai-operations-staging.ai-operations.workers.dev',
+            checks: { migrations: 'passed', edgeFunctions: 'passed', sourceDrift: 'passed', readinessSmoke: 'passed' },
+          }) + '\\n');
+          NODE
+      - name: Upload exact integrated-main staging evidence
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: integrated-main-staging-${{ github.sha }}
+          path: integrated-main-staging.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Upload staging environment inventory
         if: always() && hashFiles('environment-drift.json') != ''
         uses: actions/upload-artifact@v4
