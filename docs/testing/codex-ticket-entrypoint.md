@@ -1,0 +1,35 @@
+# Codex ticket execution — one-page operator entrypoint
+
+Status: prepared in [draft PR #194](https://github.com/Matthew-Irving5/AI-Operations/pull/194); **not automatically active on main until merge and GitHub ruleset cutover**. This document applies to **AI Operations implementation tickets**, never the historic Pass 8 pipeline. See `AGENTS.md`, `docs/testing/risk-adaptive-delivery.md` and `.agents/skills/ai-operations-integrate/SKILL.md`.
+
+## A ticket may start locally when
+1. Read the **complete current Linear issue** with native `blockedBy` relations, **not only its description**. All actual blockers must be Done; verify the **promised code/contract is merged to main**. A future path marked NEW is not a file you can import today. Tracking parents are not implementation tickets.
+2. Confirm all five body sections exist under the ticket title: Problem, Acceptance, Key files, Supporting info, Testing. If the ticket cites a nonexistent existing file, contradicts the current code or lacks required caller/contract details, correct the issue or block it. Do not guess its intended APIs.
+3. Choose one worktree, one branch and one PR. Select a worktree-specific local database and Worker preview; **until AI-200/201 is proven, do not run multiple stateful local stacks against the shared static ports/build root**.
+4. Reserve any shared write surface: migrations, generated DB types, auth manifest, root lockfiles, shared exports, GitHub workflow/config. If another ticket owns it, choose another ready ticket or ask the coordinator to sequence it; do not sneak a generated update into your PR.
+5. Read named interfaces only: producers, consumers, exact authentication/caller role, RLS/RPC grants, runtime and import maps. Use focused `rg`/symbol search plus the local integration skill's one-object lookup. Never invent Supabase/Cloudflare permission by analogy.
+
+## Execute without staged upload loops
+1. Run one narrow failing code test, then implement the smallest contract-compatible change and positive/denied/replay tests. Use repository-pinned CLI; verify `--help` before invoking a prospective test command. A named test under NEW must be authored first.
+2. Exercise only the directly affected integration surfaces: SQL role/RPC, Edge import-map/auth manifest, Worker preview, direct consuming API. Read GitHub checks only after local proof.
+3. When UI is affected, **Codex manually navigates the actual local browser** using isolated fixtures and records the main path, error/denial, persisted/API state, keyboard and narrow viewport. Optional tool-driven browser checks may help debugging; no mandatory scheduled browser automation once AI-192 is active.
+4. Report actual commands, outputs, exact branch SHA, touched paths and relevant integration-rule changes. If a fixture fails, fix and retry locally. Never widen real grants, copy hosted credentials or use production for debugging.
+5. Risk is **not self-approved**. Low-risk static UI/copy/pure logic; medium integration/API/compatible schema; high auth/RLS/MFA/secrets, privileged action, destructive change or CI/release controls. Unknown = high/hold. AI-203 independent classification is not active until proven.
+
+## Merge/release guard
+- **Today:** GitHub ruleset `24213001` requires legacy staged acceptance. A fast PR CI check does not overrule it. You may write/test/open a PR, but do **not** claim that merging/production succeeds until rule and workflow transition is externally verified. Preserve ruleset `20477648`.
+- **When enabled:** AI-194/195 must validate an ephemeral current-main+PR merge tree and required actual CI/security statuses, then merge through the protected PR route. No routine rebase for clean different-function same-file changes. A changed main/head invalidates stale admission proof. Do not rely on a ticket claiming a prerequisite completed.
+- **Release:** AI-196 selects an exact merged-main staging SHA. AI-197 prevents main from advancing during current-main-bound production promotion; AI-206 can remove that freeze only after separate proof. This may never skip migration/Edge/drift/evidence or operator approval.
+- **Production auto-deploy is currently OFF** even for low risk. AI-203/204 must independently implement and sign off a restricted fast lane. A coding agent must not self-approve privileged production release.
+- **Issue Done != Released.** Done needs verified merge evidence. Released needs actual exact deployed SHA/observation. Document blockers rather than silently stopping or inventing a successful run.
+
+## Codex self-check walkthroughs (perform mentally before taking a real ticket)
+- **AI-80:** `packages/contracts/src/procurement.ts` and `procurement.test.ts` are NEW. Existing baseline: `packages/contracts/src/index.ts` and `supabase/migrations/20261021131410_ai39_procurement_lifecycle.sql`. Only create strict v1 contract exports and tests. Do not import code from abandoned PR #185, build DB/UI/ranking or change permissions. It can pass local tests without staging.
+- **AI-84:** `packages/contracts/src/action-policy.ts` is NEW; `execution.ts` and `agents.ts` are the real authoritative enum sources. Build a pure policy and state graph; never issue actual Google/Worker actions or assume agent proposals bypass approval/AAL2. Verify denial of forbidden financial/purchase execution.
+- **AI-187:** `source-permissions.ts` exists and `apps/web/app/api/connections/sources/route.ts` is the persisted selection route. A browser Picker cannot simply enumerate all Drive files under `drive.file`, and it must never see the refresh token. Local UI/contract test is distinct from the later hosted Google consent proof. Block if a genuine short-lived Picker token mechanism is missing instead of inventing a new OAuth grant.
+- **AI-194/195:** Clean Git hunk merging is not a semantic compatibility proof. `git merge-tree --write-tree` is an available read-only merge primitive; implement current-main+PR combined consumer tests and an actual serialized protected merge before enabling any auto-merge. A local `flock` alone does not coordinate cloud runners.
+- **AI-196:** The current integrated-main gate **requires staging run event `push`**. Switching staging to `workflow_dispatch` requires coordinated, negative-tested changes to the event/actor/ref/SHA evidence validator **and** production consumer. Simply replacing the workflow trigger will break release acceptance. Keep protected secrets, drift and exact tree/attempt.
+- **AI-200:** Repo `package.json` specified Supabase CLI `^2.118.0` as of review. Official per-worktree experimental `supabase stack` needs CLI >=2.119 plus removal of hard-coded ports. Check lockfile and actual `--help` before designing wrappers; do not fake support from `supabase start`.
+
+## Escalation
+If a missing connector, GitHub ruleset, hosted OAuth/MFA or remote desktop prevents completion, stop **only at that exact boundary**. Record exact tested branch/sha, pending operator action and next safe command. Never claim background execution or future completion.
