@@ -4,7 +4,7 @@
 
 **For a new AI Operations ticket, first read `docs/testing/codex-ticket-entrypoint.md`, then the exact current Linear issue and `docs/testing/risk-adaptive-delivery.md` before selecting tests, merging or deploying.** It is the concise operational contract for parallel Codex execution, independent effective-risk classification, manual local UI walkthroughs, current-main synthetic merge admission and exact-SHA promotion. Root product/security specs still govern architecture and safety. A contradictory older ticket, skill or scheduled-Playwright statement does not authorise a weaker gate.
 
-**Activation is gated:** this repository's main branch still uses old GitHub ruleset `24213001`; PR #194 is draft and unmerged. The risk-based automatic production fast lane, merge coordinator, staged batching and immutable-ancestor promotion are **planned only**, not permitted until their owning implementation tickets and independent checks pass. Until then obey the actual required GitHub checks and manual protected release path. Codex cannot self-approve production, risk downgrades or privileged authorization.
+**Activation is gated by LIVE evidence, not this document's date.** As observed on 12 November 2026, ruleset `24213001` still required old per-PR staging and PR #194 was draft. At EACH new ticket, inspect current `main`, actual repository rulesets, the relevant completed Linear cutover tickets and latest successful CI/deployment evidence. Enable only demonstrably activated functionality; otherwise obey existing protections and protected manual production. Risk-based automatic production, merge coordination and immutable-ancestor promotion remain disabled until their corresponding tested implementation, reviewed activation and protection are confirmed. Codex cannot self-approve production, risk downgrades or privileged authorization.
 
 ## Repository identity
 
@@ -32,7 +32,7 @@ Apply authority by subject: the Agent Spec controls agent behavior and provider 
 - Test locally with the real caller role, focused functionality, negative cases and directly affected consumers. Boot Docker, Supabase and browsers ONLY for affected paths. Corepack pnpm remains pinned.
 - GitHub PR CI is the lightweight \`verify:changed --lane=pr\` lane, plus separate required security workflows. Scheduled/manual full regression does not block every PR.
 - Linear Done means implementation merged to main and evidenced. Hosted-only proof and production promotion are owned by explicit release acceptance tickets; Done is not Released.
-- Transition safeguard: main ruleset 24213001 STILL requires strict per-PR staged acceptance. Integrated-main production promotion is proposed in draft PR #194 and is not the active main workflow. Do not bypass, fake or ignore current gates until an authorised ruleset change and revised release workflow have been independently proven.
+- Transition safeguard: **do not infer current GitHub/release settings from a dated document.** Query the live main ruleset and default-branch workflow before using a new merge/staging option. At the 12 Nov review ruleset 24213001 required strict staged acceptance; if that remains true, do not bypass or fake it. The new process is active only after authorised settings changes, verified merged workflow and test evidence.
 - Preserve all auth, RLS, MFA, approval, budget, private-data and environment protections. Distinct cross-boundary contracts have a single owner.
 - Link precise dependencies in Linear. Never assume an unmerged branch feature exists on main.
 
