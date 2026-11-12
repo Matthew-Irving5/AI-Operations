@@ -12,7 +12,7 @@ Status: TRANSITIONAL. **See [risk-adaptive-delivery.md](risk-adaptive-delivery.m
 
 ## Ticket format
 
-Use exactly six sections: title, Problem, Acceptance, Key files, Supporting info, Testing. Provide actual contracts, role identities, paths, error cases and test commands; identify proposed future paths as such. No implementation readback, re-planning ritual or universal startup suite. Raise a blocker only for proven stale/incorrect/unsafe instructions.
+Require the six core parts: title, Problem, Acceptance, Key files, Supporting info and Testing. Existing issues may also contain later dated amendments; do not silently ignore them or demand a destructive rewrite. Provide actual contracts, role identities, paths, error cases and test commands; identify proposed future paths as such. No implementation readback, re-planning ritual or universal startup suite. Raise a blocker only for proven stale/incorrect/unsafe instructions.
 
 ## Test selection — locally first
 
