@@ -1,6 +1,6 @@
-# Six-section AI-to-AI implementation ticket template
+# Required-core AI-to-AI implementation ticket template
 
-Tickets are planned and researched in advance. Each independent Codex conversation gets one complete ticket. No startup readback or broad re-planning phase.
+Tickets are planned and researched in advance. Each Codex conversation gets one focused ticket. The five body sections below are mandatory; existing issues may also have dated superseding amendments. No startup readback or broad re-planning phase.
 
 ## Heading
 
