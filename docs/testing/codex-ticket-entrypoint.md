@@ -1,6 +1,6 @@
 # Codex ticket execution — one-page operator entrypoint
 
-Status: prepared in [draft PR #194](https://github.com/Matthew-Irving5/AI-Operations/pull/194); **not automatically active on main until merge and GitHub ruleset cutover**. This document applies to **AI Operations implementation tickets**, never the historic Pass 8 pipeline. See `AGENTS.md`, `docs/testing/risk-adaptive-delivery.md` and `.agents/skills/ai-operations-integrate/SKILL.md`.
+Status observation dated 12 Nov 2026: prepared in [PR #194](https://github.com/Matthew-Irving5/AI-Operations/pull/194), then draft. **Always recheck the LIVE repo, rulesets, active workflows and evidence** before using a new gate; a document is not activation proof. This document applies to **AI Operations implementation tickets**, never the historic Pass 8 pipeline. See `AGENTS.md`, `docs/testing/risk-adaptive-delivery.md` and `.agents/skills/ai-operations-integrate/SKILL.md`.
 
 ## A ticket may start locally when
 1. Read the **complete current Linear issue** with native `blockedBy` relations, **not only its description**. All actual blockers must be Done; verify the **promised code/contract is merged to main**. A future path marked NEW is not a file you can import today. Tracking parents are not implementation tickets.
