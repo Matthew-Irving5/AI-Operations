@@ -1277,7 +1277,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
 
   assert.match(
     deployWorkflow,
-    /workflow_dispatch:[\s\S]*mode:[\s\S]*options: \[candidate, acceptance\]/,
+    /workflow_dispatch:[\s\S]*mode:[\s\S]*options: \[candidate, acceptance, integrated-main\]/,
   );
   assert.doesNotMatch(deployWorkflow, /workflow_call:|workflow_run:/);
   for (const removedWorkflow of ['staging-candidate.yml', 'staging-acceptance-status.yml'])
@@ -1324,7 +1324,7 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
   assert.match(deployWorkflow, /group: staging-deployment[\s\S]*cancel-in-progress: false/);
   assert.match(
     deployWorkflow,
-    /workflow_dispatch:[\s\S]*mode:[\s\S]*options: \[candidate, acceptance\]/,
+    /workflow_dispatch:[\s\S]*mode:[\s\S]*options: \[candidate, acceptance, integrated-main\]/,
   );
   assert.match(
     deployWorkflow,
@@ -1530,7 +1530,7 @@ test('production promotion validates exact successful integrated-main staging ev
     'production migration push must preserve approved migration history',
   );
   assert.match(staging, /INTEGRATED_MAIN_STAGING_VERIFIED/);
-  assert.match(staging, /if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
+  assert.match(staging, /if: github\.event_name == 'workflow_dispatch' && inputs\.mode == 'integrated-main' && github\.ref == 'refs\/heads\/main'/);
   assert.match(staging, /stagingRunAttempt: Number\(process\.env\.STAGING_RUN_ATTEMPT\)/);
   assert.match(staging, /migrations: 'passed', edgeFunctions: 'passed', sourceDrift: 'passed'/);
   const promotionGate = workflow.indexOf('Validate exact integrated-main promotion evidence');
