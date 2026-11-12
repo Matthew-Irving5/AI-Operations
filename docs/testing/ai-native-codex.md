@@ -1,6 +1,6 @@
-# Transition notice (2026-11-11)
+# Current Codex guidance (verify live GitHub state)
 
-For new tickets, use docs/testing/local-first-ticket-contract-v2.md and the six-section Linear ticket. Startup readback and routine full-stage PR acceptance are being retired. Current GitHub ruleset 24213001 remains effective until separately migrated and verified. Tool setup history below is retained.
+**For all new AI Operations Linear tickets, use `docs/testing/codex-ticket-entrypoint.md`, `docs/testing/risk-adaptive-delivery.md` and the live Linear issue.** The instructions below describe historical tool installations and suggested practice only. Do not use obsolete `qa:doctor`/Playwright startup gates, a historical fixed model, or per-PR hosted staging when the independently proven cutover has replaced them. Until the change is verified, obey the actual GitHub ruleset and protected manual production approvals.
 
 # Agent-native Codex workflow (AI Operations)
 
@@ -26,7 +26,7 @@ These are per-user Codex tools on one machine. They do **not** automatically con
 
 Skill entrypoints are in `.agents/skills`. They are chosen **selectively** by task. Do not add another ticket tracker, background watchdog or full QA suite.
 
-## Suggested first message to Codex
+## Suggested first message to Codex — historical example, superseded by `docs/testing/codex-ticket-entrypoint.md`
 
 > Work on AI-XX in Matthew-Irving5/AI-Operations. Load the applicable AGENTS.md, its Linear ticket and dependencies, and the AI Operations agent-native skills. Confirm available P-Stack/Ponytail, Serena and Context7 capabilities without blocking if a nonessential plugin is unavailable. Use the complete six-section ticket without a readback; perform named focused local tests and relevant changed-surface checks, then exact-head PR CI and authorised merge. Hosted acceptance is owned by explicit release tickets. Use the smallest causal fix, preserve existing exact-candidate security and release gates, and record an exact resumable handoff for external waits. Work only in an isolated branch/worktree; don't disturb any currently active coding branch.
 
