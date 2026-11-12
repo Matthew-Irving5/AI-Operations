@@ -1,5 +1,11 @@
 # AGENTS.md â€” AI Operations
 
+## Current delivery policy (supersedes older QA/merge/release instructions)
+
+**Always read `docs/testing/risk-adaptive-delivery.md` after the Linear ticket and before selecting tests, merging or deploying.** It is the concise operational contract for parallel Codex execution, independent effective-risk classification, manual local UI walkthroughs, current-main synthetic merge admission and exact-SHA promotion. Root product/security specs still govern architecture and safety. A contradictory older ticket, skill or scheduled-Playwright statement does not authorise a weaker gate.
+
+**Activation is gated:** this repository's main branch still uses old GitHub ruleset `24213001`; PR #194 is draft and unmerged. The risk-based automatic production fast lane, merge coordinator, staged batching and immutable-ancestor promotion are **planned only**, not permitted until their owning implementation tickets and independent checks pass. Until then obey the actual required GitHub checks and manual protected release path. Codex cannot self-approve production, risk downgrades or privileged authorization.
+
 ## Repository identity
 
 - Product: **AI Operations**
@@ -26,7 +32,7 @@ Apply authority by subject: the Agent Spec controls agent behavior and provider 
 - Test locally with the real caller role, focused functionality, negative cases and directly affected consumers. Boot Docker, Supabase and browsers ONLY for affected paths. Corepack pnpm remains pinned.
 - GitHub PR CI is the lightweight \`verify:changed --lane=pr\` lane, plus separate required security workflows. Scheduled/manual full regression does not block every PR.
 - Linear Done means implementation merged to main and evidenced. Hosted-only proof and production promotion are owned by explicit release acceptance tickets; Done is not Released.
-- Transition safeguard: main ruleset 24213001 STILL requires strict per-PR staged acceptance. Production promotion still expects per-PR evidence. Do not bypass, fake or ignore those current gates until an authorised settings change and revised release workflow are tested.
+- Transition safeguard: main ruleset 24213001 STILL requires strict per-PR staged acceptance. Integrated-main production promotion is proposed in draft PR #194 and is not the active main workflow. Do not bypass, fake or ignore current gates until an authorised ruleset change and revised release workflow have been independently proven.
 - Preserve all auth, RLS, MFA, approval, budget, private-data and environment protections. Distinct cross-boundary contracts have a single owner.
 - Link precise dependencies in Linear. Never assume an unmerged branch feature exists on main.
 
@@ -35,7 +41,7 @@ Apply authority by subject: the Agent Spec controls agent behavior and provider 
 - Build model: `gpt-5.6-terra`
 - Reasoning effort: `medium`
 - Implementation tickets are already planned in Linear; inspect named code and execute the ticket directly. Do not produce a separate planning/readback artifact.
-- Use Playwright MCP for frontend/browser testing.
+- For changed UI, use Codex-operated interactive local browser walkthroughs; Playwright may be an optional diagnostic tool but is not a required or scheduled browser E2E gate once AI-192 is implemented. Follow the current active workflow until that transition is verified.
 - Use OpenAI Docs MCP for OpenAI/Codex/API implementation details.
 - Use configured Supabase tooling for schema, RLS, functions, and migrations.
 - Use normal terminal tooling for Git, GitHub CLI, pnpm, Supabase CLI, Wrangler, Python, Docker, and tests.
@@ -51,7 +57,7 @@ For an implementation pass:
 - fix failures;
 - update documentation and ADRs;
 - create and monitor the PR;
-- continue until checks pass and auto-merge completes.
+- continue until local acceptance and current required checks pass; use the protected merge route and only an activated independent merge coordinator. Never self-approve or bypass a check. Record exact merged SHA; release is tracked separately.
 
 Do not ask the user to choose routine engineering details. Select the safest design that satisfies the specification and record material decisions in an ADR.
 
@@ -125,7 +131,7 @@ Errors must be actionable without secret/personal-data leakage: identify the fai
 - The ticket has precisely six sections and its testing list is executable as written. No startup readback file and no parent-conversation readback.
 - First inspect named code and fixed contracts. If a prerequisite is missing or a command invalid, report that specific obstacle and its evidence.
 - Run the cheapest focused reproduction and direct consumer/permission checks. Use existing focused Vitest, Deno, pgTAP and Playwright tests as appropriate.
-- Run local platform checks only for affected boundaries. For DB: exact roles/ACLs, migration history and schema types. For Edge: auth manifest and import maps. For Cloudflare: local production-like Worker preview when relevant.
+- Run local platform checks only for affected boundaries. For DB: exact roles/ACLs, migration history and schema types. For Edge: auth manifest and import maps. For Cloudflare: local production-like Worker preview when relevant. For changed UI: Codex-led manual local browser walkthrough, not scheduled browser automation once AI-192 is active.
 - Stage only changes whose externally hosted runtime/provider behaviour cannot be proven locally, as a separately owned release acceptance ticket once the repository ruleset has been migrated.
 - Open one PR per ticket with exact SHA, tests/results, and any unverified requirement. The PR owner is accountable through merge.
 - Current ruleset still enforces staged acceptance; observe it until it is updated. Do not weaken repository protections through an implementation ticket.
