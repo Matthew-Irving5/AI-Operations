@@ -28,15 +28,17 @@ Precise implementation outcome. One stable boundary, not a whole subsystem.
 - Exact Linear blockers and their promised contracts.
 - Approved canonical pattern and runtime identity/permissions.
 - Relevant Figma/UI references if any. Explicit forbidden scope.
+- Proposed risk exposure (low/medium/high/unknown) with actual potentially affected permissions, side effects, shared APIs and release/runtime surfaces. This is a proposal, NOT self-approved risk classification; independent policy AI-203 decides when active.
+- Shared write-surface claim, implementation blocker vs separate release-owned proof and whether production activation is currently permitted.
 - A ticket blocked by a future file specifies interface shape now.
 
 ## Testing
 
 - Local setup only for affected runtime. Exact commands, test files and assertions.
 - Test changed behaviour plus direct and transitive affected contracts, no unrelated system journey.
-- Explicit no browser/no staging/no MFA if irrelevant.
+- Changed UI: Codex-led local manual browser walkthrough (main path, denial/error path, keyboard/viewport/persistence). No required scheduled/browser E2E after AI-192 activation; no browser/staging/MFA for unrelated backend work.
 - Hosted-only check, if unavoidable, is assigned to a separate release acceptance ticket.
-- Done after local functional proof, required lightweight PR checks and merged commit.
+- **Implementation Done** after local functional proof, actually required PR/security checks and merged commit. **Released** only after exact protected production SHA and observation. Always follow `docs/testing/risk-adaptive-delivery.md` and actual GitHub gates until cutover.
 
 ## Authoring self-critique
 
