@@ -2,7 +2,7 @@
 
 ## Current delivery policy (supersedes older QA/merge/release instructions)
 
-**Always read `docs/testing/risk-adaptive-delivery.md` after the Linear ticket and before selecting tests, merging or deploying.** It is the concise operational contract for parallel Codex execution, independent effective-risk classification, manual local UI walkthroughs, current-main synthetic merge admission and exact-SHA promotion. Root product/security specs still govern architecture and safety. A contradictory older ticket, skill or scheduled-Playwright statement does not authorise a weaker gate.
+**For a new AI Operations ticket, first read `docs/testing/codex-ticket-entrypoint.md`, then the exact current Linear issue and `docs/testing/risk-adaptive-delivery.md` before selecting tests, merging or deploying.** It is the concise operational contract for parallel Codex execution, independent effective-risk classification, manual local UI walkthroughs, current-main synthetic merge admission and exact-SHA promotion. Root product/security specs still govern architecture and safety. A contradictory older ticket, skill or scheduled-Playwright statement does not authorise a weaker gate.
 
 **Activation is gated:** this repository's main branch still uses old GitHub ruleset `24213001`; PR #194 is draft and unmerged. The risk-based automatic production fast lane, merge coordinator, staged batching and immutable-ancestor promotion are **planned only**, not permitted until their owning implementation tickets and independent checks pass. Until then obey the actual required GitHub checks and manual protected release path. Codex cannot self-approve production, risk downgrades or privileged authorization.
 
@@ -38,7 +38,7 @@ Apply authority by subject: the Agent Spec controls agent behavior and provider 
 
 ## Codex configuration
 
-- Build model: `gpt-5.6-terra`
+- Use a model and reasoning setting actually available in the configured Codex client. Historic `CODEX_PASS_PROMPTS.md` model selections apply only to explicitly assigned legacy passes; do not fail or silently switch tools trying to find an obsolete model.
 - Reasoning effort: `medium`
 - Implementation tickets are already planned in Linear; inspect named code and execute the ticket directly. Do not produce a separate planning/readback artifact.
 - For changed UI, use Codex-operated interactive local browser walkthroughs; Playwright may be an optional diagnostic tool but is not a required or scheduled browser E2E gate once AI-192 is implemented. Follow the current active workflow until that transition is verified.
@@ -138,7 +138,7 @@ Errors must be actionable without secret/personal-data leakage: identify the fai
 - Retain the integration failure ledger; whenever a known preventable defect escapes, add the narrowest future guard to the owning boundary.
 - Before Done, record merged commit and exact evidence. A project release is a distinct milestone from merged feature implementation.
 
-## Conversation completion
+## Conversation completion (historical passes only; new Linear tickets use the ticket entrypoint)
 
 When the pass is merged:
 
@@ -166,7 +166,7 @@ A feature is complete only when it has:
 - observability;
 - no placeholder or TODO.
 
-## Pass 8 completion and controlled live-agent rollout
+## Pass 8 completion and controlled live-agent rollout (historical only — do not run for replacement tickets)
 
 Pass 8 is the completion pass after the seven historical passes. Use the exact
 `pass-08-completion` branch and prompt in `CODEX_PASS_PROMPTS.md`.
