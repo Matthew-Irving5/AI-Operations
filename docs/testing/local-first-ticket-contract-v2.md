@@ -1,6 +1,6 @@
 # Local-first engineering and ticket contract v2
 
-Status: TRANSITIONAL. The integrated-main staged release/promotion workflow is implemented on draft PR #194, but is NOT on main until merged and tested. GitHub ruleset 24213001 still requires strict per-PR staged acceptance. Change its requirements only after the release gate is independently verified.
+Status: TRANSITIONAL. **See [risk-adaptive-delivery.md](risk-adaptive-delivery.md) for the current controlling pickup-to-production policy and the difference between proposed vs active controls.** Draft PR #194 is NOT on main; GitHub ruleset 24213001 still requires strict per-PR staged acceptance. Change it only after independently verifying replacement controls.
 
 ## Completion and merge
 
@@ -20,11 +20,11 @@ Use exactly six sections: title, Problem, Acceptance, Key files, Supporting info
 - Backend API: route/schema tests and direct consumer contract, denied caller when relevant. No UI unless changed.
 - Postgres/RPC/RLS: isolated Supabase, real caller role, targeted pgTAP and expected denied operations, generated types/drift if schema changes. Never assume service_role bypasses explicit GRANTs. Read only the required table/RPC rows from docs/testing/platform-live-role-catalog-20261111.json and prove the relevant permission through local pgTAP.
 - Edge: scoped Deno tests, exact auth manifest entry, function import map, and deployment dependency closure.
-- UI: component/route tests and changed viewport/layout only. Browser only for changed navigation/interaction, not backend-only work.
+- UI: component/route tests and a Codex-led **interactive local browser walkthrough** for changed navigation, layout or interaction. Local fixture setup faults are fixed in the same worktree. Automated Playwright is optional diagnostics and is not a required/scheduled browser test after AI-192 cutover. No browser for backend-only work.
 - Cloudflare runtime: existing local OpenNext/Miniflare/workerd preview for middleware/cookie/routing compatibility; only use hosted acceptance for non-emulatable Cloudflare/network behaviour.
 - Provider: deterministic fixtures and error paths locally; one purpose-bound hosted test only when changing actual OAuth consent, provider permissions or other live behaviour.
 - Shared contract/config: affected transitive consumers, role matrix and deployment compatibility. Unknown impact is not permission to skip.
-- Entire DB/Edge/Playwright regression is scheduled and manually dispatchable. Not universal per-ticket PR CI.
+- Broader **code-level** database/Edge/contract regression may remain scheduled or manually dispatchable. Retire required/scheduled **browser automation** after AI-192 proves replacement coverage; it is not a per-ticket PR CI gate.
 
 ## Existing commands to reuse
 
@@ -43,7 +43,7 @@ Use exactly six sections: title, Problem, Acceptance, Key files, Supporting info
 - Independent branches start from a known main; do not stack PRs unless a genuine technical dependency requires it.
 - Do not routinely rebase unrelated PRs when another merges. Loose branch checks are faster but risk unverified combined state; inspect shared contracts and merge conflicts.
 - Shared migrations, generated types, release selectors, auth schemas and config require explicit single ownership.
-- Staging is one shared mutable environment, not five independent test slots. Only release owner may mutate shared staging/production.
+- Staging is one shared mutable environment, not five independent test slots. Only release owner may mutate shared staging/production. AI-196 will replace every-main-push heavy staging with selected immutable-main-SHA deployment; until implemented do not pretend it is active.
 - Preview frontend URL is not proof that its Supabase and provider resources are isolated.
 - Never weaken MFA, RLS, hard cost ceilings, repository restrictions or secret handling for speed.
 
@@ -57,6 +57,16 @@ Use exactly six sections: title, Problem, Acceptance, Key files, Supporting info
 
 ## Regression cadence and learning
 
-- Broad DB, Edge and Playwright suites run twice weekly and on manual dispatch; production release has a controlled separate acceptance.
+- Broad impacted DB/Edge and code contract suites may run on a separate cadence. Automated browser suites are not a mandatory or scheduled acceptance gate after AI-192 implementation. A Codex/operator-led attended hosted walkthrough verifies real external integrations at release.
 - For an escaped deterministic defect add a cheap local invariant/regression at the owning boundary. Do not force every future ticket to run an unrelated suite.
 - Record first useful error, reproducible command and actual role before remediation.
+
+
+## Risk-adaptive speed/security delivery
+
+- `docs/testing/risk-adaptive-delivery.md` is the controlling operational classification, merge admission and release contract. Do not treat a ticket label or an implementing Codex's opinion as independent low-risk approval.
+- **Low:** tightly scoped static UI/copy/pure local logic with demonstrably no changed privileges/side effects. Medium: API/provider/compatible schema/runtime integration. High: authorization/RLS/MFA/secrets, autonomous privileged actions, CI/security/release controls, destructive migration or unknown impact. Actual changes and transitive dependencies decide, not ticket labels.
+- All categories retain scoped deterministic and security tests, exact combined-tree/merging and staged artifact provenance. Medium/high use protected manual production approval; high also needs independent human security approval.
+- **No auto-prod today:** low-risk fast-lane activation requires independently reviewed classifier AI-203 and constrained production policy AI-204. Old branch/release rules remain in force until cutover proof.
+- AI-194/195 own safe combined-tree protected merge admission; AI-196 selected-main batch staging; AI-197 initial bounded merge pause; AI-206 optional immutable ancestor-release with strict schema/security compatibility proof. Never abandon current-main protection merely to accelerate a merge.
+- AI-205 tracks ticket pickup → verified production, not only PR merge.
