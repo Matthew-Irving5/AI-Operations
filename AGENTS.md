@@ -128,7 +128,7 @@ Agent debugging optimizes **localisation time**, not the number of patches attem
 
 Errors must be actionable without secret/personal-data leakage: identify the failed invariant, boundary/subsystem, expected vs actual state, correlation ID when available, owning contract/source when known, and the exact reproduction command.
 ## Local-first engineering execution — transitional v2
-- The ticket has precisely six sections and its testing list is executable as written. No startup readback file and no parent-conversation readback.
+- The ticket must have a title plus the five core sections: Problem, Acceptance, Key files, Supporting info, Testing. Later dated amendments may exist; resolve conflicting QA/deployment wording against current project policy and **actual live platform gates**, not older prose. A nonexistent path or invalid test command must be corrected in Linear before coding. No separate startup readback file.
 - First inspect named code and fixed contracts. If a prerequisite is missing or a command invalid, report that specific obstacle and its evidence.
 - Run the cheapest focused reproduction and direct consumer/permission checks. Use existing focused Vitest, Deno, pgTAP and Playwright tests as appropriate.
 - Run local platform checks only for affected boundaries. For DB: exact roles/ACLs, migration history and schema types. For Edge: auth manifest and import maps. For Cloudflare: local production-like Worker preview when relevant. For changed UI: Codex-led manual local browser walkthrough, not scheduled browser automation once AI-192 is active.
