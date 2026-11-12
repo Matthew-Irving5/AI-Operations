@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 
-// Evidence is produced only by the successful push-to-main staging workflow.
+// Evidence is produced only by the successful explicitly dispatched exact-main staging workflow.
 // The release workflow obtains GitHub run, commit, ref and artifact objects via GitHub API.
 const Sha = z.string().regex(/^[a-f0-9]{40}$/);
 const RunId = z.string().regex(/^[1-9][0-9]{0,19}$/);
@@ -37,7 +37,7 @@ const Run = z
     path: z.literal('.github/workflows/deploy-staging.yml'),
     headBranch: z.literal('main'),
     headSha: Sha,
-    event: z.literal('push'),
+    event: z.literal('workflow_dispatch'),
     status: z.literal('completed'),
     conclusion: z.literal('success'),
     runId: RunId,
