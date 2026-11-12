@@ -1280,6 +1280,9 @@ test('manual staging dispatch is the only privileged candidate path and binds ho
     /workflow_dispatch:[\s\S]*mode:[\s\S]*options: \[candidate, acceptance, integrated-main\]/,
   );
   assert.doesNotMatch(deployWorkflow, /workflow_call:|workflow_run:/);
+  assert.match(deployWorkflow, /name: Reject malformed staging dispatch before deployment/);
+  assert.match(deployWorkflow, /Candidate deploy needs an exact PR SHA and no main release SHA/);
+  assert.match(deployWorkflow, /Main release needs an exact main SHA and no PR SHA/);
   for (const removedWorkflow of ['staging-candidate.yml', 'staging-acceptance-status.yml'])
     await assert.rejects(
       readFile(new URL(`../../.github/workflows/${removedWorkflow}`, import.meta.url), 'utf8'),
@@ -1530,6 +1533,10 @@ test('production promotion validates exact successful integrated-main staging ev
     'production migration push must preserve approved migration history',
   );
   assert.match(staging, /INTEGRATED_MAIN_STAGING_VERIFIED/);
+  assert.doesNotMatch(staging, /^\s+push:/m, 'no automatic deployment on every main push');
+  assert.match(staging, /expected_main_sha:/);
+  assert.match(staging, /Recheck exact integrated-main before staging mutation/);
+  assert.match(workflow, /run\.get\('event'\) != 'workflow_dispatch'/);
   assert.match(staging, /if: github\.event_name == 'workflow_dispatch' && inputs\.mode == 'integrated-main' && github\.ref == 'refs\/heads\/main'/);
   assert.match(staging, /stagingRunAttempt: Number\(process\.env\.STAGING_RUN_ATTEMPT\)/);
   assert.match(staging, /migrations: 'passed', edgeFunctions: 'passed', sourceDrift: 'passed'/);
