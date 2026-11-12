@@ -3,7 +3,7 @@
 **Status: policy proposed / agent guidance prepared, NOT activated in GitHub.** Adopted in Linear project P-AI-2 on 2026-11-12. This doc is the concise ticket-to-production decision rule. AI Operations product, security and frontend specifications remain authoritative within their domains.
 
 ## What is already active vs planned
-- **Active on `main`:** existing strict ruleset 24213001 requiring per-PR staged acceptance; protected production environment and actual workflows. Do not fake checks, bypass branch rules, assume #194 has merged or treat agent-written evidence as approval.
+- **Historical observation (12 Nov 2026), not live authority:** ruleset 24213001 then required strict per-PR staging and #194 was draft. At every pickup, inspect **live main, active rulesets, required CI checks, workflows and release evidence**. Do not fake checks, bypass rules or assume a draft automatically activated.
 - **Prepared in draft PR #194:** independent fast PR CI, proposed integrated-main staging and protected manual exact-SHA production promotion, improved integration skill. A draft commit does not activate these.
 - **Implementation still required:** AI-70/71/97 for safe cutover; AI-72/73/192/194–202 for local isolation, optional browser automation removal, combined merge testing and batching; AI-203–206 for independent risk classification, restricted low-risk auto-release, delivery metrics and immutable ancestor-SHA promotion.
 - Until these are independently proven and explicitly enabled, **all production changes use the current protected manual release path.**
