@@ -64,6 +64,25 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
+      - name: Reject malformed staging dispatch before deployment
+        env:
+          MODE: ${{ inputs.mode }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          case "$MODE" in
+            candidate)
+              [[ "$CANDIDATE_SHA" =~ ^[a-f0-9]{40}$ && -z "$EXPECTED_MAIN_SHA" ]] || { echo 'Candidate deploy needs an exact PR SHA and no main release SHA.'; exit 1; }
+              ;;
+            integrated-main)
+              [[ "$EXPECTED_MAIN_SHA" =~ ^[a-f0-9]{40}$ && -z "$CANDIDATE_SHA" ]] || { echo 'Main release needs an exact main SHA and no PR SHA.'; exit 1; }
+              ;;
+            *)
+              echo 'Unsupported staging dispatch mode.'
+              exit 1
+              ;;
+          esac
       - name: Validate exact integrated-main dispatch before hosted access
         if: inputs.mode == 'integrated-main'
         env:
