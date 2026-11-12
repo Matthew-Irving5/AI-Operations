@@ -2,6 +2,11 @@
 
 Status observation dated 12 Nov 2026: prepared in [PR #194](https://github.com/Matthew-Irving5/AI-Operations/pull/194), then draft. **Always recheck the LIVE repo, rulesets, active workflows and evidence** before using a new gate; a document is not activation proof. This document applies to **AI Operations implementation tickets**, never the historic Pass 8 pipeline. See `AGENTS.md`, `docs/testing/risk-adaptive-delivery.md` and `.agents/skills/ai-operations-integrate/SKILL.md`.
 
+
+## Minimal new-Codex prompt (replace AI-XX)
+
+> Execute **AI-XX** in **Matthew-Irving5/AI-Operations**. Use the **current merged `main`**, the exact Linear issue including live `blockedBy`, the root `AGENTS.md`, and this ticket entrypoint. Do not use historical Pass 8 instructions. Confirm preconditions and current repository/ruleset permissions rather than assuming a proposed feature is active. Make one small implementation in an isolated worktree, with caller/contract-aware positive and denied-role tests; manually navigate changed UI if applicable. Fix/retry locally, record actual evidence and open one protected PR. Use independently proven merged-tree admission and release workflows only if active; never fake checks, self-approve high-risk changes or write production. If a required boundary is unavailable, stop at that specific blocker and record exact SHA, evidence and resumption command.
+
 ## A ticket may start locally when
 1. Read the **complete current Linear issue** with native `blockedBy` relations, **not only its description**. All actual blockers must be Done; verify the **promised code/contract is merged to main**. A future path marked NEW is not a file you can import today. Tracking parents are not implementation tickets.
 2. Confirm all five body sections exist under the ticket title: Problem, Acceptance, Key files, Supporting info, Testing. If the ticket cites a nonexistent existing file, contradicts the current code or lacks required caller/contract details, correct the issue or block it. Do not guess its intended APIs.
