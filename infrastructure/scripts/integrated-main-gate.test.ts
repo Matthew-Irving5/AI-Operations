@@ -19,7 +19,7 @@ function valid() {
       path: '.github/workflows/deploy-staging.yml',
       headBranch: 'main',
       headSha: sha,
-      event: 'push',
+      event: 'workflow_dispatch',
       status: 'completed',
       conclusion: 'success',
       runId: '40000000000',
@@ -68,7 +68,7 @@ test('stale main, wrong tree or wrong request SHA cannot be promoted', () => {
 test('failed, rerun, wrong branch, repo or staging mode is rejected', () => {
   for (const corrupt of [
     (v: ReturnType<typeof valid>) => (v.stagingRun.conclusion = 'failure'),
-    (v: ReturnType<typeof valid>) => (v.stagingRun.event = 'workflow_dispatch'),
+    (v: ReturnType<typeof valid>) => (v.stagingRun.event = 'push'),
     (v: ReturnType<typeof valid>) => (v.stagingRun.headBranch = 'candidate'),
     (v: ReturnType<typeof valid>) => (v.stagingRun.repositoryFullName = 'attacker/repo'),
     (v: ReturnType<typeof valid>) => (v.stagingRun.runAttempt = 2),
