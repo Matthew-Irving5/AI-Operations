@@ -5,7 +5,7 @@ description: Exact, low-context AI Operations integration and permission rules f
 
 # Integration rules — use only changed boundary
 
-**Read the six-section Linear ticket first.** Inspect named producer, caller, consumer and active migrations. This page is the short default; load a historical incident ONLY when its code or symptom matches.
+**Read the six-section Linear ticket and `docs/testing/risk-adaptive-delivery.md` first.** Inspect named producer, caller, consumer and active migrations. Risk classification is independently enforced and may escalate based on real transitive effects; Codex cannot approve its own low-risk release. This page is the short default; load a historical incident ONLY when its code or symptom matches.
 
 ## Supabase: real caller, not assumed permissions
 
@@ -30,7 +30,7 @@ description: Exact, low-context AI Operations integration and permission rules f
 
 - PRs: one branch/conversation/ticket, only direct affected local tests, plus `corepack pnpm verify:changed --lane=pr` independent critical contracts. Do **not** run broad staging for feature tickets.
 - Ruleset `20477648` protects branch creation/deletion/force push and PR route; preserve it. Ruleset `24213001` **currently** requires strict `AI Operations / Staging capability acceptance`; repository settings must remove that requirement and make fast status checks loose **only after** PR #194's integrated-main release gate is verified.
-- Staging deploys merged `main` sequentially; not each feature PR. Production is manual operator promotion of successful **exact main SHA/tree/run/attempt** staging evidence, with protected environment, migration/source drift and bounded smoke. GitHub connector cannot change rulesets; never fake a status or bypass environment approval.
+- **Current main is not cut over:** PR #194 is still draft, ruleset 24213001 retains required per-PR staging. Do not fake statuses or bypass it. AI-194/195 will validate combined current-main merge trees; AI-196 will stage selected exact-main SHA batches (not every push); AI-197 temporarily pauses merges for protected manual promotion; AI-206 may remove that pause only after separate immutable ancestor-SHA and migration/security compatibility proof. Production always requires exact repo/SHA/tree/run/attempt evidence, migrations/source drift, environment protections and bounded smoke. GitHub connector cannot change rulesets.
 - CI workflow token permissions differ per job; use explicit `permissions:` and protected environment secrets. Validate release SHA, repo and runner origin before any mutating provider command. Never expose tokens or use outside `Matthew-Irving5` repositories.
 
 ## When an integration failure happens
@@ -38,3 +38,13 @@ description: Exact, low-context AI Operations integration and permission rules f
 - First evidence: actual caller identity → target role/GRANT → exact RPC/schema → deployment manifest/bindings → direct consumer. Run one narrow negative and positive reproduction.
 - Look up only relevant rule ID in `references/integration-rules.md`; consult matching incident in `references/failure-ledger.md` if still needed. No exhaustive reading.
 - After fixing a *confirmed* recurring integration fault: add a targeted failing-then-passing test/invariant, then append or de-duplicate one concise rule/incident. Never add broad tests or grant new rights just to turn CI green.
+
+
+## Fast but secure ticket-to-production selection
+
+- Follow `docs/testing/risk-adaptive-delivery.md`. Select only blockedBy-Done issues with proven runtime prerequisites; no release-stage prerequisites for unrelated local-only code. Confirm shared ownership before writing. Use isolated worktree/port/fixtures (AI-200/201) once implemented.
+- **LOW** only after independently proven no auth, privilege, secret, persistence, provider, executable side-effect, tool, runtime, dependency or release/CI impact. **MEDIUM** for compatible API/schema/provider boundaries with role/negative/integration tests. **HIGH** for auth/RLS/MFA/secrets, cost or action authority, destructive changes, policy/CI controls, unknown impact. Unclassified = hold; the author agent is not the approving identity.
+- Browser work for changed UI is Codex-operated **manual local walkthrough**; repair local test setup and rerun without staging upload. Automated browser E2E is not a new requirement and removal is owned by AI-192. Never use local test-only auth in staging/prod.
+- PR must pass actual current branch protection until revised; after activation, independent fast CI/security + current-main combined-merge proof. Clean changes to separate functions in one file do not require routine rebase. Shared contracts and migrations have a single writer and transitive-consumer tests.
+- **No automatic production today**: low-risk automated promotion is owned by AI-203/204 and cannot start on a ticket risk label. Until activated, protected **manual** exact-SHA production only; do not grant production credentials to coding agents or downgrade policy to remove delays.
+- Complete ticket on merged proof, but report production deployment separately; AI-205 will measure pickup→verified prod and security failures. Failure in real hosted permissions belongs to the protected release owner; never widen access to fix a staging test.
