@@ -1,8 +1,7 @@
 name: Full regression
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '17 3 * * 0,3'
+# Optional manual diagnostic only. No scheduled or PR-gating browser automation.
 
 concurrency:
   group: full-regression
