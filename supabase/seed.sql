@@ -50,3 +50,28 @@ on conflict do nothing;
 insert into public.mfa_reauthentication_events(user_id, method)
 values ('00000000-0000-0000-0000-000000000101', 'totp')
 on conflict do nothing;
+
+
+-- Local test-only rolling pricing fixtures; never deploy this seed or treat prices as live.
+-- The original 2026-08-03 rows are deliberately immutable and expire under
+-- the production 90-day freshness invariant. Local tests need current *synthetic*
+-- rows so that generic queue/AI tests do not fail solely from elapsed time.
+-- Real production price updates require independently sourced prices + MFA.
+insert into public.model_pricing (
+  model_id, effective_from, input_per_million, cached_input_per_million,
+  output_per_million, web_search_per_call, source_url, verified_at,
+  cache_write_multiplier
+)
+select
+  id,
+  date_trunc('day', now()),
+  case model_id when 'gpt-5.6-luna' then 1.00 when 'gpt-5.6-terra' then 2.50 else 5.00 end,
+  case model_id when 'gpt-5.6-luna' then 0.10 when 'gpt-5.6-terra' then 0.25 else 0.50 end,
+  case model_id when 'gpt-5.6-luna' then 6.00 when 'gpt-5.6-terra' then 15.00 else 30.00 end,
+  0.01,
+  'https://developers.openai.com/api/docs/models/compare',
+  now(),
+  1.25
+from public.ai_model_catalog
+where model_id in ('gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol')
+on conflict (model_id, effective_from) do nothing;
