@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       staging_run_id:
-        description: ID of the successful integrated-main push-to-staging workflow run
+        description: ID of the successful protected integrated-main staging dispatch workflow run
         required: true
         type: string
       expected_main_sha:
@@ -57,13 +57,13 @@ jobs:
               run.get('head_repository', {}).get('full_name') != os.environ['GH_REPOSITORY'],
               run.get('name') != 'Deploy staging',
               run.get('path') != '.github/workflows/deploy-staging.yml',
-              run.get('event') != 'push',
+              run.get('event') != 'workflow_dispatch',
               run.get('head_branch') != 'main',
               run.get('head_sha') != expected,
               run.get('status') != 'completed',
               run.get('conclusion') != 'success',
           )):
-              raise SystemExit('Staging workflow was not a successful push-to-main deployment of the requested SHA')
+              raise SystemExit('Staging workflow was not a successful protected exact-main dispatch of the requested SHA')
           tree = github(f'git/commits/{expected}')
           tree_sha = tree['tree']['sha']
           if re.fullmatch(r'[a-f0-9]{40}', tree_sha) is None:
