@@ -73,8 +73,9 @@ jobs:
       - name: Verify isolated local SQL migrations, RLS and RPCs
         run: |
           pnpm exec supabase start
-          pnpm exec supabase db reset --local
-          pnpm exec supabase test db
+          # Existing test:db harness seeds legacy rows BEFORE the AI-14 migration,
+          # verifies its historical backfill, then runs all current pgTAP contracts.
+          pnpm test:db
 
   ready:
     needs: [core, windows-worker, database-contract]
