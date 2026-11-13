@@ -21,5 +21,5 @@ jobs:
         with: { node-version: 22.18.0, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec supabase start
-      - run: pnpm exec supabase db reset --local
-      - run: pnpm exec supabase test db
+      - name: Verify historical backfill, current pgTAP and local drift
+        run: pnpm test:db
