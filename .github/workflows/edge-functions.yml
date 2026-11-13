@@ -2,7 +2,7 @@ name: Edge functions full regression
 on:
   workflow_dispatch:
   schedule:
-    - cron: '43 3 * * *'
+    - cron: '43 3 * * 0,3'
 
 concurrency:
   group: edge-full-regression

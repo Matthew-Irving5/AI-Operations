@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { Ai20CostRuntimeProofSchema } from './ai20-cost-runtime-proof.js';
+import { IntegratedMainPromotionEvidenceSchema } from './integrated-main-gate.js';
 import {
   CareerStagingAcceptanceChecksSchema,
   CareerStagingAcceptanceEvidenceSchema,
@@ -453,7 +454,7 @@ const AcceptanceEvidenceSchema = z
     }
   });
 
-export const ProductionPromotionEvidenceSchema = z
+const LegacyProductionPromotionEvidenceSchema = z
   .object({
     schemaVersion: z.literal(1),
     state: z.literal('PRODUCTION_PROMOTION_READY'),
@@ -466,6 +467,11 @@ export const ProductionPromotionEvidenceSchema = z
     stagingDeploymentRunId: RunIdSchema,
   })
   .strict();
+
+export const ProductionPromotionEvidenceSchema = z.union([
+  LegacyProductionPromotionEvidenceSchema,
+  IntegratedMainPromotionEvidenceSchema,
+]);
 
 const ProductionSmokeSchema = z
   .object({
@@ -1582,31 +1588,33 @@ export function recordProductionSmoke(input: {
     'valid production promotion evidence',
   );
   const deployedSha = ShaSchema.parse(input.deployedSha);
-  if (deployedSha !== promotion.mergeCommitSha)
+  const releaseSha = promotion.schemaVersion === 1 ? promotion.mergeCommitSha : promotion.mainSha;
+  const contextSha = promotion.schemaVersion === 1 ? promotion.candidateSha : promotion.mainSha;
+  if (deployedSha !== releaseSha)
     fail(
       'deployed_sha_mismatch',
       'production.smoke',
-      promotion.candidateSha,
-      promotion.mergeCommitSha,
+      contextSha,
+      releaseSha,
       deployedSha,
     );
   const probes = parseEvidence(
     ProductionSmokeSchema.shape.probes,
     input.probes,
     'production.smoke',
-    promotion.candidateSha,
+    contextSha,
     'bounded safe capability probes',
   );
   const requiredProbes = ['workerVersion', 'loginShell', 'authBoundary', 'safeFunction'] as const;
   for (const name of requiredProbes) {
     const count = probes.filter((probe) => probe.name === name).length;
     if (count === 0)
-      fail('production_probe_missing', 'production.smoke', promotion.candidateSha, name, 'missing');
+      fail('production_probe_missing', 'production.smoke', contextSha, name, 'missing');
     if (count > 1)
       fail(
         'production_probe_duplicate',
         'production.smoke',
-        promotion.candidateSha,
+        contextSha,
         `one ${name} result`,
         `${count} results`,
       );
@@ -1619,7 +1627,7 @@ export function recordProductionSmoke(input: {
     fail(
       'production_release_version_mismatch',
       'production.smoke',
-      promotion.candidateSha,
+      contextSha,
       deployedSha,
       workerVersionProbe.observedReleaseSha ?? 'missing',
     );

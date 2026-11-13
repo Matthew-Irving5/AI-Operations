@@ -1,16 +1,16 @@
-# Next AI Operations parallel Codex goal (21 October 2026)
+# Independent Codex ticket execution (local-first v2)
 
-This is the **short goal to paste to the Codex coordinator**. Linear remains the live issue/status source; this document is not a second ticket queue.
+**Current policy:** docs/testing/local-first-ticket-contract-v2.md and docs/testing/linear-ticket-template-v2.md. GitHub ruleset 24213001 still enforces legacy strict staging until AI-70/AI-71 are implemented and verified.
 
-> **Goal:** Complete AI-17, 20, 22, 27, 28, 35, 39, 41, 44 and 45 safely, with maximum _merged-ticket throughput_. Read AGENTS.md, each Linear issue and the ai-operations-integrate skill. Give each ticket one owner and an isolated worktree. Parallelise independent changes; coordinate shared DB/runtime contracts and serialize staging/merges. For every issue: precise readback → existing integration rules → narrow implementation/proofs → verify:changed → exact-head CI → only required hosted proof → merge, production smoke and Linear Done. Log a proven integration lesson in the skill with its fix. If login/MFA is required, pause and ask me when the visible browser is ready; never start unattended timers. Use concise updates and durable SHA/next-command handoffs before compaction. No speculative fixes, unrelated changes, weakened gates or employer repos.
+## One new Codex conversation per ticket
 
-## Coordinator operating policy (repository-owned, not copied into the goal)
+> Own Linear AI-XX in Matthew-Irving5/AI-Operations. Read its six-section implementation ticket, linked blockers, exact current source and applicable integration skill. The ticket already contains the implementation contract; do not produce a startup readback or repeat planning. Work in an isolated branch/worktree, implement the stated behaviour and execute exactly the listed local tests with real caller roles. Report any proven stale/unsafe instruction, not speculative redesigns. Push one coherent PR with exact SHA and observed test results. Do not bypass existing GitHub gates; do not run unrelated staging or ask for MFA unless the ticket explicitly owns a hosted release boundary. Preserve a compact SHA/tests/blocker/next-command handoff on compaction.
 
-- Plan for **up to four active coding lanes** at first; do not interpret ten unblocked tickets as ten safe writers to shared tables. Start more only after showing no path/contract collisions and real throughput improvement. A lane parked on CI or human proof may free coding capacity.
-- Establish an ownership/merge-order map before dispatch: one owner and isolated branch per ticket; no simultaneous edits to the same canonical contract without a declared owner or interface freeze. Each lane knows its dependent PR head.
-- Work classification: UI shell AI-22; delegated runtime AI-17/20/39/44; service integrations AI-27/28/35/41; storage AI-45. These are _areas_, not guaranteed file disjointness. Every lane with migrations must reserve a unique version, and recombine against latest main before staging.
-- **Done** = ticket outcomes, relevant focused and changed-surface local proofs, exact-head mandatory CI, only issue-required live proof, merged PR, bounded production smoke if release requires, recorded Linear completion, and integration-rule update for novel confirmed integration defects.
-- Human intervention is a blocking gate, not a background wait. Ask a precise question with the one needed action and browser window; resume only after explicit confirmation, without repeating previously answered questions.
-- Always carry compact handoffs: ticket, PR/sha, current invariant, tests passed, true blocker, last diagnosed error, relevant integration rule IDs, and one next command. Reload from Linear/GitHub after compaction.
-- **Tools:** Linear for issue contracts/status and defect learning; GitHub for code review, PR CI, exact-SHA and merge; Serena for symbol callers/references, fallback rg; Ponytail for focused simplification after correctness; P-Stack `blast-radius` when changing shared interfaces and `fix-ci` only for CI diagnosis; Context7 for versioned vendor docs, not generic brainstorming; local shell/qa:debug for cheap reproductions; Playwright for changed browser journeys; staging only for genuinely hosted-only proof. No automatic multi-model panels.
-- Do not rebuild routine local login/MFA for unrelated features. Keep existing auth unchanged unless explicitly in a ticket's scope.
+## Parallel-lane rules
+
+- Independent coding conversations, not a coordinator spawning several subagents to work on different tickets.
+- Parallel only when blocking Linear dependencies have cleared and shared migrations/files are owned by one ticket.
+- Merge independently verified code, once the protected GitHub ruleset and production gate have been migrated as required by AI-70/AI-71.
+- If different tickets modify shared contract files or generated types, agree one producer contract first. Consumers link that exact upstream ticket as a blocker.
+- Local SQL, Edge and Worker simulations cannot prove real hosted OAuth, Cloudflare network or external provider credentials. Only release-owned tickets perform those verifications.
+- Never describe unfinished, unmerged or unauthorised work as complete.

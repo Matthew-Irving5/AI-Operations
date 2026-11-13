@@ -1,18 +1,50 @@
 ---
 name: ai-operations-integrate
-description: Reuse the AI Operations architecture and proven integration rules before cross-boundary edits; permanently capture new integration failures when fixed and at ticket Done.
+description: Exact, low-context AI Operations integration and permission rules for Supabase, Cloudflare Workers, GitHub releases and provider boundaries.
 ---
 
-# Integrate correctly first (not another test suite)
+# Integration rules — use only changed boundary
 
-**Always load for an AI Operations ticket changing DB, Edge, AI-runtime, Workers, provider APIs, orchestration, auth, or deployment.** Load after the normal issue-specific readback; never substitute for it.
+**Read the six-section Linear ticket and `docs/testing/risk-adaptive-delivery.md` first.** Inspect named producer, caller, consumer and active migrations. Risk classification is independently enforced and may escalate based on real transitive effects; Codex cannot approve its own low-risk release. This page is the short default; load a historical incident ONLY when its code or symptom matches.
 
-1. Identify the **changed paths and their real contracts** (caller, role, input/output schema, consumer, runtime, deployment mechanism). Use Serena/rg to locate their existing implementations; do not design an independent parallel path.
-2. Read only the matching sections of [integration rules](references/integration-rules.md), then check the pertinent entries in [failure ledger](references/failure-ledger.md). Refer to the three authoritative product specifications where they govern the work. State in the existing readback one sentence: "Using existing <path/contract>; integration risks: <IDs>." Do not write a second lengthy plan.
-3. Reuse the repository's canonical contracts, RPCs, migrations, wrappers, versioning and evidence producers. Before changing an interface, inspect **all direct producers and consumers**, their actual runtime identity/permissions, and the selected ticket's acceptance profile. Avoid introducing adapters or replacement abstractions without a demonstrated requirement.
-4. During implementation, obey domain rules below; test only the directly changed boundary. Do not run new universal startup tests. Follow existing targeted proof, verify:changed, CI and ticket-required staging gates.
-5. **Immediately after fixing an integration/infra defect:** append or refine one short, generalisable prevention rule and an evidence-linked incident in the reference files _in the same defect commit_. Include symptom, actual invariant/root cause, correct pattern, source issue/commit, and cheapest future detection. Deduplicate rather than append near-identical rules. Do not add an unverified hypothesis as a rule.
-6. **Before ticket Done:** explicitly review integration lessons from all errors, update this skill/references for novel findings, or record "integration lessons: no new rule; existing rule [ID] covered" in the Linear completion note. A merged fix without its recurring-prevention rule is unfinished when an integration defect occurred. Keep authoritative specs, security gates and tests intact.
-7. On context compaction/subagent handoff, preserve the relevant rule IDs and the exact next action (use ai-operations-handoff). The reference docs—not long conversation history—are the durable memory.
+## Supabase: real caller, not assumed permissions
 
-**Scope discipline:** This skill is design/integration guidance, not permission to alter locked auth, production secrets, protected table ACLs, cost ceilings or release evidence. Do not require a full local login/MFA journey unless the ticket actually changes that boundary.
+- **Prod:** `epmgvknrydadzitzupzx`. **Staging:** `jqtssfrfocnibffdkqch`. Both Postgres 17 (eu-west-2). The catalog is an observation from 2026-11-11, **not** authority for later changes.
+- **Lookup one object:** `node infrastructure/scripts/platform-role-lookup.mjs production table workflow_runs`; change `production` to `staging`, `table` to `rpc`, and name as needed. The dated catalog has 121 table/view entries and 150 RPC signatures per environment. Never paste the whole JSON into context.
+- **Direct table grants are NOT universal:** `service_role` cannot `INSERT workflow_runs` or `job_queue`, nor `SELECT actions` or `trace_events`. Use the **existing restricted RPC** / approved event writer and check `docs/security/rpc-execution-matrix.md`. `anon` cannot directly SELECT these protected tables. RLS and column grants still apply independently.
+- **Edge auth:** use `supabase/functions/_shared/auth-manifest.json` *and* `supabase/config.toml`. `verify_jwt=true` only validates the token; check owner, allowlist and required AAL2/MFA gate. `verify_jwt=false` can mean internal worker secret, device token, signed webhook or manual validated JWT: **never assume public access**.
+- **RPC:** check exact signature and actual `EXECUTE` for intended role. New `SECURITY DEFINER` needs fixed `search_path`, scoped ownership validation, explicit `REVOKE EXECUTE FROM PUBLIC/anon/authenticated` followed by only intentional `GRANT`; do not create a definer function merely to overcome a denied write. Some existing public token-ingest RPCs are deliberate: test token scopes before changing them.
+- **RLS:** owner predicates must be checked for `SELECT` and `UPDATE` (`USING` + `WITH CHECK`), including wrong owner. Never use editable `user_metadata` for authorisation or expose service secrets to Next/browser.
+- **Schema:** add forward migration with a collision-free version, never rewrite deployed history; update `packages/db/src/database.types.ts` and associated callers. Before touching AI-39 model pricing: **staging has migration 20261106134300 absent from prod/main**, and a different `add_model_pricing` signature.
+- **Local proof:** isolated `corepack pnpm exec supabase test db <specific-file>` (confirm CLI flags with `--help`); run `supabase/tests/local_required_role_permissions.sql` for sampled grants, `rpc_security.sql` for callable RPCs, and `corepack pnpm environment:drift -- repo-local` for schema changes. Simulated DB ≠ hosted credentials.
+
+## Cloudflare: configured bindings vs live permissions
+
+- Worker source is `apps/web` OpenNext; `wrangler.jsonc` = staging `ai-operations-staging`, `wrangler.production.jsonc` = production `ai-operations-production`. Both use `WORKER_SELF_REFERENCE`, `ASSETS`, and private `ARCHIVE_BUCKET` R2 bound to matching environment bucket.
+- Use `APP_ENV` and `PUBLIC_APP_ORIGIN` from the actual config; Cloudflare API credentials and archive gateway secret are protected GitHub environment secrets. **Names in workflows prove required configuration, not that a secret is populated or effective.**
+- For changed Worker route, cookie, self-binding or R2 handler, run local `workerd`/OpenNext preview with local-only bindings; `next dev` alone is not Cloudflare runtime proof. No remote binding or production R2 write during tests.
+- Wrangler pinned to `4.148.0`. Worker Previews are *not configured in this repo*. Do not invent isolated Supabase/R2/secret resources: even a Preview can point at shared resources. Real hosted OAuth, Cloudflare Access, provider API scopes and deployment permissions require a dedicated release-owned check.
+- Supabase Edge deployment uses `supabase/config.toml`, auth manifest and per-function import-map closure. Run focused `deno test --no-config <file>` and existing Edge import-map check. Do not assume local Deno config equals hosted bundle resolution.
+
+## GitHub / release: fast merge, protected promotion
+
+- PRs: one branch/conversation/ticket, only direct affected local tests, plus `corepack pnpm verify:changed --lane=pr` independent critical contracts. Do **not** run broad staging for feature tickets.
+- Ruleset `20477648` protects branch creation/deletion/force push and PR route; preserve it. Ruleset `24213001` **currently** requires strict `AI Operations / Staging capability acceptance`; repository settings must remove that requirement and make fast status checks loose **only after** PR #194's integrated-main release gate is verified.
+- **Current main is not cut over:** PR #194 is still draft, ruleset 24213001 retains required per-PR staging. Do not fake statuses or bypass it. AI-194/195 will validate combined current-main merge trees; AI-196 will stage selected exact-main SHA batches (not every push); AI-197 temporarily pauses merges for protected manual promotion; AI-206 may remove that pause only after separate immutable ancestor-SHA and migration/security compatibility proof. Production always requires exact repo/SHA/tree/run/attempt evidence, migrations/source drift, environment protections and bounded smoke. GitHub connector cannot change rulesets.
+- CI workflow token permissions differ per job; use explicit `permissions:` and protected environment secrets. Validate release SHA, repo and runner origin before any mutating provider command. Never expose tokens or use outside `Matthew-Irving5` repositories.
+
+## When an integration failure happens
+
+- First evidence: actual caller identity → target role/GRANT → exact RPC/schema → deployment manifest/bindings → direct consumer. Run one narrow negative and positive reproduction.
+- Look up only relevant rule ID in `references/integration-rules.md`; consult matching incident in `references/failure-ledger.md` if still needed. No exhaustive reading.
+- After fixing a *confirmed* recurring integration fault: add a targeted failing-then-passing test/invariant, then append or de-duplicate one concise rule/incident. Never add broad tests or grant new rights just to turn CI green.
+
+
+## Fast but secure ticket-to-production selection
+
+- Follow `docs/testing/risk-adaptive-delivery.md`. Select only blockedBy-Done issues with proven runtime prerequisites; no release-stage prerequisites for unrelated local-only code. Confirm shared ownership before writing. Use isolated worktree/port/fixtures (AI-200/201) once implemented.
+- **LOW** only after independently proven no auth, privilege, secret, persistence, provider, executable side-effect, tool, runtime, dependency or release/CI impact. **MEDIUM** for compatible API/schema/provider boundaries with role/negative/integration tests. **HIGH** for auth/RLS/MFA/secrets, cost or action authority, destructive changes, policy/CI controls, unknown impact. Unclassified = hold; the author agent is not the approving identity.
+- Browser work for changed UI is Codex-operated **manual local walkthrough**; repair local test setup and rerun without staging upload. Automated browser E2E is not a new requirement and removal is owned by AI-192. Never use local test-only auth in staging/prod.
+- PR must pass actual current branch protection until revised; after activation, independent fast CI/security + current-main combined-merge proof. Clean changes to separate functions in one file do not require routine rebase. Shared contracts and migrations have a single writer and transitive-consumer tests.
+- **No automatic production today**: low-risk automated promotion is owned by AI-203/204 and cannot start on a ticket risk label. Until activated, protected **manual** exact-SHA production only; do not grant production credentials to coding agents or downgrade policy to remove delays.
+- Complete ticket on merged proof, but report production deployment separately; AI-205 will measure pickup→verified prod and security failures. Failure in real hosted permissions belongs to the protected release owner; never widen access to fix a staging test.

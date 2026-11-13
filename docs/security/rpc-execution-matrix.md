@@ -43,7 +43,7 @@ trigger functions that PostgreSQL invokes through their trigger—not RPCs:
 - `reserve_recurring_budget(uuid,uuid,numeric)`
 - `calculate_spend_forecast(uuid,date)`
 - `record_provider_usage_reconciliation(uuid,timestamptz,timestamptz,numeric,text)`
-- `add_model_pricing(uuid,uuid,timestamptz,numeric,numeric,numeric,text)`
+- `add_model_pricing(uuid,uuid,timestamptz,numeric,numeric,numeric,numeric,text)`
 - `adapt_mobile_record_v1(uuid)`
 - `record_mobile_source_freshness()`
 - `record_legacy_apple_bridge_freshness()`

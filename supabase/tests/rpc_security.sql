@@ -33,7 +33,7 @@ insert into rpc_security_expected values
   ('public.claim_notification_delivery(text,integer)', false, false, true),
   ('public.complete_notification_delivery(uuid,text,text,text)', false, false, true),
   ('public.record_provider_usage_reconciliation(uuid,timestamptz,timestamptz,numeric,text)', false, false, false),
-  ('public.add_model_pricing(uuid,uuid,timestamptz,numeric,numeric,numeric,text)', false, false, false),
+  ('public.add_model_pricing(uuid,uuid,timestamptz,numeric,numeric,numeric,numeric,text)', false, false, false),
   ('public.execute_personal_workflow(uuid)', false, false, true),
   ('public.execute_health_finance_workflow(uuid)', false, false, true),
   ('public.execute_career_travel_procurement_workflow(uuid)', false, false, true),

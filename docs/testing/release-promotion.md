@@ -1,4 +1,16 @@
-# Staged release and production promotion
+# Integrated-main release transition (v2)
+
+- Feature ticket Done = focused local proof, independent PR CI and merge. No per-PR staging acceptance after ruleset 24213001 is migrated.
+- Every main push still deploys to the shared staging environment (serialised) and emits an `integrated-main-staging-<sha>` artifact only after migration, Edge, drift and readiness success.
+- Production is **manual-only**: dispatch `Deploy production` from `main` with `staging_run_id` from a successful push-to-main `Deploy staging` run, and `expected_main_sha` matching the current main HEAD. Production protected environment approvals still apply.
+- Promotion verifies source repo, main SHA/tree, successful staging run/attempt and exact evidence artifact; the runner rechecks HEAD before the first production mutation. Existing production environment, migrations, source/drift, Edge, R2, MFA and smoke controls remain in place.
+- A newer main commit invalidates an earlier staging run for promotion. Run and validate the latest integrated staging release before promoting; do not block feature PRs while it runs.
+- Never edit GitHub ruleset 24213001 until this PR passes tests and the operator has reviewed the production workflow. Keep the other repository ruleset (20477648) protecting PRs and force pushes.
+- The previous PR-head acceptance mechanism remains in Git history for emergency controlled rollback. Do not reenable automatic production promotion without explicit release policy review.
+
+# Legacy production promotion — transition notice
+
+This document describes the **currently enforced v1** exact-PR hosted acceptance path, not the desired local-first policy. AI-70 must replace per-PR staging evidence with safely validated integrated-main release evidence, and AI-71 must update GitHub ruleset 24213001. Until both are verified, follow the real workflow and required statuses; never forge or bypass them.
 
 AI-8 stages an unmerged pull request head, proves it through the existing AI-7 hosted browser harness, and promotes only its verified squash merge. No staging or production workflow waits for MFA.
 

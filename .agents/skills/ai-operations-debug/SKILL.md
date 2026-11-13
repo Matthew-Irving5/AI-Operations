@@ -1,13 +1,10 @@
 ---
 name: ai-operations-debug
-description: Localise failing AI Operations tests, CI and staging defects with narrow evidence and causal regressions instead of speculative patches.
+description: Reproduce and localise one failing local test or genuine integration boundary without broad reruns.
 ---
-
 # Narrow causal debugging
-
-1. Capture the first useful error, actual vs expected state, relevant role/fixture, failing boundary and exact reproduction. Redact secrets and personal data.
-2. Classify CODE, CONTRACT, ENVIRONMENT, INFRASTRUCTURE, FLAKE or UNKNOWN. Environment → qa:doctor; CI → gh run view --log-failed; use qa:debug for sanitized local evidence.
-3. Trace the producing and consuming symbols; inspect RPC/column grants, fixture state and evidence producer → schema → consumer when implicated. A 404 can conceal a DB permission error.
-4. Build or run the cheapest reproduction _before_ fixing. Patch the causal defect, rerun the same test. After two failed hypotheses, reset the diagnosis.
-5. Add an earlier regression/diagnostic for deterministic staging escapes. For confirmed integration or infrastructure causes, apply `ai-operations-integrate` and update the living rule plus evidence-linked failure ledger **in this fix commit**, not in a later documentation pass. Then run corepack pnpm verify:changed. Staging is not a debugger.
-   Return proof, fix, narrow command, regression result and genuine blockers. Never weaken MFA or change tests to disguise failure.
+1. Capture exact first failure, expected versus actual, role/fixture and command, redacting sensitive values.
+2. Classify CODE, CONTRACT, ENVIRONMENT, INFRASTRUCTURE, FLAKE or UNKNOWN. Use qa:doctor for environment-specific faults, not as a universal startup.
+3. Inspect real producer, consumer, SQL role, Edge config and deployment mapping. Reproduce with the smallest valid test.
+4. Patch the causal issue, rerun that test and affected direct consumers. If two hypotheses fail, reconsider diagnosis.
+5. For escaped deterministic defects add the lowest-cost regression. For integration/infra errors, update matching rule and failure incident. Staging is not a debugger; do not weaken auth/MFA or tests.

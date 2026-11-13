@@ -1,3 +1,7 @@
+# Current Codex guidance (verify live GitHub state)
+
+**For all new AI Operations Linear tickets, use `docs/testing/codex-ticket-entrypoint.md`, `docs/testing/risk-adaptive-delivery.md` and the live Linear issue.** The instructions below describe historical tool installations and suggested practice only. Do not use obsolete `qa:doctor`/Playwright startup gates, a historical fixed model, or per-PR hosted staging when the independently proven cutover has replaced them. Until the change is verified, obey the actual GitHub ruleset and protected manual production approvals.
+
 # Agent-native Codex workflow (AI Operations)
 
 Last checked: 15 October 2026. Codex default model was reset from an unsupported GPT-6 Sol override to the verified GPT-5.6 Terra for ChatGPT authentication. Linear remains the work queue, GitHub the PR/release authority, and this repository's tests the source of verification. External skills are tools, **not** authority to alter product scope, skip tests, disable security or change branch protection.
@@ -14,7 +18,7 @@ These are per-user Codex tools on one machine. They do **not** automatically con
 
 ## A low-friction ticket sequence
 
-1. **Read and state the contract.** Check the approved repo, current Linear issue, linked blockers, current code and `AGENTS.md`; run `corepack pnpm qa:doctor --fix`. Before editing, post a short _ticket-specific_ parent-conversation readback, and use the versioned readback artifact when its CI gate applies.
+1. **Consume the pre-engineered ticket.** Verify approved repo, exact Linear blockers, existing code and applicable AGENTS.md. The six-section ticket is the implementation and test plan; do not publish a readback. Start only necessary environment services.
 2. **Integrate using established contracts.** For cross-boundary tickets load `ai-operations-integrate`: map actual callers/roles, producers, consumers and the existing repository patterns before editing. Review only the matching rule IDs and incidents; after any confirmed integration fix update the living rule + incident in the same commit, and reconcile lessons at Done. For unfamiliar code use `ai-operations-investigate`, Serena or Context7 as applicable.
 3. **Implement and diagnose narrowly.** Use `ai-operations-debug` for broken behaviour. Fix producer/consumer contracts and add the smallest earlier regression test. Run `corepack pnpm verify:changed`.
 4. **Ship deliberately.** Use `ai-operations-ship` for PR and CI ownership through required staged acceptance and permitted auto-merge. Never fake an acceptance status.
@@ -22,10 +26,10 @@ These are per-user Codex tools on one machine. They do **not** automatically con
 
 Skill entrypoints are in `.agents/skills`. They are chosen **selectively** by task. Do not add another ticket tracker, background watchdog or full QA suite.
 
-## Suggested first message to Codex
+## Suggested first message to Codex — historical example, superseded by `docs/testing/codex-ticket-entrypoint.md`
 
-> Work on AI-XX in Matthew-Irving5/AI-Operations. Load the applicable AGENTS.md, its Linear ticket and dependencies, and the AI Operations agent-native skills. Confirm available P-Stack/Ponytail, Serena and Context7 capabilities without blocking if a nonessential plugin is unavailable. Use the issue-specific readback and qa:doctor before editing, then own implementation, focused tests, verify:changed, PR CI, ticket-required hosted acceptance and merge. Use the smallest causal fix, preserve existing exact-candidate security and release gates, and record an exact resumable handoff for external waits. Work only in an isolated branch/worktree; don't disturb any currently active coding branch.
+> Work on AI-XX in Matthew-Irving5/AI-Operations. Load the applicable AGENTS.md, its Linear ticket and dependencies, and the AI Operations agent-native skills. Confirm available P-Stack/Ponytail, Serena and Context7 capabilities without blocking if a nonessential plugin is unavailable. Use the complete six-section ticket without a readback; perform named focused local tests and relevant changed-surface checks, then exact-head PR CI and authorised merge. Hosted acceptance is owned by explicit release tickets. Use the smallest causal fix, preserve existing exact-candidate security and release gates, and record an exact resumable handoff for external waits. Work only in an isolated branch/worktree; don't disturb any currently active coding branch.
 
 ## Operational note
 
-The only verified evidence of a plugin at installation time is CLI installation and manifest registration; a live Codex agent can still fail due to authentication, per-project activation or environment setup. The first session should report connected tool status in its readback and use safe fallbacks if needed. P-Stack's Codex port and third-party hooks are not part of the repository's trusted release pipeline.
+The only verified evidence of a plugin at installation time is CLI installation and manifest registration; a live Codex agent can still fail due to authentication, per-project activation or environment setup. The session should use safe fallbacks for unavailable tools without adding a separate status/readback gate. P-Stack's Codex port and third-party hooks are not part of the repository's trusted release pipeline.

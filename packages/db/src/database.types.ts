@@ -6832,6 +6832,7 @@ export type Database = {
           p_output: number;
           p_source_url: string;
           p_user_id: string;
+          p_web_search_per_call: number;
         };
         Returns: {
           cache_write_multiplier: number;

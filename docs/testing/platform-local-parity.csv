@@ -1,0 +1,9 @@
+table,rls_enabled,anon_select,authenticated_select,service_role_select,service_role_insert,service_role_update,observed_date
+actions,true,false,true,false,true,false,2026-11-11
+conversations,true,false,false,true,true,true,2026-11-11
+conversation_messages,true,false,false,true,true,true,2026-11-11
+google_drive_files,true,false,false,true,true,true,2026-11-11
+inter_agent_requests,true,false,false,true,true,true,2026-11-11
+model_pricing,true,false,false,true,false,false,2026-11-11
+trace_events,true,false,true,false,true,false,2026-11-11
+workflow_runs,true,false,true,true,false,true,2026-11-11

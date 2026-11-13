@@ -376,6 +376,103 @@ function runCore(plan: ImpactPlan): CheckResult[] {
   return runChecks(checks);
 }
 
+
+/**
+ * Small independent GitHub PR gate. Functional and full-boundary proofs run locally,
+ * with hosted acceptance owned by release tickets. This lane deliberately avoids
+ * Docker, browser setup, workspace-wide tests and builds.
+ */
+export function buildPrChecks(plan: ImpactPlan): CheckTask[] {
+  const checks: CheckTask[] = [];
+  const add = (name: string, command: string, args: string[]) => {
+    checks.push({
+      name,
+      command: [command, ...args].join(' '),
+      execute: () => run(command, args),
+    });
+  };
+
+  const infraTests = infrastructureTests(plan.files);
+  if (infraTests.length) {
+    add('Affected infrastructure contracts', 'corepack', [
+      'pnpm',
+      'exec',
+      'tsx',
+      '--test',
+      ...infraTests,
+    ]);
+  }
+
+  if (plan.edge) {
+    add('Edge import graph compatibility', 'corepack', [
+      'pnpm',
+      'exec',
+      'tsx',
+      '--test',
+      'infrastructure/scripts/edge-function-import-maps.test.ts',
+    ]);
+  }
+
+  if (plan.db) {
+    add('Database schema and role contract checks', 'corepack', [
+      'pnpm',
+      'exec',
+      'tsx',
+      '--test',
+      'infrastructure/scripts/environment-drift.test.ts',
+    ]);
+  }
+
+  if (plan.files.some((file) => file.startsWith('packages/contracts/'))) {
+    add('Shared contract types', 'corepack', [
+      'pnpm',
+      '--filter',
+      '@ai-operations/contracts',
+      'typecheck',
+    ]);
+  }
+
+  if (plan.files.some((file) => file.startsWith('packages/db/'))) {
+    add('Database client types', 'corepack', [
+      'pnpm',
+      '--filter',
+      '@ai-operations/db',
+      'typecheck',
+    ]);
+  }
+
+  if (
+    plan.files.some((file) =>
+      [
+        '.github/workflows/deploy-staging.yml',
+        '.github/workflows/deploy-production.yml',
+      ].includes(file),
+    )
+  ) {
+    add('Release provenance contract', 'corepack', ['pnpm', 'test:release-gate']);
+  }
+
+  if (
+    plan.files.some((file) =>
+      [
+        'docs/testing/platform-live-role-catalog-20261111.json',
+        'infrastructure/scripts/platform-role-lookup.mjs',
+      ].includes(file),
+    )
+  ) {
+    add('Dated role catalog contract', 'node', [
+      '--test',
+      'infrastructure/scripts/platform-role-lookup.test.mjs',
+    ]);
+  }
+
+  return checks;
+}
+
+function runPr(plan: ImpactPlan): CheckResult[] {
+  return runChecks(buildPrChecks(plan));
+}
+
 function runBoundary(plan: ImpactPlan): CheckResult[] {
   const checks: CheckTask[] = [];
   const add = (
@@ -496,6 +593,7 @@ function main(): void {
   }
   const results: CheckResult[] = [];
   if (lane === 'all' || lane === 'core') results.push(...runCore(plan));
+  if (lane === 'pr') results.push(...runPr(plan));
   if (lane === 'all' || lane === 'boundary') results.push(...runBoundary(plan));
   const failures = results.filter((result) => result.status === 'failed');
   if (failures.length) {

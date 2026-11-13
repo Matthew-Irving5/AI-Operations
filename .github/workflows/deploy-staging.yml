@@ -1,17 +1,19 @@
 name: Deploy staging
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       mode:
-        description: Deploy an exact PR candidate or publish its completed hosted acceptance.
+        description: Deploy a selected merged main release, an existing PR candidate, or its hosted acceptance.
         required: true
         type: choice
-        options: [candidate, acceptance]
+        options: [candidate, acceptance, integrated-main]
       candidate_sha:
-        description: Exact current same-repository PR head SHA; manual candidate dispatch requires the current baseline PR verification workflows to pass.
-        required: true
+        description: Exact same-repository PR head SHA for candidate/acceptance; empty for integrated-main.
+        required: false
+        type: string
+      expected_main_sha:
+        description: Exact current main SHA to stage. Mandatory in integrated-main mode, ignored in candidate/acceptance.
+        required: false
         type: string
       acceptance_profile:
         description: Expected hosted acceptance profile. Use auto for candidate deployment and an exact ticket profile when submitting acceptance.
@@ -62,6 +64,41 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
+      - name: Reject malformed staging dispatch before deployment
+        env:
+          MODE: ${{ inputs.mode }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          case "$MODE" in
+            candidate)
+              [[ "$CANDIDATE_SHA" =~ ^[a-f0-9]{40}$ && -z "$EXPECTED_MAIN_SHA" ]] || { echo 'Candidate deploy needs an exact PR SHA and no main release SHA.'; exit 1; }
+              ;;
+            integrated-main)
+              [[ "$EXPECTED_MAIN_SHA" =~ ^[a-f0-9]{40}$ && -z "$CANDIDATE_SHA" ]] || { echo 'Main release needs an exact main SHA and no PR SHA.'; exit 1; }
+              ;;
+            *)
+              echo 'Unsupported staging dispatch mode.'
+              exit 1
+              ;;
+          esac
+      - name: Validate exact integrated-main dispatch before hosted access
+        if: inputs.mode == 'integrated-main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+          DISPATCH_SHA: ${{ github.sha }}
+          DISPATCH_REF: ${{ github.ref }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$DISPATCH_REF" == 'refs/heads/main' ]] || { echo 'Integrated staging must dispatch from main.'; exit 1; }
+          [[ "$EXPECTED_MAIN_SHA" =~ ^[a-f0-9]{40}$ && "$EXPECTED_MAIN_SHA" == "$DISPATCH_SHA" ]] || { echo 'Integrated staging SHA mismatch.'; exit 1; }
+          [[ -z "$CANDIDATE_SHA" ]] || { echo 'Integrated staging cannot deploy a PR head.'; exit 1; }
+          current_main="$(gh api "repos/$GH_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$current_main" == "$EXPECTED_MAIN_SHA" ]] || { echo 'Main moved before staging was requested; redispatch an exact main SHA.'; exit 1; }
       - name: Revalidate exact candidate PR head
         id: candidate
         if: inputs.candidate_sha != ''
@@ -215,6 +252,16 @@ jobs:
           RELEASE_SHA: ${{ inputs.candidate_sha || github.sha }}
           SOURCE_ATTESTATION_PATH: function-source-attestation.json
         run: pnpm environment:drift -- attest-source
+      - name: Recheck exact integrated-main before staging mutation
+        if: inputs.mode == 'integrated-main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_MAIN_SHA" ]] || { echo 'Checked out staging candidate drifted.'; exit 1; }
+          [[ "$(gh api "repos/$GH_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" == "$EXPECTED_MAIN_SHA" ]] || { echo 'Main moved before staging mutation.'; exit 1; }
       - name: Deploy Worker
         working-directory: apps/web
         env:
@@ -304,6 +351,43 @@ jobs:
           done
           echo "Staging Worker did not return HTTP 200 within 90 seconds."
           exit 1
+      - name: Record exact integrated-main release candidate
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'integrated-main' && github.ref == 'refs/heads/main'
+        env:
+          MAIN_SHA: ${{ github.sha }}
+          GH_REPOSITORY: ${{ github.repository }}
+          STAGING_RUN_ID: ${{ github.run_id }}
+          STAGING_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { writeFileSync } from 'node:fs';
+          const sha = process.env.MAIN_SHA;
+          if (!/^[a-f0-9]{40}$/.test(sha) || execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() !== sha) {
+            throw new Error('Staging checkout is not the expected main commit.');
+          }
+          const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim();
+          writeFileSync('integrated-main-staging.json', JSON.stringify({
+            schemaVersion: 2,
+            state: 'INTEGRATED_MAIN_STAGING_VERIFIED',
+            repositoryFullName: process.env.GH_REPOSITORY,
+            mainSha: sha,
+            mainTreeSha: tree,
+            stagingRunId: process.env.STAGING_RUN_ID,
+            stagingRunAttempt: Number(process.env.STAGING_RUN_ATTEMPT),
+            stagingOrigin: 'https://ai-operations-staging.ai-operations.workers.dev',
+            checks: { migrations: 'passed', edgeFunctions: 'passed', sourceDrift: 'passed', readinessSmoke: 'passed' },
+          }) + '\n');
+          NODE
+      - name: Upload exact integrated-main staging evidence
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'integrated-main' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: integrated-main-staging-${{ github.sha }}
+          path: integrated-main-staging.json
+          if-no-files-found: error
+          retention-days: 30
       - name: Upload staging environment inventory
         if: always() && hashFiles('environment-drift.json') != ''
         uses: actions/upload-artifact@v4
